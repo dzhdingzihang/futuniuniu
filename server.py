@@ -136,7 +136,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path == "/healthz":
+        if urlparse(self.path).path == "/healthz":
             self.send_json({"ok": True})
             return
 
