@@ -1,0 +1,167 @@
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+from urllib.request import Request, urlopen
+import base64
+import json
+import os
+import re
+import sys
+
+
+ROOT = Path(__file__).resolve().parent
+SINA_URL = "https://hq.sinajs.cn/list={symbols}"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Referer": "https://finance.sina.com.cn/",
+}
+FALLBACK_RATES = {"USD_CNY": 7.22, "HKD_CNY": 0.92}
+
+
+def fetch_text(url, timeout=10):
+    request = Request(url, headers=HEADERS)
+    with urlopen(request, timeout=timeout) as response:
+        return response.read().decode("gb18030", errors="ignore")
+
+
+def to_float(parts, index):
+    try:
+        return float(parts[index])
+    except (IndexError, TypeError, ValueError):
+        return None
+
+
+def parse_quote(symbol, raw):
+    parts = raw.split(",")
+    if symbol.startswith(("sh", "sz")):
+        price = to_float(parts, 3)
+        prev_close = to_float(parts, 2)
+        change = price - prev_close if price and prev_close else None
+        change_pct = change / prev_close * 100 if change is not None and prev_close else None
+    elif symbol.startswith("hk"):
+        price = to_float(parts, 6)
+        change = to_float(parts, 7)
+        change_pct = to_float(parts, 8)
+    else:
+        price = to_float(parts, 1)
+        change_pct = to_float(parts, 2)
+        change = to_float(parts, 4)
+
+    if not price or price <= 0:
+        return None
+
+    return {
+        "price": price,
+        "change": change,
+        "changePct": change_pct,
+    }
+
+
+def handle_quotes(symbols):
+    safe_symbols = [
+        symbol
+        for symbol in symbols.split(",")
+        if re.fullmatch(r"(sh|sz|hk|gb_)[A-Za-z0-9_]+", symbol)
+    ]
+    if not safe_symbols:
+        return {"quotes": {}}
+
+    text = fetch_text(SINA_URL.format(symbols=",".join(safe_symbols)))
+    quotes = {}
+
+    for symbol in safe_symbols:
+        match = re.search(rf'var hq_str_{re.escape(symbol)}="(.*?)";', text)
+        if not match:
+            continue
+        quote = parse_quote(symbol, match.group(1))
+        if quote:
+            quotes[symbol] = quote
+
+    return {"quotes": quotes}
+
+
+def handle_rates():
+    try:
+        request = Request("https://api.frankfurter.app/latest?from=CNY&to=USD,HKD", headers={"User-Agent": "Mozilla/5.0"})
+        with urlopen(request, timeout=8) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        return {
+            "rates": {
+                "USD_CNY": 1 / float(data["rates"]["USD"]),
+                "HKD_CNY": 1 / float(data["rates"]["HKD"]),
+            }
+        }
+    except Exception:
+        return {"rates": FALLBACK_RATES}
+
+
+def auth_enabled():
+    return bool(os.environ.get("BASIC_AUTH_USER") and os.environ.get("BASIC_AUTH_PASSWORD"))
+
+
+def expected_auth_header():
+    raw = f'{os.environ.get("BASIC_AUTH_USER")}:{os.environ.get("BASIC_AUTH_PASSWORD")}'
+    token = base64.b64encode(raw.encode("utf-8")).decode("ascii")
+    return f"Basic {token}"
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def translate_path(self, path):
+        path = urlparse(path).path.lstrip("/")
+        return str(ROOT / path)
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+    def require_auth(self):
+        if not auth_enabled():
+            return True
+        if self.headers.get("Authorization") == expected_auth_header():
+            return True
+
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Piggy Portfolio"')
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write("需要账号密码".encode("utf-8"))
+        return False
+
+    def send_json(self, payload, status=200):
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path == "/healthz":
+            self.send_json({"ok": True})
+            return
+
+        if not self.require_auth():
+            return
+
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/quotes":
+            symbols = parse_qs(parsed.query).get("symbols", [""])[0]
+            try:
+                self.send_json(handle_quotes(symbols))
+            except Exception as error:
+                self.send_json({"quotes": {}, "error": str(error)}, 502)
+            return
+
+        if parsed.path == "/api/rates":
+            self.send_json(handle_rates())
+            return
+
+        super().do_GET()
+
+
+if __name__ == "__main__":
+    port = int(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PORT", "8787"))
+    host = os.environ.get("HOST", "0.0.0.0")
+    server = ThreadingHTTPServer((host, port), Handler)
+    print(f"Serving http://{host}:{port}/")
+    server.serve_forever()

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>猪猪投资存钱罐</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Portfolio Dashboard</p>
+        <h1>猪猪投资存钱罐</h1>
+      </div>
+      <button class="refresh-button" id="refreshButton" type="button" title="刷新行情">
+        <span aria-hidden="true">↻</span>
+        刷新
+      </button>
+    </header>
+
+    <main>
+      <section class="summary">
+        <div class="summary-main">
+          <span>人民币总盈亏</span>
+          <strong id="totalProfit">--</strong>
+          <small id="totalProfitRate">--</small>
+        </div>
+        <div class="summary-grid">
+          <div>
+            <span>总成本</span>
+            <strong id="totalCost">--</strong>
+          </div>
+          <div>
+            <span>当前市值</span>
+            <strong id="totalValue">--</strong>
+          </div>
+          <div>
+            <span>更新时间</span>
+            <strong id="updatedAt">--</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="status-band" id="statusBand">
+        正在连接实时行情...
+      </section>
+
+      <section class="market-tabs" aria-label="市场筛选">
+        <button class="tab active" type="button" data-market="全部">全部</button>
+        <button class="tab" type="button" data-market="美股">美股</button>
+        <button class="tab" type="button" data-market="港股">港股</button>
+        <button class="tab" type="button" data-market="A股">A股</button>
+      </section>
+
+      <section class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>市场</th>
+              <th>股票</th>
+              <th>成本</th>
+              <th>数量</th>
+              <th>现价</th>
+              <th>补仓参考</th>
+              <th>卖出参考</th>
+              <th>市值</th>
+              <th>盈亏</th>
+              <th>盈亏率</th>
+              <th>今日涨跌</th>
+              <th>操作建议</th>
+            </tr>
+          </thead>
+          <tbody id="holdingsBody"></tbody>
+        </table>
+      </section>
+
+      <section class="recommendations">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Monthly Watchlist</p>
+            <h2>本月机会观察池</h2>
+          </div>
+          <span>只做观察，不等于买入指令</span>
+        </div>
+        <div class="recommend-grid" id="recommendationsBody"></div>
+      </section>
+    </main>
+
+    <footer>
+      数据来自公开行情接口，可能有延迟；港股单位为港币，美股单位为美元，A股单位为人民币，顶部已按实时汇率估算成人民币。页面建议基于价格、盈亏和主题热度规则生成，不构成投资建议。
+    </footer>
+
+    <script src="assets/app.js"></script>
+  </body>
+</html>
