@@ -53,9 +53,12 @@ const els = {
   marketOverview: document.querySelector("#marketOverview"),
   recommendations: document.querySelector("#recommendationsBody"),
   watchlistDate: document.querySelector("#watchlistDate"),
+  tabs: document.querySelectorAll(".tab"),
 };
 
 const serviceUrl = "http://127.0.0.1:8787/";
+let currentMarket = "港股";
+let latestRows = [];
 
 function money(value, currency = "CNY", digits = 2) {
   if (!Number.isFinite(value)) return "--";
@@ -171,7 +174,7 @@ function sellZoneFor(row) {
 
 function actionFor(row) {
   const last3 = row.history.slice(-3);
-  if (last3.length < 3) return { label: "中性", type: "hold", text: "历史数据不足，未来3天结论：中性。先等价格和成交方向确认。" };
+  if (last3.length < 3) return { label: "中性", type: "hold", conclusion: "中性", text: "历史数据不足，未来3天结论：中性。先等价格和成交方向确认。" };
   const closes = last3.map((p) => p.close);
   const slope = closes[2] - closes[0];
   const day1 = ((closes[1] - closes[0]) / closes[0]) * 100;
@@ -187,6 +190,7 @@ function actionFor(row) {
   return {
     label,
     type,
+    conclusion,
     text: `最近3天收盘 ${number(closes[0])}→${number(closes[1])}→${number(closes[2])}，两日均幅 ${pct(avg)}，波动 ${pct(volatility)}。未来3天结论：${conclusion}。${conclusion === "涨" ? "可等回踩不破后持有或小仓跟随。" : conclusion === "跌" ? "优先控制仓位，反弹到卖出参考附近减仓。" : "上下方向不够清晰，先按区间处理。"}`
   };
 }
@@ -220,16 +224,17 @@ function buildIntradaySeries(items, intraday, rates, market = null) {
   const selected = market ? items.filter((item) => item.market === market) : items;
   const keys = [...new Set(selected.flatMap((item) => (intraday[item.sina] || []).map((p) => `${p.date} ${p.time}`)))].sort();
   return keys.map((key) => {
-    let value = 0, cost = 0, included = 0;
+    let value = 0, firstValue = 0, included = 0;
     selected.forEach((item) => {
       const point = pointOnOrBeforeTime(intraday[item.sina] || [], key);
       if (!point) return;
+      const firstPoint = (intraday[item.sina] || [])[0];
       const fx = rates[item.currency] || 1;
       value += point.close * item.qty * fx;
-      cost += item.cost * item.qty * fx;
+      firstValue += (firstPoint?.close || point.close) * item.qty * fx;
       included += 1;
     });
-    return { key, value: value - cost, included };
+    return { key, value: value - firstValue, included };
   }).filter((p) => p.included > 0).slice(-96);
 }
 
@@ -292,7 +297,7 @@ function renderMarketOverview(rows, histories, intraday, rates) {
     const kline = buildPortfolioSeries(holdings, histories, rates, market);
     const intradaySeries = buildIntradaySeries(holdings, intraday, rates, market);
     return `
-      <article class="market-card">
+      <article class="market-card ${market === currentMarket ? "active" : ""}" data-market-card="${market}">
         <div class="market-card-head"><span class="badge">${market}</span><span>${currency} 展示</span></div>
         <div class="market-money">
           <span>成本 <strong>${money(cost, currency)}</strong></span>
@@ -332,35 +337,41 @@ function renderLineBlock(valueEl, chartEl, series, currency) {
 
 function candlestickSvg(series) {
   if (!series.length) return '<div class="chart-empty">暂无历史K线</div>';
-  const width = 760, height = 190, pad = 16;
+  const width = 760, height = 210, padL = 74, padR = 18, padT = 16, padB = 28;
   const highs = series.map((p) => p.high);
   const lows = series.map((p) => p.low);
   let min = Math.min(...lows), max = Math.max(...highs);
   if (min === max) { min -= 1; max += 1; }
-  const step = (width - pad * 2) / series.length;
-  const y = (v) => height - pad - ((v - min) / (max - min)) * (height - pad * 2);
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+  const step = plotW / series.length;
+  const y = (v) => padT + (1 - ((v - min) / (max - min))) * plotH;
+  const ticks = [max, (max + min) / 2, min];
   const candles = series.map((p, index) => {
-    const x = pad + index * step + step / 2;
+    const x = padL + index * step + step / 2;
     const up = p.close >= p.open;
     const cls = up ? "candle-up" : "candle-down";
     const top = Math.min(y(p.open), y(p.close));
     const body = Math.max(3, Math.abs(y(p.open) - y(p.close)));
     return `<g class="${cls}"><line x1="${x}" x2="${x}" y1="${y(p.high)}" y2="${y(p.low)}"></line><rect x="${x - Math.max(2, step * 0.28)}" y="${top}" width="${Math.max(4, step * 0.56)}" height="${body}" rx="1"></rect></g>`;
   }).join("");
-  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="盈亏K线">${candles}</svg><div class="chart-axis"><span>${shortDate(series[0].date)}</span><span>${shortDate(last(series).date)}</span></div>`;
+  const grid = ticks.map((tick) => `<g><line class="axis-grid" x1="${padL}" x2="${width - padR}" y1="${y(tick)}" y2="${y(tick)}"></line><text class="axis-label" x="8" y="${y(tick) + 4}">${compactMoney(tick)}</text></g>`).join("");
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="盈亏K线">${grid}<line class="axis-line" x1="${padL}" x2="${padL}" y1="${padT}" y2="${height - padB}"></line><line class="axis-line" x1="${padL}" x2="${width - padR}" y1="${height - padB}" y2="${height - padB}"></line>${candles}<text class="axis-label" x="${padL}" y="${height - 6}">${shortDate(series[0].date)}</text><text class="axis-label" x="${width - padR - 42}" y="${height - 6}">${shortDate(last(series).date)}</text></svg>`;
 }
 
 function lineSvg(series) {
   if (!series.length) return '<div class="chart-empty">暂无日内数据</div>';
-  const width = 760, height = 130, pad = 14;
+  const width = 760, height = 150, padL = 74, padR = 18, padT = 16, padB = 28;
   const values = series.map((p) => p.value);
   let min = Math.min(...values), max = Math.max(...values);
   if (min === max) { min -= 1; max += 1; }
-  const x = (i) => pad + i * (width - pad * 2) / Math.max(series.length - 1, 1);
-  const y = (v) => height - pad - ((v - min) / (max - min)) * (height - pad * 2);
+  const x = (i) => padL + i * (width - padL - padR) / Math.max(series.length - 1, 1);
+  const y = (v) => padT + (1 - ((v - min) / (max - min))) * (height - padT - padB);
   const points = series.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
   const cls = last(series).value >= series[0].value ? "chart-up" : "chart-down";
-  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="当日波动"><polyline class="trend-line ${cls}" points="${points}"></polyline></svg><div class="chart-axis"><span>${series[0].key.slice(11)}</span><span>${last(series).key.slice(11)}</span></div>`;
+  const ticks = [max, (max + min) / 2, min];
+  const grid = ticks.map((tick) => `<g><line class="axis-grid" x1="${padL}" x2="${width - padR}" y1="${y(tick)}" y2="${y(tick)}"></line><text class="axis-label" x="8" y="${y(tick) + 4}">${compactMoney(tick)}</text></g>`).join("");
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="当日盈亏波动">${grid}<line class="axis-line" x1="${padL}" x2="${padL}" y1="${padT}" y2="${height - padB}"></line><line class="axis-line" x1="${padL}" x2="${width - padR}" y1="${height - padB}" y2="${height - padB}"></line><polyline class="trend-line ${cls}" points="${points}"></polyline><text class="axis-label" x="${padL}" y="${height - 6}">0点</text><text class="axis-label" x="${width - padR - 52}" y="${height - 6}">${last(series).key.slice(11)}</text></svg>`;
 }
 
 function shortDate(date) {
@@ -368,23 +379,31 @@ function shortDate(date) {
   return `${parts[1]}/${parts[2]}`;
 }
 
+function compactMoney(value) {
+  if (!Number.isFinite(value)) return "--";
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (abs >= 10000) return `${sign}${number(abs / 10000, 1)}万`;
+  return `${sign}${number(abs, 0)}`;
+}
+
 function renderTable(rows) {
-  const sorted = [...rows].sort((a, b) => marketOrder.indexOf(a.market) - marketOrder.indexOf(b.market));
+  const sorted = rows.filter((row) => row.market === currentMarket);
   els.body.innerHTML = sorted.map((row) => `
     <tr>
       <td><span class="badge">${row.market}</span></td>
       <td><div class="stock-name"><strong>${row.code}</strong><span>${row.name}</span></div></td>
       <td>${money(row.cost, row.currency)}</td>
       <td>${number(row.qty, 0)}</td>
-      <td>${money(row.price, row.currency)}</td>
-      <td><div class="buy-zone ${row.buyZone.tone}"><strong>≤ ${money(row.buyZone.price, row.currency)}</strong><span>${row.buyZone.label} · ${row.buyZone.text}</span></div></td>
-      <td><div class="sell-zone ${row.sellZone.tone}"><strong>≥ ${money(row.sellZone.price, row.currency)}</strong><span>${row.sellZone.label} · ${row.sellZone.text}</span></div></td>
+      <td><strong class="price-cell">${money(row.price, row.currency)}</strong></td>
       <td class="${classFor(row.pnl)}">${signed(row.pnl, row.currency)}</td>
       <td class="${classFor(row.pnlRate)}">${pct(row.pnlRate)}</td>
       <td class="${classFor(row.todayPnl)}">${signed(row.todayPnl, row.currency)}</td>
       <td class="${classFor(row.todayPnlRate)}">${pct(row.todayPnlRate)}</td>
+      <td><div class="buy-zone ${row.buyZone.tone}"><strong>≤ ${money(row.buyZone.price, row.currency)}</strong><span>${row.buyZone.label} · ${row.buyZone.text}</span></div></td>
+      <td><div class="sell-zone ${row.sellZone.tone}"><strong>≥ ${money(row.sellZone.price, row.currency)}</strong><span>${row.sellZone.label} · ${row.sellZone.text}</span></div></td>
       <td class="${classFor(row.changePct)}">${pct(row.changePct)}</td>
-      <td><span class="action ${row.action.type}">${row.action.label}</span><span class="advice-detail">${row.action.text}</span></td>
+      <td><span class="conclusion ${row.action.conclusion === "涨" ? "up" : row.action.conclusion === "跌" ? "down" : "flat"}">未来3天：${row.action.conclusion}</span><span class="action ${row.action.type}">${row.action.label}</span><span class="advice-detail">${row.action.text}</span></td>
     </tr>
   `).join("");
 }
@@ -398,19 +417,20 @@ function renderWatchlist(quotes, histories) {
     const momentum = history.length >= 7 ? ((last(history).close - history[history.length - 7].close) / history[history.length - 7].close) * 100 : 0;
     const heat = Math.max(55, Math.min(99, Math.round(item.baseHeat + momentum * 0.8)));
     const targetPct = item.targetPct + Math.max(-0.02, Math.min(0.03, momentum / 500));
-    return { ...item, price, heat, target: Number.isFinite(price) ? price * (1 + targetPct) : NaN, momentum };
+    const probability = Math.max(45, Math.min(86, Math.round(heat * 0.55 + Math.max(-8, Math.min(12, momentum)) + targetPct * 120)));
+    return { ...item, price, heat, probability, target: Number.isFinite(price) ? price * (1 + targetPct) : NaN, momentum };
   }).sort((a, b) => b.heat - a.heat).slice(0, 6);
 
   els.recommendations.innerHTML = rows.map((row) => `
     <article class="recommend-card">
-      <div class="recommend-top"><span class="badge">${row.market}</span><span class="heat">热度 ${row.heat}</span></div>
+      <div class="recommend-top"><span class="badge">${row.market}</span><span class="heat">热度 ${row.heat} · 上涨概率 ${row.probability}%</span></div>
       <h3>${row.name}</h3>
       <p class="recommend-code">${row.code} · ${row.theme}</p>
       <div class="recommend-price">${money(row.price, row.currency)}</div>
       <dl>
         <div><dt>7天目标价</dt><dd class="positive">${money(row.target, row.currency)}</dd></div>
         <div><dt>推荐原因</dt><dd>${row.reason}</dd></div>
-        <div><dt>量化理由</dt><dd>近30日动量 ${pct(row.momentum)}，主题热度 ${row.heat}/100；若跌破5日低点，观察结论自动降级。</dd></div>
+        <div><dt>量化理由</dt><dd>近30日动量 ${pct(row.momentum)}，主题热度 ${row.heat}/100，上涨推测概率 ${row.probability}%；若跌破5日低点，观察结论自动降级。</dd></div>
       </dl>
     </article>
   `).join("");
@@ -422,6 +442,7 @@ async function refresh() {
   try {
     const [quotes, rates] = await Promise.all([fetchQuotes(), fetchRates()]);
     const rows = buildRows(quotes, {}, rates);
+    latestRows = rows;
     renderSummary(rows, {}, {}, rates);
     renderMarketOverview(rows, {}, {}, rates);
     renderTable(rows);
@@ -430,6 +451,7 @@ async function refresh() {
 
     const [histories, intraday] = await Promise.all([fetchHistory(), fetchIntraday()]);
     const rowsWithHistory = buildRows(quotes, histories, rates);
+    latestRows = rowsWithHistory;
     renderSummary(rowsWithHistory, histories, intraday, rates);
     renderMarketOverview(rowsWithHistory, histories, intraday, rates);
     renderTable(rowsWithHistory);
@@ -449,6 +471,16 @@ function renderFileMode() {
 }
 
 els.refresh.addEventListener("click", refresh);
+els.tabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    currentMarket = tab.dataset.market;
+    els.tabs.forEach((item) => item.classList.toggle("active", item.dataset.market === currentMarket));
+    renderTable(latestRows);
+    document.querySelectorAll("[data-market-card]").forEach((card) => {
+      card.classList.toggle("active", card.dataset.marketCard === currentMarket);
+    });
+  });
+});
 
 if (location.protocol === "file:") {
   renderFileMode();

@@ -75,6 +75,26 @@ footer {
 
 .refresh-button:disabled { cursor: progress; opacity: 0.65; }
 
+.market-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.tab {
+  min-width: 92px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+}
+
+.tab.active {
+  border-color: var(--blue);
+  background: rgba(56, 189, 248, 0.18);
+  color: #9be8ff;
+}
+
 .hero-dashboard {
   display: grid;
   grid-template-columns: 1.35fr repeat(3, 1fr);
@@ -223,6 +243,21 @@ footer {
   font-size: 12px;
 }
 
+.axis-grid {
+  stroke: rgba(143, 165, 154, 0.22);
+  stroke-width: 1;
+}
+
+.axis-line {
+  stroke: rgba(143, 165, 154, 0.45);
+  stroke-width: 1.2;
+}
+
+.axis-label {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
 .chart-empty {
   display: grid;
   min-height: 120px;
@@ -259,6 +294,11 @@ footer {
 }
 
 .market-card { padding: 16px; }
+
+.market-card.active {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25), var(--shadow);
+}
 
 .market-card > strong {
   display: block;
@@ -302,7 +342,7 @@ footer {
 
 table {
   width: 100%;
-  min-width: 1580px;
+  min-width: 1620px;
   border-collapse: collapse;
 }
 
@@ -349,6 +389,12 @@ td:last-child {
 .stock-name strong { font-size: 15px; }
 .stock-name span { color: var(--muted); font-size: 12px; }
 
+.price-cell {
+  display: inline-block;
+  font-size: 18px;
+  font-weight: 950;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -377,6 +423,33 @@ td:last-child {
 .action.buy { background: rgba(239, 68, 68, 0.14); color: var(--up); }
 .action.hold { background: rgba(56, 189, 248, 0.14); color: var(--blue); }
 .action.stop { background: rgba(34, 197, 94, 0.14); color: var(--down); }
+
+.conclusion {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  margin-right: 6px;
+  margin-bottom: 6px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.conclusion.up {
+  background: rgba(239, 68, 68, 0.16);
+  color: var(--up);
+}
+
+.conclusion.down {
+  background: rgba(34, 197, 94, 0.16);
+  color: var(--down);
+}
+
+.conclusion.flat {
+  background: rgba(56, 189, 248, 0.14);
+  color: var(--blue);
+}
 
 .buy-zone,
 .sell-zone {
