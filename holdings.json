@@ -1,5 +1,6 @@
 [
   { "market": "美股", "code": "COHX", "name": "2倍做多COHR", "cost": 60, "qty": 10, "currency": "USD", "sina": "gb_cohx" },
+  { "market": "美股", "code": "OKLL", "name": "2倍做多OKLO", "cost": 9.1, "qty": 100, "currency": "USD", "sina": "gb_okll" },
   { "market": "美股", "code": "DRAM", "name": "DRAM", "cost": 55, "qty": 160, "currency": "USD", "sina": "gb_dram" },
   { "market": "美股", "code": "GLW", "name": "康宁", "cost": 179, "qty": 24, "currency": "USD", "sina": "gb_glw" },
   { "market": "美股", "code": "LITX", "name": "2倍做多LITE", "cost": 47, "qty": 30, "currency": "USD", "sina": "gb_litx" },
