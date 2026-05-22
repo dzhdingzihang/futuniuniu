@@ -17,7 +17,7 @@ EASTMONEY_KLINE_URL = (
     "?secid={secid}&fields1=f1,f2,f3,f4,f5&fields2=f51,f52,f53,f54,f55"
     "&klt=101&fqt=1&end=20500101&lmt={limit}"
 )
-YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=2mo&interval=1d"
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range={range}&interval={interval}"
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Referer": "https://finance.sina.com.cn/",
@@ -125,23 +125,34 @@ def parse_yahoo_payload(payload):
 
     timestamps = result.get("timestamp") or []
     quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+    opens = quote.get("open") or []
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
     closes = quote.get("close") or []
     series = []
 
-    for ts, close in zip(timestamps, closes):
+    for index, ts in enumerate(timestamps):
+        close = closes[index] if index < len(closes) else None
         if not close or close <= 0:
             continue
         date = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
-        series.append({"date": date, "close": close})
+        series.append({
+            "date": date,
+            "time": datetime.fromtimestamp(ts).strftime("%H:%M"),
+            "open": opens[index] if index < len(opens) and opens[index] else close,
+            "high": highs[index] if index < len(highs) and highs[index] else close,
+            "low": lows[index] if index < len(lows) and lows[index] else close,
+            "close": close,
+        })
 
     return series
 
 
-def fetch_yahoo_history(symbol, days):
+def fetch_yahoo_history(symbol, days, range_value="2mo", interval="1d"):
     mapped = yahoo_symbol(symbol)
     if not mapped:
         return []
-    payload = fetch_json(YAHOO_CHART_URL.format(symbol=mapped), timeout=8)
+    payload = fetch_json(YAHOO_CHART_URL.format(symbol=mapped, range=range_value, interval=interval), timeout=8)
     return parse_yahoo_payload(payload)[-days:]
 
 
@@ -154,7 +165,7 @@ def parse_kline_payload(payload):
             continue
         close = to_float(parts, 2)
         if close and close > 0:
-            series.append({"date": parts[0], "close": close})
+            series.append({"date": parts[0], "time": "", "open": to_float(parts, 1) or close, "high": to_float(parts, 3) or close, "low": to_float(parts, 4) or close, "close": close})
     return series
 
 
@@ -193,6 +204,25 @@ def handle_history(symbols, days):
             histories[symbol] = series
 
     return {"histories": histories, "days": days}
+
+
+def handle_intraday(symbols):
+    safe_symbols = [
+        symbol
+        for symbol in symbols.split(",")
+        if re.fullmatch(r"(sh|sz|hk|gb_)[A-Za-z0-9_]+", symbol)
+    ]
+    intraday = {}
+
+    for symbol in safe_symbols:
+        try:
+            series = fetch_yahoo_history(symbol, 96, range_value="1d", interval="5m")
+            if series:
+                intraday[symbol] = series
+        except Exception:
+            continue
+
+    return {"intraday": intraday}
 
 
 def handle_rates():
@@ -282,6 +312,14 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(handle_history(symbols, days))
             except Exception as error:
                 self.send_json({"histories": {}, "error": str(error)}, 502)
+            return
+
+        if parsed.path == "/api/intraday":
+            symbols = parse_qs(parsed.query).get("symbols", [""])[0]
+            try:
+                self.send_json(handle_intraday(symbols))
+            except Exception as error:
+                self.send_json({"intraday": {}, "error": str(error)}, 502)
             return
 
         super().do_GET()

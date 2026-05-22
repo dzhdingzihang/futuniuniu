@@ -19,25 +19,33 @@
     </header>
 
     <main>
-      <section class="summary">
-        <div class="summary-main">
-          <span>人民币总盈亏</span>
+      <section class="hero-dashboard">
+        <div class="hero-metric primary">
+          <span>总体盈亏 人民币</span>
           <strong id="totalProfit">--</strong>
           <small id="totalProfitRate">--</small>
         </div>
-        <div class="summary-grid">
-          <div>
-            <span>总成本</span>
-            <strong id="totalCost">--</strong>
-          </div>
-          <div>
-            <span>当前市值</span>
-            <strong id="totalValue">--</strong>
-          </div>
-          <div>
-            <span>更新时间</span>
-            <strong id="updatedAt">--</strong>
-          </div>
+        <div class="hero-metric">
+          <span>总成本</span>
+          <strong id="totalCost">--</strong>
+        </div>
+        <div class="hero-metric">
+          <span>当前市值</span>
+          <strong id="totalValue">--</strong>
+        </div>
+        <div class="hero-metric">
+          <span>更新时间</span>
+          <strong id="updatedAt">--</strong>
+        </div>
+        <div class="hero-metric">
+          <span>今日盈亏</span>
+          <strong id="todayProfit">--</strong>
+          <small id="todayProfitRate">--</small>
+        </div>
+        <div class="hero-metric">
+          <span>最近7日盈亏</span>
+          <strong id="sevenProfit">--</strong>
+          <small id="sevenProfitRate">--</small>
         </div>
       </section>
 
@@ -45,28 +53,28 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">30-Day Trend</p>
-            <h2>整体盈亏走势图</h2>
+            <h2>整体盈亏 K 线走势</h2>
           </div>
           <span id="totalTrendHint">按当前汇率折算人民币</span>
         </div>
         <div class="chart-card wide">
           <div class="chart-meta">
-            <span>近 30 个交易日</span>
+            <span>近 30 个交易日盈亏 K 线</span>
             <strong id="totalTrendValue">--</strong>
           </div>
           <div class="sparkline large" id="totalTrendChart"></div>
+        </div>
+        <div class="chart-card wide intraday-card">
+          <div class="chart-meta">
+            <span>当日 24 小时波动</span>
+            <strong id="totalIntradayValue">--</strong>
+          </div>
+          <div class="sparkline intraday" id="totalIntradayChart"></div>
         </div>
       </section>
 
       <section class="status-band" id="statusBand">
         正在连接实时行情...
-      </section>
-
-      <section class="market-tabs" aria-label="市场筛选">
-        <button class="tab active" type="button" data-market="全部">全部</button>
-        <button class="tab" type="button" data-market="美股">美股</button>
-        <button class="tab" type="button" data-market="港股">港股</button>
-        <button class="tab" type="button" data-market="A股">A股</button>
       </section>
 
       <section class="market-overview" id="marketOverview"></section>
@@ -76,15 +84,16 @@
           <thead>
             <tr>
               <th>市场</th>
-              <th>股票</th>
+              <th>股票代码</th>
               <th>成本</th>
               <th>数量</th>
               <th>现价</th>
               <th>补仓参考</th>
               <th>卖出参考</th>
-              <th>市值</th>
-              <th>盈亏</th>
+              <th>整体盈亏</th>
               <th>盈亏率</th>
+              <th>当日盈亏</th>
+              <th>当日盈亏率</th>
               <th>今日涨跌</th>
               <th>操作建议</th>
             </tr>
@@ -96,10 +105,10 @@
       <section class="recommendations">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Monthly Watchlist</p>
-            <h2>本月机会观察池</h2>
+            <p class="eyebrow">Weekly Watchlist</p>
+            <h2>本周观察池</h2>
           </div>
-          <span>只做观察，不等于买入指令</span>
+          <span id="watchlistDate">每天随行情刷新，只做观察，不等于买入指令</span>
         </div>
         <div class="recommend-grid" id="recommendationsBody"></div>
       </section>

@@ -1,16 +1,16 @@
+const marketOrder = ["港股", "A股", "美股"];
+
 const holdings = [
   { market: "美股", code: "COHX", name: "COHX", cost: 60, qty: 10, currency: "USD", sina: "gb_cohx" },
   { market: "美股", code: "DRAM", name: "DRAM", cost: 55, qty: 160, currency: "USD", sina: "gb_dram" },
   { market: "美股", code: "GLW", name: "康宁", cost: 179, qty: 14, currency: "USD", sina: "gb_glw" },
   { market: "美股", code: "LITX", name: "LITX", cost: 59.5, qty: 10, currency: "USD", sina: "gb_litx" },
   { market: "美股", code: "TSLL", name: "TSLL", cost: 15.5, qty: 100, currency: "USD", sina: "gb_tsll" },
-
   { market: "港股", code: "00763", name: "中兴通讯", cost: 30.5, qty: 800, currency: "HKD", sina: "hk00763" },
   { market: "港股", code: "01024", name: "快手-W", cost: 46, qty: 300, currency: "HKD", sina: "hk01024" },
   { market: "港股", code: "01810", name: "小米集团-W", cost: 43.5, qty: 600, currency: "HKD", sina: "hk01810" },
   { market: "港股", code: "02208", name: "金风科技", cost: 16.9, qty: 1600, currency: "HKD", sina: "hk02208" },
   { market: "港股", code: "07709", name: "07709", cost: 90, qty: 800, currency: "HKD", sina: "hk07709" },
-
   { market: "A股", code: "002217", name: "合力泰", cost: 3.6, qty: 3000, currency: "CNY", sina: "sz002217" },
   { market: "A股", code: "300053", name: "航宇微", cost: 20.8, qty: 800, currency: "CNY", sina: "sz300053" },
   { market: "A股", code: "300067", name: "安诺其", cost: 7.8, qty: 800, currency: "CNY", sina: "sz300067" },
@@ -21,73 +21,15 @@ const holdings = [
   { market: "A股", code: "601138", name: "工业富联", cost: 55.8, qty: 100, currency: "CNY", sina: "sh601138" },
 ];
 
-const recommendations = [
-  {
-    market: "美股",
-    code: "NVDA",
-    name: "英伟达",
-    currency: "USD",
-    sina: "gb_nvda",
-    theme: "AI算力 / GPU",
-    reason: "AI基础设施仍是美股最强主线之一，适合跟踪龙头是否继续放量突破。",
-    trigger: "站稳近几日高点且成交放大时关注；若高开低走，等回踩再看。",
-    risk: "估值和预期都高，财报或出口限制消息会放大波动。",
-  },
-  {
-    market: "美股",
-    code: "AVGO",
-    name: "博通",
-    currency: "USD",
-    sina: "gb_avgo",
-    theme: "AI网络 / 定制芯片",
-    reason: "AI服务器网络、ASIC和数据中心需求具备景气支撑，走势通常比小票更稳。",
-    trigger: "回踩不破关键均线后转强，可作为右侧观察对象。",
-    risk: "若AI硬件链集体退潮，容易跟随板块调整。",
-  },
-  {
-    market: "港股",
-    code: "00981",
-    name: "中芯国际",
-    currency: "HKD",
-    sina: "hk00981",
-    theme: "国产半导体",
-    reason: "港股半导体受国产算力替代和AI芯片代工预期带动，弹性较强。",
-    trigger: "放量站回短期平台上沿再关注，避免追单一日急涨。",
-    risk: "行业周期、制裁消息和扩产节奏都会影响估值。",
-  },
-  {
-    market: "港股",
-    code: "01810",
-    name: "小米集团-W",
-    currency: "HKD",
-    sina: "hk01810",
-    theme: "AI终端 / 汽车",
-    reason: "手机、IoT、汽车多线叙事叠加，港股科技修复时容易成为资金锚点。",
-    trigger: "回踩后重新收复前高，或恒生科技指数同步转强时关注。",
-    risk: "汽车交付、毛利率和供应链消息会带来短线扰动。",
-  },
-  {
-    market: "A股",
-    code: "601138",
-    name: "工业富联",
-    currency: "CNY",
-    sina: "sh601138",
-    theme: "AI服务器 / 算力制造",
-    reason: "AI服务器和算力产业链景气度高，且与你现有持仓相关，便于跟踪加减仓节奏。",
-    trigger: "强势股不追急拉，等盘中回踩承接或放量突破后再观察。",
-    risk: "涨幅大时资金兑现会很快，补仓要分批。",
-  },
-  {
-    market: "A股",
-    code: "300308",
-    name: "中际旭创",
-    currency: "CNY",
-    sina: "sz300308",
-    theme: "CPO / 光模块",
-    reason: "光模块仍是AI算力链中弹性最高的方向之一，适合作为风向标观察。",
-    trigger: "板块共振上涨且个股不破分时均价时关注，弱于板块则放弃。",
-    risk: "高景气已被充分交易，回撤可能很快。",
-  },
+const watchCandidates = [
+  { market: "美股", code: "NVDA", name: "英伟达", currency: "USD", sina: "gb_nvda", theme: "AI GPU", baseHeat: 94, targetPct: 0.09, reason: "AI芯片仍是全球科技股定价锚，算力资本开支主线明确。" },
+  { market: "美股", code: "AVGO", name: "博通", currency: "USD", sina: "gb_avgo", theme: "AI网络/ASIC", baseHeat: 89, targetPct: 0.075, reason: "AI网络、定制芯片和数据中心交换需求延续高景气。" },
+  { market: "美股", code: "MU", name: "美光科技", currency: "USD", sina: "gb_mu", theme: "存储芯片", baseHeat: 88, targetPct: 0.07, reason: "存储产业链热度抬升，AI服务器带动高带宽存储需求。" },
+  { market: "港股", code: "00981", name: "中芯国际", currency: "HKD", sina: "hk00981", theme: "国产半导体", baseHeat: 91, targetPct: 0.08, reason: "港股芯片股活跃，国产算力链和先进制程预期提升。" },
+  { market: "港股", code: "01024", name: "快手-W", currency: "HKD", sina: "hk01024", theme: "AI应用", baseHeat: 84, targetPct: 0.06, reason: "AI应用和内容平台热度回升，科技股反弹时弹性较高。" },
+  { market: "A股", code: "300308", name: "中际旭创", currency: "CNY", sina: "sz300308", theme: "CPO/光模块", baseHeat: 93, targetPct: 0.08, reason: "PCB、光模块、铜缆高速连接仍是AI算力硬件强主线。" },
+  { market: "A股", code: "002938", name: "鹏鼎控股", currency: "CNY", sina: "sz002938", theme: "PCB", baseHeat: 90, targetPct: 0.07, reason: "PCB产业链今日热度高，资金围绕算力硬件扩散。" },
+  { market: "A股", code: "601138", name: "工业富联", currency: "CNY", sina: "sh601138", theme: "AI服务器", baseHeat: 88, targetPct: 0.065, reason: "AI服务器制造链景气度高，和现有持仓联动性强。" },
 ];
 
 const els = {
@@ -97,49 +39,42 @@ const els = {
   totalProfitRate: document.querySelector("#totalProfitRate"),
   totalCost: document.querySelector("#totalCost"),
   totalValue: document.querySelector("#totalValue"),
+  todayProfit: document.querySelector("#todayProfit"),
+  todayProfitRate: document.querySelector("#todayProfitRate"),
+  sevenProfit: document.querySelector("#sevenProfit"),
+  sevenProfitRate: document.querySelector("#sevenProfitRate"),
   updatedAt: document.querySelector("#updatedAt"),
   status: document.querySelector("#statusBand"),
   totalTrendValue: document.querySelector("#totalTrendValue"),
   totalTrendChart: document.querySelector("#totalTrendChart"),
   totalTrendHint: document.querySelector("#totalTrendHint"),
+  totalIntradayValue: document.querySelector("#totalIntradayValue"),
+  totalIntradayChart: document.querySelector("#totalIntradayChart"),
   marketOverview: document.querySelector("#marketOverview"),
   recommendations: document.querySelector("#recommendationsBody"),
-  tabs: document.querySelectorAll(".tab"),
+  watchlistDate: document.querySelector("#watchlistDate"),
 };
 
-let currentMarket = "全部";
-let latestRows = [];
 const serviceUrl = "http://127.0.0.1:8787/";
-const localUrl = location.protocol === "file:" ? serviceUrl : `${location.origin}/`;
 
 function money(value, currency = "CNY", digits = 2) {
   if (!Number.isFinite(value)) return "--";
-  return new Intl.NumberFormat("zh-CN", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(value);
+  return new Intl.NumberFormat("zh-CN", { style: "currency", currency, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
 }
 
 function number(value, digits = 2) {
   if (!Number.isFinite(value)) return "--";
-  return new Intl.NumberFormat("zh-CN", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(value);
+  return new Intl.NumberFormat("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
 }
 
 function signed(value, currency) {
   if (!Number.isFinite(value)) return "--";
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${money(value, currency)}`;
+  return `${value > 0 ? "+" : ""}${money(value, currency)}`;
 }
 
 function pct(value) {
   if (!Number.isFinite(value)) return "--";
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${number(value, 2)}%`;
+  return `${value > 0 ? "+" : ""}${number(value, 2)}%`;
 }
 
 function classFor(value) {
@@ -147,220 +82,70 @@ function classFor(value) {
   return value > 0 ? "positive" : "negative";
 }
 
-function normalizePrice(raw) {
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return value;
-}
-
-async function fetchQuotes() {
-  const symbols = [...new Set([...holdings, ...recommendations].map((item) => item.sina))].join(",");
-  const response = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols)}`, { cache: "no-store" });
-  if (!response.ok) throw new Error("本地行情服务不可用");
-  const payload = await response.json();
-  const map = new Map();
-
-  Object.entries(payload.quotes || {}).forEach(([symbol, quote]) => {
-    if (normalizePrice(quote.price)) map.set(symbol, quote);
-  });
-
-  return map;
-}
-
-async function fetchHistory() {
-  const symbols = [...new Set(holdings.map((item) => item.sina))].join(",");
+async function getJson(url, fallback) {
   try {
-    const response = await fetch(`/api/history?symbols=${encodeURIComponent(symbols)}&days=30`, { cache: "no-store" });
-    if (!response.ok) throw new Error("历史行情接口不可用");
-    const payload = await response.json();
-    return payload.histories || {};
-  } catch {
-    return {};
-  }
-}
-
-function buyZoneFor(row) {
-  if (!row.quote) {
-    return {
-      price: NaN,
-      label: "等价格",
-      text: "取到实时价后再计算",
-      tone: "neutral",
-    };
-  }
-
-  let target;
-  let label;
-  let text;
-
-  if (row.pnlRate <= -25) {
-    target = row.price * 0.95;
-    label = "只看止跌";
-    text = "深套不急补，先等跌势放缓";
-  } else if (row.pnlRate <= -10) {
-    target = Math.min(row.cost * 0.92, row.price * 0.97);
-    label = "分批试探";
-    text = "低于参考价且缩量企稳再看";
-  } else if (row.pnlRate < 8) {
-    target = row.price * 0.96;
-    label = "轻仓低吸";
-    text = "回落到参考价附近再分批";
-  } else {
-    target = row.price * 0.9;
-    label = "不追高";
-    text = "等明显回踩，优先保护利润";
-  }
-
-  return {
-    price: target,
-    label,
-    text,
-    tone: row.pnlRate <= -10 ? "negative" : row.pnlRate >= 8 ? "positive" : "neutral",
-  };
-}
-
-function sellZoneFor(row) {
-  if (!row.quote) {
-    return {
-      price: NaN,
-      label: "等价格",
-      text: "取到实时价后再计算",
-      tone: "neutral",
-    };
-  }
-
-  let target;
-  let label;
-  let text;
-
-  if (row.pnlRate >= 30) {
-    target = row.price * 1.03;
-    label = "分批止盈";
-    text = "冲高到参考价附近先锁利润";
-  } else if (row.pnlRate >= 12) {
-    target = Math.max(row.cost * 1.22, row.price * 1.06);
-    label = "目标止盈";
-    text = "到位可卖出 25%-40%";
-  } else if (row.pnlRate >= 0) {
-    target = Math.max(row.cost * 1.12, row.price * 1.08);
-    label = "耐心等涨";
-    text = "未到目标前用成本线保护";
-  } else if (row.pnlRate <= -20) {
-    target = row.cost * 0.9;
-    label = "反弹减仓";
-    text = "反弹到参考价附近先降风险";
-  } else {
-    target = row.cost * 1.03;
-    label = "回本减压";
-    text = "接近回本可先减一部分";
-  }
-
-  return {
-    price: target,
-    label,
-    text,
-    tone: row.pnlRate >= 8 ? "positive" : row.pnlRate < 0 ? "negative" : "neutral",
-  };
-}
-
-async function fetchRates() {
-  const fallback = { CNY: 1, USD: 7.22, HKD: 0.92 };
-
-  try {
-    const response = await fetch("/api/rates", { cache: "no-store" });
-    if (!response.ok) throw new Error("汇率接口不可用");
-    const data = await response.json();
-    return {
-      CNY: 1,
-      USD: Number(data.rates.USD_CNY),
-      HKD: Number(data.rates.HKD_CNY),
-    };
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error("request failed");
+    return await response.json();
   } catch {
     return fallback;
   }
 }
 
-function actionFor(row) {
-  if (!row.quote) {
-    return {
-      type: "hold",
-      label: "先核对代码",
-      text: "暂时没有取到实时价格，先确认代码或市场后再做判断。",
-    };
-  }
-
-  if (row.pnlRate <= -25) {
-    return {
-      type: "stop",
-      label: "控制风险",
-      text: "浮亏较深，先看基本面和止损线；不建议只因为便宜就补仓。",
-    };
-  }
-
-  if (row.pnlRate <= -10) {
-    return {
-      type: "hold",
-      label: "观察修复",
-      text: "处于明显浮亏，若趋势转强可分批处理，否则以降低仓位波动为主。",
-    };
-  }
-
-  if (row.pnlRate >= 30) {
-    return {
-      type: "trim",
-      label: "分批止盈",
-      text: "浮盈较高，可以考虑分批锁定利润，保留一部分跟随趋势。",
-    };
-  }
-
-  if (row.pnlRate >= 12) {
-    return {
-      type: "trim",
-      label: "提高止盈线",
-      text: "已有不错浮盈，适合把止盈线抬高，避免盈利大幅回吐。",
-    };
-  }
-
-  if (row.changePct <= -4 && row.pnlRate > -8) {
-    return {
-      type: "buy",
-      label: "等企稳",
-      text: "日内回落较大但总体可控，可以等企稳信号后再考虑分批加减。",
-    };
-  }
-
-  return {
-    type: "hold",
-    label: "继续持有",
-    text: "盈亏处于中性区间，按原计划持有，重点关注仓位和趋势变化。",
-  };
+async function fetchQuotes() {
+  const symbols = [...new Set([...holdings, ...watchCandidates].map((item) => item.sina))].join(",");
+  const payload = await getJson(`/api/quotes?symbols=${encodeURIComponent(symbols)}`, { quotes: {} });
+  return new Map(Object.entries(payload.quotes || {}));
 }
 
-function buildRows(quotes, rates) {
+async function fetchRates() {
+  const payload = await getJson("/api/rates", { rates: { USD_CNY: 7.22, HKD_CNY: 0.92 } });
+  return { CNY: 1, USD: Number(payload.rates.USD_CNY) || 7.22, HKD: Number(payload.rates.HKD_CNY) || 0.92 };
+}
+
+async function fetchHistory() {
+  const symbols = [...new Set([...holdings, ...watchCandidates].map((item) => item.sina))].join(",");
+  const payload = await getJson(`/api/history?symbols=${encodeURIComponent(symbols)}&days=30`, { histories: {} });
+  return payload.histories || {};
+}
+
+async function fetchIntraday() {
+  const symbols = [...new Set(holdings.map((item) => item.sina))].join(",");
+  const payload = await getJson(`/api/intraday?symbols=${encodeURIComponent(symbols)}`, { intraday: {} });
+  return payload.intraday || {};
+}
+
+function buildRows(quotes, histories, rates) {
   return holdings.map((item) => {
     const quote = quotes.get(item.sina) || null;
-    const price = quote?.price ?? NaN;
+    const history = histories[item.sina] || [];
+    const price = quote?.price || last(history)?.close || NaN;
+    const rate = rates[item.currency] || 1;
     const costValue = item.cost * item.qty;
     const marketValue = price * item.qty;
     const pnl = marketValue - costValue;
-    const pnlRate = (pnl / costValue) * 100;
-    const rate = rates[item.currency] || 1;
-
+    const todayPnl = (quote?.change || 0) * item.qty;
+    const sevenPoint = history[Math.max(0, history.length - 8)];
+    const sevenPnl = sevenPoint ? (price - sevenPoint.close) * item.qty : NaN;
     const row = {
       ...item,
-      quote,
-      displayName: item.name,
       price,
+      quote,
+      history,
       costValue,
       marketValue,
       pnl,
-      pnlRate,
+      pnlRate: costValue ? (pnl / costValue) * 100 : NaN,
+      todayPnl,
+      todayPnlRate: price ? ((quote?.change || 0) / (price - (quote?.change || 0))) * 100 : NaN,
+      sevenPnl,
       costCny: costValue * rate,
-      valueCny: Number.isFinite(marketValue) ? marketValue * rate : NaN,
-      pnlCny: Number.isFinite(pnl) ? pnl * rate : NaN,
+      valueCny: marketValue * rate,
+      pnlCny: pnl * rate,
+      todayPnlCny: todayPnl * rate,
+      sevenPnlCny: Number.isFinite(sevenPnl) ? sevenPnl * rate : NaN,
       changePct: quote?.changePct ?? NaN,
     };
-
     row.buyZone = buyZoneFor(row);
     row.sellZone = sellZoneFor(row);
     row.action = actionFor(row);
@@ -368,343 +153,298 @@ function buildRows(quotes, rates) {
   });
 }
 
-function buildRecommendationRows(quotes) {
-  return recommendations.map((item) => {
-    const quote = quotes.get(item.sina) || null;
-    return {
-      ...item,
-      quote,
-      price: quote?.price ?? NaN,
-      changePct: quote?.changePct ?? NaN,
-    };
-  });
+function buyZoneFor(row) {
+  if (!Number.isFinite(row.price)) return { price: NaN, label: "等价格", text: "取到实时价后再计算", tone: "neutral" };
+  if (row.pnlRate <= -20) return { price: row.price * 0.96, label: "只低吸", text: "等止跌阳线后小仓试探", tone: "negative" };
+  if (row.pnlRate <= -8) return { price: Math.min(row.cost * 0.94, row.price * 0.98), label: "分批补", text: "回落缩量再补，不追反弹", tone: "negative" };
+  if (row.pnlRate >= 12) return { price: row.price * 0.9, label: "等回踩", text: "盈利股不追高，回撤再看", tone: "positive" };
+  return { price: row.price * 0.965, label: "轻仓低吸", text: "接近参考价再分批", tone: "neutral" };
 }
 
-function holdingCostCny(item, rates) {
-  return item.cost * item.qty * (rates[item.currency] || 1);
+function sellZoneFor(row) {
+  if (!Number.isFinite(row.price)) return { price: NaN, label: "等价格", text: "取到实时价后再计算", tone: "neutral" };
+  if (row.pnlRate >= 25) return { price: row.price * 1.025, label: "冲高止盈", text: "到位先卖25%-40%", tone: "positive" };
+  if (row.pnlRate >= 8) return { price: row.price * 1.06, label: "目标止盈", text: "放量冲高分批落袋", tone: "positive" };
+  if (row.pnlRate < -15) return { price: row.cost * 0.92, label: "反弹减仓", text: "修复到参考价先降风险", tone: "negative" };
+  return { price: row.cost * 1.05, label: "回本减压", text: "到成本上方先减一部分", tone: "neutral" };
 }
 
-function buildTrendSeries(histories, rates, market = "全部") {
-  const selected = market === "全部" ? holdings : holdings.filter((item) => item.market === market);
-  const dateSet = new Set();
-
-  selected.forEach((item) => {
-    (histories[item.sina] || []).forEach((point) => dateSet.add(point.date));
-  });
-
-  const dates = [...dateSet].sort().slice(-30);
-  if (!dates.length) return [];
-
-  return dates.map((date) => {
-    let pnl = 0;
-    let cost = 0;
-    let included = 0;
-
-    selected.forEach((item) => {
-      const series = histories[item.sina] || [];
-      const point = lastPointOnOrBefore(series, date);
-      if (!point) return;
-
-      const rate = rates[item.currency] || 1;
-      const itemCost = item.cost * item.qty;
-      pnl += (point.close * item.qty - itemCost) * rate;
-      cost += itemCost * rate;
-      included += 1;
-    });
-
-    return {
-      date,
-      pnl,
-      cost,
-      included,
-      rate: cost ? (pnl / cost) * 100 : NaN,
-    };
-  }).filter((point) => point.included > 0);
-}
-
-function lastPointOnOrBefore(series, date) {
-  let matched = null;
-  for (const point of series) {
-    if (point.date <= date) matched = point;
-    if (point.date > date) break;
-  }
-  return matched;
-}
-
-function sparklineSvg(series) {
-  if (!series.length) {
-    return '<div class="chart-empty">暂无历史数据</div>';
-  }
-
-  const width = 720;
-  const height = 170;
-  const pad = 12;
-  const values = series.map((point) => point.pnl);
-  let min = Math.min(...values);
-  let max = Math.max(...values);
-  if (min === max) {
-    min -= 1;
-    max += 1;
-  }
-
-  const xFor = (index) => pad + (index * (width - pad * 2)) / Math.max(series.length - 1, 1);
-  const yFor = (value) => height - pad - ((value - min) * (height - pad * 2)) / (max - min);
-  const points = series.map((point, index) => `${xFor(index).toFixed(1)},${yFor(point.pnl).toFixed(1)}`).join(" ");
-  const zeroY = min < 0 && max > 0 ? yFor(0) : null;
-  const last = series[series.length - 1];
-  const first = series[0];
-  const trendClass = last.pnl >= first.pnl ? "chart-up" : "chart-down";
-
-  return `
-    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="30 天盈亏走势">
-      ${zeroY ? `<line class="zero-line" x1="${pad}" x2="${width - pad}" y1="${zeroY.toFixed(1)}" y2="${zeroY.toFixed(1)}"></line>` : ""}
-      <polyline class="trend-line ${trendClass}" points="${points}"></polyline>
-      <circle class="${trendClass}" cx="${xFor(series.length - 1).toFixed(1)}" cy="${yFor(last.pnl).toFixed(1)}" r="4"></circle>
-    </svg>
-    <div class="chart-axis">
-      <span>${formatDateShort(first.date)}</span>
-      <span>${formatDateShort(last.date)}</span>
-    </div>
-  `;
-}
-
-function formatDateShort(date) {
-  const [, month, day] = date.split("-");
-  return `${month}/${day}`;
-}
-
-function renderTotalTrend(series) {
-  const last = series[series.length - 1];
-  const first = series[0];
-  els.totalTrendValue.textContent = last ? `${signed(last.pnl, "CNY")} · ${pct(last.rate)}` : "--";
-  els.totalTrendValue.className = last ? classFor(last.pnl) : "neutral";
-  els.totalTrendHint.textContent = last && first
-    ? `区间变化 ${signed(last.pnl - first.pnl, "CNY")}`
-    : "按当前汇率折算人民币";
-  els.totalTrendChart.innerHTML = sparklineSvg(series);
-}
-
-function marketSummary(rows, market) {
-  const selected = rows.filter((row) => row.market === market && Number.isFinite(row.valueCny));
-  const cost = selected.reduce((sum, row) => sum + row.costCny, 0);
-  const value = selected.reduce((sum, row) => sum + row.valueCny, 0);
-  const pnl = value - cost;
+function actionFor(row) {
+  const last3 = row.history.slice(-3);
+  if (last3.length < 3) return { label: "中性", type: "hold", text: "历史数据不足，未来3天结论：中性。先等价格和成交方向确认。" };
+  const closes = last3.map((p) => p.close);
+  const slope = closes[2] - closes[0];
+  const day1 = ((closes[1] - closes[0]) / closes[0]) * 100;
+  const day2 = ((closes[2] - closes[1]) / closes[1]) * 100;
+  const avg = (day1 + day2) / 2;
+  const volatility = ((Math.max(...last3.map((p) => p.high || p.close)) - Math.min(...last3.map((p) => p.low || p.close))) / closes[0]) * 100;
+  let conclusion = "中性";
+  if (slope > 0 && avg > 0.35) conclusion = "涨";
+  if (slope < 0 && avg < -0.35) conclusion = "跌";
+  if (volatility > 12 && Math.abs(avg) < 1) conclusion = "中性";
+  const label = conclusion === "涨" ? "偏强观察" : conclusion === "跌" ? "防守优先" : "震荡观察";
+  const type = conclusion === "涨" ? "buy" : conclusion === "跌" ? "stop" : "hold";
   return {
-    cost,
-    value,
-    pnl,
-    rate: cost ? (pnl / cost) * 100 : NaN,
-    count: selected.length,
+    label,
+    type,
+    text: `最近3天收盘 ${number(closes[0])}→${number(closes[1])}→${number(closes[2])}，两日均幅 ${pct(avg)}，波动 ${pct(volatility)}。未来3天结论：${conclusion}。${conclusion === "涨" ? "可等回踩不破后持有或小仓跟随。" : conclusion === "跌" ? "优先控制仓位，反弹到卖出参考附近减仓。" : "上下方向不够清晰，先按区间处理。"}`
   };
 }
 
-function renderMarketOverview(rows, histories, rates) {
-  const markets = ["美股", "港股", "A股"];
-  els.marketOverview.innerHTML = markets.map((market) => {
-    const summary = marketSummary(rows, market);
-    const series = buildTrendSeries(histories, rates, market);
-    const last = series[series.length - 1];
-    const first = series[0];
-    const delta = last && first ? last.pnl - first.pnl : NaN;
+function last(arr) {
+  return arr[arr.length - 1];
+}
 
+function buildPortfolioSeries(items, histories, rates, market = null) {
+  const selected = market ? items.filter((item) => item.market === market) : items;
+  const dates = [...new Set(selected.flatMap((item) => (histories[item.sina] || []).map((p) => p.date)))].sort().slice(-30);
+  return dates.map((date) => {
+    let open = 0, high = 0, low = 0, close = 0, cost = 0, included = 0;
+    selected.forEach((item) => {
+      const point = pointOnOrBefore(histories[item.sina] || [], date);
+      if (!point) return;
+      const fx = rates[item.currency] || 1;
+      const itemCost = item.cost * item.qty * fx;
+      open += ((point.open || point.close) * item.qty * fx) - itemCost;
+      high += ((point.high || point.close) * item.qty * fx) - itemCost;
+      low += ((point.low || point.close) * item.qty * fx) - itemCost;
+      close += (point.close * item.qty * fx) - itemCost;
+      cost += itemCost;
+      included += 1;
+    });
+    return { date, open, high, low, close, cost, included, rate: cost ? (close / cost) * 100 : NaN };
+  }).filter((p) => p.included > 0);
+}
+
+function buildIntradaySeries(items, intraday, rates, market = null) {
+  const selected = market ? items.filter((item) => item.market === market) : items;
+  const keys = [...new Set(selected.flatMap((item) => (intraday[item.sina] || []).map((p) => `${p.date} ${p.time}`)))].sort();
+  return keys.map((key) => {
+    let value = 0, cost = 0, included = 0;
+    selected.forEach((item) => {
+      const point = pointOnOrBeforeTime(intraday[item.sina] || [], key);
+      if (!point) return;
+      const fx = rates[item.currency] || 1;
+      value += point.close * item.qty * fx;
+      cost += item.cost * item.qty * fx;
+      included += 1;
+    });
+    return { key, value: value - cost, included };
+  }).filter((p) => p.included > 0).slice(-96);
+}
+
+function pointOnOrBefore(series, date) {
+  let found = null;
+  for (const point of series) {
+    if (point.date <= date) found = point;
+    if (point.date > date) break;
+  }
+  return found;
+}
+
+function pointOnOrBeforeTime(series, key) {
+  let found = null;
+  for (const point of series) {
+    const current = `${point.date} ${point.time || "00:00"}`;
+    if (current <= key) found = point;
+    if (current > key) break;
+  }
+  return found;
+}
+
+function renderSummary(rows, histories, intraday, rates) {
+  const cost = sum(rows, "costCny");
+  const value = sum(rows, "valueCny");
+  const pnl = value - cost;
+  const today = sum(rows, "todayPnlCny");
+  const seven = sum(rows, "sevenPnlCny");
+  els.totalProfit.textContent = signed(pnl, "CNY");
+  els.totalProfit.className = classFor(pnl);
+  els.totalProfitRate.textContent = pct(cost ? pnl / cost * 100 : NaN);
+  els.totalProfitRate.className = classFor(pnl);
+  els.totalCost.textContent = money(cost, "CNY");
+  els.totalValue.textContent = money(value, "CNY");
+  els.todayProfit.textContent = signed(today, "CNY");
+  els.todayProfit.className = classFor(today);
+  els.todayProfitRate.textContent = pct(value ? today / (value - today) * 100 : NaN);
+  els.todayProfitRate.className = classFor(today);
+  els.sevenProfit.textContent = signed(seven, "CNY");
+  els.sevenProfit.className = classFor(seven);
+  els.sevenProfitRate.textContent = pct(cost ? seven / cost * 100 : NaN);
+  els.sevenProfitRate.className = classFor(seven);
+  els.updatedAt.textContent = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+
+  const kline = buildPortfolioSeries(holdings, histories, rates);
+  const line = buildIntradaySeries(holdings, intraday, rates);
+  renderTrendBlock(els.totalTrendValue, els.totalTrendChart, kline, "CNY");
+  renderLineBlock(els.totalIntradayValue, els.totalIntradayChart, line, "CNY");
+  els.totalTrendHint.textContent = `红涨绿跌 · ${kline.length} 个交易点`;
+}
+
+function renderMarketOverview(rows, histories, intraday, rates) {
+  els.marketOverview.innerHTML = marketOrder.map((market) => {
+    const selected = rows.filter((row) => row.market === market);
+    const currency = selected[0]?.currency || "CNY";
+    const cost = selected.reduce((total, row) => total + row.costValue, 0);
+    const value = selected.reduce((total, row) => total + row.marketValue, 0);
+    const pnl = value - cost;
+    const rate = cost ? pnl / cost * 100 : NaN;
+    const kline = buildPortfolioSeries(holdings, histories, rates, market);
+    const intradaySeries = buildIntradaySeries(holdings, intraday, rates, market);
     return `
       <article class="market-card">
-        <div class="market-card-head">
-          <span class="badge">${market}</span>
-          <span>${summary.count} 只持仓</span>
+        <div class="market-card-head"><span class="badge">${market}</span><span>${currency} 展示</span></div>
+        <div class="market-money">
+          <span>成本 <strong>${money(cost, currency)}</strong></span>
+          <span>市值 <strong>${money(value, currency)}</strong></span>
         </div>
-        <strong class="${classFor(summary.pnl)}">${signed(summary.pnl, "CNY")}</strong>
-        <small class="${classFor(summary.rate)}">${pct(summary.rate)}</small>
-        <div class="market-stats">
-          <span>市值 ${money(summary.value, "CNY")}</span>
-          <span>30天 ${Number.isFinite(delta) ? signed(delta, "CNY") : "--"}</span>
-        </div>
-        <div class="sparkline compact">${sparklineSvg(series)}</div>
+        <strong class="${classFor(pnl)}">${signed(pnl, currency)}</strong>
+        <small class="${classFor(rate)}">${pct(rate)}</small>
+        <div class="mini-title">30日盈亏K线</div>
+        <div class="sparkline compact">${candlestickSvg(kline, currency)}</div>
+        <div class="mini-title">当日24小时波动</div>
+        <div class="sparkline compact">${lineSvg(intradaySeries, currency)}</div>
       </article>
     `;
   }).join("");
 }
 
-function renderSummary(rows) {
-  const valid = rows.filter((row) => Number.isFinite(row.valueCny));
-  const totalCost = valid.reduce((sum, row) => sum + row.costCny, 0);
-  const totalValue = valid.reduce((sum, row) => sum + row.valueCny, 0);
-  const totalPnl = totalValue - totalCost;
-  const totalRate = totalCost ? (totalPnl / totalCost) * 100 : NaN;
+function sum(rows, key) {
+  return rows.reduce((total, row) => total + (Number.isFinite(row[key]) ? row[key] : 0), 0);
+}
 
-  els.totalProfit.textContent = signed(totalPnl, "CNY");
-  els.totalProfit.className = classFor(totalPnl);
-  els.totalProfitRate.textContent = pct(totalRate);
-  els.totalProfitRate.className = classFor(totalRate);
-  els.totalCost.textContent = money(totalCost, "CNY");
-  els.totalValue.textContent = money(totalValue, "CNY");
-  els.updatedAt.textContent = new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date());
+function renderTrendBlock(valueEl, chartEl, series, currency) {
+  const current = last(series);
+  const previous = series[0];
+  valueEl.textContent = current ? `${signed(current.close, currency)} · ${pct(current.rate)}` : "--";
+  valueEl.className = current ? classFor(current.close) : "neutral";
+  chartEl.innerHTML = candlestickSvg(series, currency);
+}
 
-  const missing = rows.length - valid.length;
-  els.status.textContent = missing
-    ? `已刷新，可计算 ${valid.length} 只；${missing} 只暂未取到实时价格，请核对代码或等待行情源恢复。`
-    : `已刷新 ${valid.length} 只持仓，顶部总盈亏已按人民币换算。`;
+function renderLineBlock(valueEl, chartEl, series, currency) {
+  const current = last(series);
+  const previous = series[0];
+  const delta = current && previous ? current.value - previous.value : NaN;
+  valueEl.textContent = current ? `${signed(current.value, currency)} · 日内 ${signed(delta, currency)}` : "--";
+  valueEl.className = classFor(delta);
+  chartEl.innerHTML = lineSvg(series, currency);
+}
+
+function candlestickSvg(series) {
+  if (!series.length) return '<div class="chart-empty">暂无历史K线</div>';
+  const width = 760, height = 190, pad = 16;
+  const highs = series.map((p) => p.high);
+  const lows = series.map((p) => p.low);
+  let min = Math.min(...lows), max = Math.max(...highs);
+  if (min === max) { min -= 1; max += 1; }
+  const step = (width - pad * 2) / series.length;
+  const y = (v) => height - pad - ((v - min) / (max - min)) * (height - pad * 2);
+  const candles = series.map((p, index) => {
+    const x = pad + index * step + step / 2;
+    const up = p.close >= p.open;
+    const cls = up ? "candle-up" : "candle-down";
+    const top = Math.min(y(p.open), y(p.close));
+    const body = Math.max(3, Math.abs(y(p.open) - y(p.close)));
+    return `<g class="${cls}"><line x1="${x}" x2="${x}" y1="${y(p.high)}" y2="${y(p.low)}"></line><rect x="${x - Math.max(2, step * 0.28)}" y="${top}" width="${Math.max(4, step * 0.56)}" height="${body}" rx="1"></rect></g>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="盈亏K线">${candles}</svg><div class="chart-axis"><span>${shortDate(series[0].date)}</span><span>${shortDate(last(series).date)}</span></div>`;
+}
+
+function lineSvg(series) {
+  if (!series.length) return '<div class="chart-empty">暂无日内数据</div>';
+  const width = 760, height = 130, pad = 14;
+  const values = series.map((p) => p.value);
+  let min = Math.min(...values), max = Math.max(...values);
+  if (min === max) { min -= 1; max += 1; }
+  const x = (i) => pad + i * (width - pad * 2) / Math.max(series.length - 1, 1);
+  const y = (v) => height - pad - ((v - min) / (max - min)) * (height - pad * 2);
+  const points = series.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const cls = last(series).value >= series[0].value ? "chart-up" : "chart-down";
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="当日波动"><polyline class="trend-line ${cls}" points="${points}"></polyline></svg><div class="chart-axis"><span>${series[0].key.slice(11)}</span><span>${last(series).key.slice(11)}</span></div>`;
+}
+
+function shortDate(date) {
+  const parts = date.split("-");
+  return `${parts[1]}/${parts[2]}`;
 }
 
 function renderTable(rows) {
-  const visible = currentMarket === "全部" ? rows : rows.filter((row) => row.market === currentMarket);
-
-  els.body.innerHTML = visible
-    .map((row) => {
-      const today = row.changePct;
-      return `
-        <tr>
-          <td><span class="badge">${row.market}</span></td>
-          <td>
-            <div class="stock-name">
-              <strong>${row.displayName}</strong>
-              <span>${row.code} · ${row.sina}</span>
-            </div>
-          </td>
-          <td>${money(row.cost, row.currency)}</td>
-          <td>${number(row.qty, 0)}</td>
-          <td>${money(row.price, row.currency)}</td>
-          <td>
-            <div class="buy-zone ${row.buyZone.tone}">
-              <strong>${Number.isFinite(row.buyZone.price) ? `≤ ${money(row.buyZone.price, row.currency)}` : "--"}</strong>
-              <span>${row.buyZone.label} · ${row.buyZone.text}</span>
-            </div>
-          </td>
-          <td>
-            <div class="sell-zone ${row.sellZone.tone}">
-              <strong>${Number.isFinite(row.sellZone.price) ? `≥ ${money(row.sellZone.price, row.currency)}` : "--"}</strong>
-              <span>${row.sellZone.label} · ${row.sellZone.text}</span>
-            </div>
-          </td>
-          <td>${money(row.marketValue, row.currency)}</td>
-          <td class="${classFor(row.pnl)}">${signed(row.pnl, row.currency)}</td>
-          <td class="${classFor(row.pnlRate)}">${pct(row.pnlRate)}</td>
-          <td class="${classFor(today)}">${pct(today)}</td>
-          <td>
-            <span class="action ${row.action.type}">${row.action.label}</span><br />
-            <span class="advice-detail">${row.action.text}</span>
-            <span class="advice-detail">仓位节奏：单次补仓不超过计划资金的 25%，优先等收盘价确认。</span>
-          </td>
-        </tr>
-      `;
-    })
-    .join("");
+  const sorted = [...rows].sort((a, b) => marketOrder.indexOf(a.market) - marketOrder.indexOf(b.market));
+  els.body.innerHTML = sorted.map((row) => `
+    <tr>
+      <td><span class="badge">${row.market}</span></td>
+      <td><div class="stock-name"><strong>${row.code}</strong><span>${row.name}</span></div></td>
+      <td>${money(row.cost, row.currency)}</td>
+      <td>${number(row.qty, 0)}</td>
+      <td>${money(row.price, row.currency)}</td>
+      <td><div class="buy-zone ${row.buyZone.tone}"><strong>≤ ${money(row.buyZone.price, row.currency)}</strong><span>${row.buyZone.label} · ${row.buyZone.text}</span></div></td>
+      <td><div class="sell-zone ${row.sellZone.tone}"><strong>≥ ${money(row.sellZone.price, row.currency)}</strong><span>${row.sellZone.label} · ${row.sellZone.text}</span></div></td>
+      <td class="${classFor(row.pnl)}">${signed(row.pnl, row.currency)}</td>
+      <td class="${classFor(row.pnlRate)}">${pct(row.pnlRate)}</td>
+      <td class="${classFor(row.todayPnl)}">${signed(row.todayPnl, row.currency)}</td>
+      <td class="${classFor(row.todayPnlRate)}">${pct(row.todayPnlRate)}</td>
+      <td class="${classFor(row.changePct)}">${pct(row.changePct)}</td>
+      <td><span class="action ${row.action.type}">${row.action.label}</span><span class="advice-detail">${row.action.text}</span></td>
+    </tr>
+  `).join("");
 }
 
-function renderRecommendations(rows) {
-  els.recommendations.innerHTML = rows
-    .map((row) => `
-      <article class="recommend-card">
-        <div class="recommend-top">
-          <span class="badge">${row.market}</span>
-          <span class="${classFor(row.changePct)}">${pct(row.changePct)}</span>
-        </div>
-        <h3>${row.name}</h3>
-        <p class="recommend-code">${row.code} · ${row.theme}</p>
-        <div class="recommend-price">${money(row.price, row.currency)}</div>
-        <dl>
-          <div>
-            <dt>关注逻辑</dt>
-            <dd>${row.reason}</dd>
-          </div>
-          <div>
-            <dt>触发条件</dt>
-            <dd>${row.trigger}</dd>
-          </div>
-          <div>
-            <dt>主要风险</dt>
-            <dd>${row.risk}</dd>
-          </div>
-        </dl>
-      </article>
-    `)
-    .join("");
+function renderWatchlist(quotes, histories) {
+  els.watchlistDate.textContent = `更新于 ${new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(new Date())} · AI算力、PCB、存储、半导体为主线`;
+  const rows = watchCandidates.map((item) => {
+    const quote = quotes.get(item.sina) || {};
+    const history = histories[item.sina] || [];
+    const price = quote.price || last(history)?.close || NaN;
+    const momentum = history.length >= 7 ? ((last(history).close - history[history.length - 7].close) / history[history.length - 7].close) * 100 : 0;
+    const heat = Math.max(55, Math.min(99, Math.round(item.baseHeat + momentum * 0.8)));
+    const targetPct = item.targetPct + Math.max(-0.02, Math.min(0.03, momentum / 500));
+    return { ...item, price, heat, target: Number.isFinite(price) ? price * (1 + targetPct) : NaN, momentum };
+  }).sort((a, b) => b.heat - a.heat).slice(0, 6);
+
+  els.recommendations.innerHTML = rows.map((row) => `
+    <article class="recommend-card">
+      <div class="recommend-top"><span class="badge">${row.market}</span><span class="heat">热度 ${row.heat}</span></div>
+      <h3>${row.name}</h3>
+      <p class="recommend-code">${row.code} · ${row.theme}</p>
+      <div class="recommend-price">${money(row.price, row.currency)}</div>
+      <dl>
+        <div><dt>7天目标价</dt><dd class="positive">${money(row.target, row.currency)}</dd></div>
+        <div><dt>推荐原因</dt><dd>${row.reason}</dd></div>
+        <div><dt>量化理由</dt><dd>近30日动量 ${pct(row.momentum)}，主题热度 ${row.heat}/100；若跌破5日低点，观察结论自动降级。</dd></div>
+      </dl>
+    </article>
+  `).join("");
 }
 
 async function refresh() {
   els.refresh.disabled = true;
-  els.status.textContent = "正在连接实时行情...";
-
+  els.status.textContent = "正在连接实时行情、历史K线和日内波动...";
   try {
-    const [quotes, rates, histories] = await Promise.all([fetchQuotes(), fetchRates(), fetchHistory()]);
-    latestRows = buildRows(quotes, rates);
-    renderSummary(latestRows);
-    renderTotalTrend(buildTrendSeries(histories, rates));
-    renderMarketOverview(latestRows, histories, rates);
-    renderTable(latestRows);
-    renderRecommendations(buildRecommendationRows(quotes));
+    const [quotes, rates, histories, intraday] = await Promise.all([fetchQuotes(), fetchRates(), fetchHistory(), fetchIntraday()]);
+    const rows = buildRows(quotes, histories, rates);
+    renderSummary(rows, histories, intraday, rates);
+    renderMarketOverview(rows, histories, intraday, rates);
+    renderTable(rows);
+    renderWatchlist(quotes, histories);
+    const missing = rows.filter((row) => !Number.isFinite(row.price)).length;
+    els.status.textContent = missing ? `已刷新，${missing} 只股票暂未取到实时价。` : "已刷新：实时价格、30日K线、当日波动均已更新。";
   } catch (error) {
-    els.status.textContent = `行情刷新失败：${error.message}。请检查网络，或稍后再打开页面。`;
-    latestRows = buildRows(new Map(), { CNY: 1, USD: 7.22, HKD: 0.92 });
-    renderSummary(latestRows);
-    renderTotalTrend([]);
-    renderMarketOverview(latestRows, {}, { CNY: 1, USD: 7.22, HKD: 0.92 });
-    renderTable(latestRows);
-    renderRecommendations(buildRecommendationRows(new Map()));
+    els.status.textContent = `刷新失败：${error.message}`;
   } finally {
     els.refresh.disabled = false;
   }
 }
 
 function renderFileMode() {
-  latestRows = buildRows(new Map(), { CNY: 1, USD: 7.22, HKD: 0.92 });
-  renderTotalTrend([]);
-  renderMarketOverview(latestRows, {}, { CNY: 1, USD: 7.22, HKD: 0.92 });
-  renderTable(latestRows);
-  renderRecommendations(buildRecommendationRows(new Map()));
-
-  els.totalProfit.textContent = "--";
-  els.totalProfit.className = "neutral";
-  els.totalProfitRate.textContent = "等待本地网站";
-  els.totalProfitRate.className = "neutral";
-  els.totalCost.textContent = "--";
-  els.totalValue.textContent = "--";
-  els.updatedAt.textContent = "--";
-  els.refresh.disabled = true;
-  els.status.innerHTML = `
-    当前打开的是文件入口，实时行情需要从本地网站进入。
-    <a class="status-link" href="${serviceUrl}">点这里打开实时版</a>
-    <span class="status-note">正在自动跳转...</span>
-  `;
-
-  window.setTimeout(() => {
-    window.location.replace(serviceUrl);
-  }, 900);
-}
-
-async function guideFileMode() {
-  if (location.protocol !== "file:") return;
-
-  try {
-    const response = await fetch(localUrl, { method: "HEAD", cache: "no-store" });
-    if (response.ok) {
-      els.status.innerHTML = `当前是文件模式，实时行情可能被拦截。<a href="${localUrl}">点这里用本地网站打开</a>。`;
-    }
-  } catch {
-    els.status.textContent = "当前是文件模式，实时行情可能拿不到。请双击“打开网站.command”启动本地网站。";
-  }
+  els.status.innerHTML = `当前打开的是文件入口，实时行情需要从本地网站进入。<a class="status-link" href="${serviceUrl}">打开实时版</a>`;
+  window.setTimeout(() => window.location.replace(serviceUrl), 900);
 }
 
 els.refresh.addEventListener("click", refresh);
-els.tabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    els.tabs.forEach((item) => item.classList.remove("active"));
-    tab.classList.add("active");
-    currentMarket = tab.dataset.market;
-    renderTable(latestRows);
-  });
-});
 
 if (location.protocol === "file:") {
   renderFileMode();
 } else {
-  guideFileMode();
   refresh();
   setInterval(refresh, 60 * 1000);
 }
