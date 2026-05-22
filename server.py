@@ -3,6 +3,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import json
 import os
@@ -198,10 +199,16 @@ def handle_history(symbols, days):
     days = max(5, min(days, 60))
     histories = {}
 
-    for symbol in safe_symbols:
-        series = fetch_history_for_symbol(symbol, days)
-        if series:
-            histories[symbol] = series
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(fetch_history_for_symbol, symbol, days): symbol for symbol in safe_symbols}
+        for future in as_completed(futures):
+            symbol = futures[future]
+            try:
+                series = future.result()
+                if series:
+                    histories[symbol] = series
+            except Exception:
+                continue
 
     return {"histories": histories, "days": days}
 
@@ -214,13 +221,16 @@ def handle_intraday(symbols):
     ]
     intraday = {}
 
-    for symbol in safe_symbols:
-        try:
-            series = fetch_yahoo_history(symbol, 96, range_value="1d", interval="5m")
-            if series:
-                intraday[symbol] = series
-        except Exception:
-            continue
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(fetch_yahoo_history, symbol, 96, "1d", "5m"): symbol for symbol in safe_symbols}
+        for future in as_completed(futures):
+            symbol = futures[future]
+            try:
+                series = future.result()
+                if series:
+                    intraday[symbol] = series
+            except Exception:
+                continue
 
     return {"intraday": intraday}
 

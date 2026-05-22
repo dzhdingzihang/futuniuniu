@@ -104,7 +104,7 @@ async function fetchRates() {
 }
 
 async function fetchHistory() {
-  const symbols = [...new Set([...holdings, ...watchCandidates].map((item) => item.sina))].join(",");
+  const symbols = [...new Set(holdings.map((item) => item.sina))].join(",");
   const payload = await getJson(`/api/history?symbols=${encodeURIComponent(symbols)}&days=30`, { histories: {} });
   return payload.histories || {};
 }
@@ -418,13 +418,21 @@ function renderWatchlist(quotes, histories) {
 
 async function refresh() {
   els.refresh.disabled = true;
-  els.status.textContent = "正在连接实时行情、历史K线和日内波动...";
+  els.status.textContent = "正在连接实时行情...";
   try {
-    const [quotes, rates, histories, intraday] = await Promise.all([fetchQuotes(), fetchRates(), fetchHistory(), fetchIntraday()]);
-    const rows = buildRows(quotes, histories, rates);
-    renderSummary(rows, histories, intraday, rates);
-    renderMarketOverview(rows, histories, intraday, rates);
+    const [quotes, rates] = await Promise.all([fetchQuotes(), fetchRates()]);
+    const rows = buildRows(quotes, {}, rates);
+    renderSummary(rows, {}, {}, rates);
+    renderMarketOverview(rows, {}, {}, rates);
     renderTable(rows);
+    renderWatchlist(quotes, {});
+    els.status.textContent = "实时盈亏已刷新，正在补充30日K线和日内波动...";
+
+    const [histories, intraday] = await Promise.all([fetchHistory(), fetchIntraday()]);
+    const rowsWithHistory = buildRows(quotes, histories, rates);
+    renderSummary(rowsWithHistory, histories, intraday, rates);
+    renderMarketOverview(rowsWithHistory, histories, intraday, rates);
+    renderTable(rowsWithHistory);
     renderWatchlist(quotes, histories);
     const missing = rows.filter((row) => !Number.isFinite(row.price)).length;
     els.status.textContent = missing ? `已刷新，${missing} 只股票暂未取到实时价。` : "已刷新：实时价格、30日K线、当日波动均已更新。";
