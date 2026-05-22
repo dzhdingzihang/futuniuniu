@@ -41,6 +41,23 @@
         </div>
       </section>
 
+      <section class="trend-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">30-Day Trend</p>
+            <h2>整体盈亏走势图</h2>
+          </div>
+          <span id="totalTrendHint">按当前汇率折算人民币</span>
+        </div>
+        <div class="chart-card wide">
+          <div class="chart-meta">
+            <span>近 30 个交易日</span>
+            <strong id="totalTrendValue">--</strong>
+          </div>
+          <div class="sparkline large" id="totalTrendChart"></div>
+        </div>
+      </section>
+
       <section class="status-band" id="statusBand">
         正在连接实时行情...
       </section>
@@ -51,6 +68,8 @@
         <button class="tab" type="button" data-market="港股">港股</button>
         <button class="tab" type="button" data-market="A股">A股</button>
       </section>
+
+      <section class="market-overview" id="marketOverview"></section>
 
       <section class="table-wrap">
         <table>

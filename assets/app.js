@@ -99,6 +99,10 @@ const els = {
   totalValue: document.querySelector("#totalValue"),
   updatedAt: document.querySelector("#updatedAt"),
   status: document.querySelector("#statusBand"),
+  totalTrendValue: document.querySelector("#totalTrendValue"),
+  totalTrendChart: document.querySelector("#totalTrendChart"),
+  totalTrendHint: document.querySelector("#totalTrendHint"),
+  marketOverview: document.querySelector("#marketOverview"),
   recommendations: document.querySelector("#recommendationsBody"),
   tabs: document.querySelectorAll(".tab"),
 };
@@ -161,6 +165,18 @@ async function fetchQuotes() {
   });
 
   return map;
+}
+
+async function fetchHistory() {
+  const symbols = [...new Set(holdings.map((item) => item.sina))].join(",");
+  try {
+    const response = await fetch(`/api/history?symbols=${encodeURIComponent(symbols)}&days=30`, { cache: "no-store" });
+    if (!response.ok) throw new Error("历史行情接口不可用");
+    const payload = await response.json();
+    return payload.histories || {};
+  } catch {
+    return {};
+  }
 }
 
 function buyZoneFor(row) {
@@ -364,6 +380,151 @@ function buildRecommendationRows(quotes) {
   });
 }
 
+function holdingCostCny(item, rates) {
+  return item.cost * item.qty * (rates[item.currency] || 1);
+}
+
+function buildTrendSeries(histories, rates, market = "全部") {
+  const selected = market === "全部" ? holdings : holdings.filter((item) => item.market === market);
+  const dateSet = new Set();
+
+  selected.forEach((item) => {
+    (histories[item.sina] || []).forEach((point) => dateSet.add(point.date));
+  });
+
+  const dates = [...dateSet].sort().slice(-30);
+  if (!dates.length) return [];
+
+  return dates.map((date) => {
+    let pnl = 0;
+    let cost = 0;
+    let included = 0;
+
+    selected.forEach((item) => {
+      const series = histories[item.sina] || [];
+      const point = lastPointOnOrBefore(series, date);
+      if (!point) return;
+
+      const rate = rates[item.currency] || 1;
+      const itemCost = item.cost * item.qty;
+      pnl += (point.close * item.qty - itemCost) * rate;
+      cost += itemCost * rate;
+      included += 1;
+    });
+
+    return {
+      date,
+      pnl,
+      cost,
+      included,
+      rate: cost ? (pnl / cost) * 100 : NaN,
+    };
+  }).filter((point) => point.included > 0);
+}
+
+function lastPointOnOrBefore(series, date) {
+  let matched = null;
+  for (const point of series) {
+    if (point.date <= date) matched = point;
+    if (point.date > date) break;
+  }
+  return matched;
+}
+
+function sparklineSvg(series) {
+  if (!series.length) {
+    return '<div class="chart-empty">暂无历史数据</div>';
+  }
+
+  const width = 720;
+  const height = 170;
+  const pad = 12;
+  const values = series.map((point) => point.pnl);
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+
+  const xFor = (index) => pad + (index * (width - pad * 2)) / Math.max(series.length - 1, 1);
+  const yFor = (value) => height - pad - ((value - min) * (height - pad * 2)) / (max - min);
+  const points = series.map((point, index) => `${xFor(index).toFixed(1)},${yFor(point.pnl).toFixed(1)}`).join(" ");
+  const zeroY = min < 0 && max > 0 ? yFor(0) : null;
+  const last = series[series.length - 1];
+  const first = series[0];
+  const trendClass = last.pnl >= first.pnl ? "chart-up" : "chart-down";
+
+  return `
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="30 天盈亏走势">
+      ${zeroY ? `<line class="zero-line" x1="${pad}" x2="${width - pad}" y1="${zeroY.toFixed(1)}" y2="${zeroY.toFixed(1)}"></line>` : ""}
+      <polyline class="trend-line ${trendClass}" points="${points}"></polyline>
+      <circle class="${trendClass}" cx="${xFor(series.length - 1).toFixed(1)}" cy="${yFor(last.pnl).toFixed(1)}" r="4"></circle>
+    </svg>
+    <div class="chart-axis">
+      <span>${formatDateShort(first.date)}</span>
+      <span>${formatDateShort(last.date)}</span>
+    </div>
+  `;
+}
+
+function formatDateShort(date) {
+  const [, month, day] = date.split("-");
+  return `${month}/${day}`;
+}
+
+function renderTotalTrend(series) {
+  const last = series[series.length - 1];
+  const first = series[0];
+  els.totalTrendValue.textContent = last ? `${signed(last.pnl, "CNY")} · ${pct(last.rate)}` : "--";
+  els.totalTrendValue.className = last ? classFor(last.pnl) : "neutral";
+  els.totalTrendHint.textContent = last && first
+    ? `区间变化 ${signed(last.pnl - first.pnl, "CNY")}`
+    : "按当前汇率折算人民币";
+  els.totalTrendChart.innerHTML = sparklineSvg(series);
+}
+
+function marketSummary(rows, market) {
+  const selected = rows.filter((row) => row.market === market && Number.isFinite(row.valueCny));
+  const cost = selected.reduce((sum, row) => sum + row.costCny, 0);
+  const value = selected.reduce((sum, row) => sum + row.valueCny, 0);
+  const pnl = value - cost;
+  return {
+    cost,
+    value,
+    pnl,
+    rate: cost ? (pnl / cost) * 100 : NaN,
+    count: selected.length,
+  };
+}
+
+function renderMarketOverview(rows, histories, rates) {
+  const markets = ["美股", "港股", "A股"];
+  els.marketOverview.innerHTML = markets.map((market) => {
+    const summary = marketSummary(rows, market);
+    const series = buildTrendSeries(histories, rates, market);
+    const last = series[series.length - 1];
+    const first = series[0];
+    const delta = last && first ? last.pnl - first.pnl : NaN;
+
+    return `
+      <article class="market-card">
+        <div class="market-card-head">
+          <span class="badge">${market}</span>
+          <span>${summary.count} 只持仓</span>
+        </div>
+        <strong class="${classFor(summary.pnl)}">${signed(summary.pnl, "CNY")}</strong>
+        <small class="${classFor(summary.rate)}">${pct(summary.rate)}</small>
+        <div class="market-stats">
+          <span>市值 ${money(summary.value, "CNY")}</span>
+          <span>30天 ${Number.isFinite(delta) ? signed(delta, "CNY") : "--"}</span>
+        </div>
+        <div class="sparkline compact">${sparklineSvg(series)}</div>
+      </article>
+    `;
+  }).join("");
+}
+
 function renderSummary(rows) {
   const valid = rows.filter((row) => Number.isFinite(row.valueCny));
   const totalCost = valid.reduce((sum, row) => sum + row.costCny, 0);
@@ -471,15 +632,19 @@ async function refresh() {
   els.status.textContent = "正在连接实时行情...";
 
   try {
-    const [quotes, rates] = await Promise.all([fetchQuotes(), fetchRates()]);
+    const [quotes, rates, histories] = await Promise.all([fetchQuotes(), fetchRates(), fetchHistory()]);
     latestRows = buildRows(quotes, rates);
     renderSummary(latestRows);
+    renderTotalTrend(buildTrendSeries(histories, rates));
+    renderMarketOverview(latestRows, histories, rates);
     renderTable(latestRows);
     renderRecommendations(buildRecommendationRows(quotes));
   } catch (error) {
     els.status.textContent = `行情刷新失败：${error.message}。请检查网络，或稍后再打开页面。`;
     latestRows = buildRows(new Map(), { CNY: 1, USD: 7.22, HKD: 0.92 });
     renderSummary(latestRows);
+    renderTotalTrend([]);
+    renderMarketOverview(latestRows, {}, { CNY: 1, USD: 7.22, HKD: 0.92 });
     renderTable(latestRows);
     renderRecommendations(buildRecommendationRows(new Map()));
   } finally {
@@ -489,6 +654,8 @@ async function refresh() {
 
 function renderFileMode() {
   latestRows = buildRows(new Map(), { CNY: 1, USD: 7.22, HKD: 0.92 });
+  renderTotalTrend([]);
+  renderMarketOverview(latestRows, {}, { CNY: 1, USD: 7.22, HKD: 0.92 });
   renderTable(latestRows);
   renderRecommendations(buildRecommendationRows(new Map()));
 

@@ -3,6 +3,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 import base64
+from datetime import datetime
 import json
 import os
 import re
@@ -11,6 +12,12 @@ import sys
 
 ROOT = Path(__file__).resolve().parent
 SINA_URL = "https://hq.sinajs.cn/list={symbols}"
+EASTMONEY_KLINE_URL = (
+    "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+    "?secid={secid}&fields1=f1,f2,f3,f4,f5&fields2=f51,f52,f53,f54,f55"
+    "&klt=101&fqt=1&end=20500101&lmt={limit}"
+)
+YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=2mo&interval=1d"
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Referer": "https://finance.sina.com.cn/",
@@ -22,6 +29,12 @@ def fetch_text(url, timeout=10):
     request = Request(url, headers=HEADERS)
     with urlopen(request, timeout=timeout) as response:
         return response.read().decode("gb18030", errors="ignore")
+
+
+def fetch_json(url, timeout=10):
+    request = Request(url, headers=HEADERS)
+    with urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8", errors="ignore"))
 
 
 def to_float(parts, index):
@@ -78,6 +91,108 @@ def handle_quotes(symbols):
             quotes[symbol] = quote
 
     return {"quotes": quotes}
+
+
+def eastmoney_secids(symbol):
+    if symbol.startswith("sh"):
+        return [f"1.{symbol[2:]}"]
+    if symbol.startswith("sz"):
+        return [f"0.{symbol[2:]}"]
+    if symbol.startswith("hk"):
+        return [f"116.{symbol[2:]}"]
+    if symbol.startswith("gb_"):
+        code = symbol[3:].upper()
+        return [f"105.{code}", f"106.{code}", f"107.{code}"]
+    return []
+
+
+def yahoo_symbol(symbol):
+    if symbol.startswith("sh"):
+        return f"{symbol[2:]}.SS"
+    if symbol.startswith("sz"):
+        return f"{symbol[2:]}.SZ"
+    if symbol.startswith("hk"):
+        return f"{symbol[2:].lstrip('0').zfill(4)}.HK"
+    if symbol.startswith("gb_"):
+        return symbol[3:].upper()
+    return None
+
+
+def parse_yahoo_payload(payload):
+    result = (payload.get("chart", {}).get("result") or [None])[0]
+    if not result:
+        return []
+
+    timestamps = result.get("timestamp") or []
+    quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+    closes = quote.get("close") or []
+    series = []
+
+    for ts, close in zip(timestamps, closes):
+        if not close or close <= 0:
+            continue
+        date = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+        series.append({"date": date, "close": close})
+
+    return series
+
+
+def fetch_yahoo_history(symbol, days):
+    mapped = yahoo_symbol(symbol)
+    if not mapped:
+        return []
+    payload = fetch_json(YAHOO_CHART_URL.format(symbol=mapped), timeout=8)
+    return parse_yahoo_payload(payload)[-days:]
+
+
+def parse_kline_payload(payload):
+    klines = payload.get("data", {}).get("klines") or []
+    series = []
+    for line in klines:
+        parts = line.split(",")
+        if len(parts) < 3:
+            continue
+        close = to_float(parts, 2)
+        if close and close > 0:
+            series.append({"date": parts[0], "close": close})
+    return series
+
+
+def fetch_history_for_symbol(symbol, days):
+    try:
+        series = fetch_yahoo_history(symbol, days)
+        if series:
+            return series
+    except Exception:
+        pass
+
+    limit = max(days + 10, 45)
+    for secid in eastmoney_secids(symbol):
+        try:
+            payload = fetch_json(EASTMONEY_KLINE_URL.format(secid=secid, limit=limit), timeout=8)
+            series = parse_kline_payload(payload)
+            if series:
+                return series[-days:]
+        except Exception:
+            continue
+    return []
+
+
+def handle_history(symbols, days):
+    safe_symbols = [
+        symbol
+        for symbol in symbols.split(",")
+        if re.fullmatch(r"(sh|sz|hk|gb_)[A-Za-z0-9_]+", symbol)
+    ]
+    days = max(5, min(days, 60))
+    histories = {}
+
+    for symbol in safe_symbols:
+        series = fetch_history_for_symbol(symbol, days)
+        if series:
+            histories[symbol] = series
+
+    return {"histories": histories, "days": days}
 
 
 def handle_rates():
@@ -154,6 +269,19 @@ class Handler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/rates":
             self.send_json(handle_rates())
+            return
+
+        if parsed.path == "/api/history":
+            symbols = parse_qs(parsed.query).get("symbols", [""])[0]
+            raw_days = parse_qs(parsed.query).get("days", ["30"])[0]
+            try:
+                days = int(raw_days)
+            except ValueError:
+                days = 30
+            try:
+                self.send_json(handle_history(symbols, days))
+            except Exception as error:
+                self.send_json({"histories": {}, "error": str(error)}, 502)
             return
 
         super().do_GET()
