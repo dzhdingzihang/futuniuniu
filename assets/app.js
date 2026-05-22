@@ -43,6 +43,7 @@ const els = {
   todayProfitRate: document.querySelector("#todayProfitRate"),
   sevenProfit: document.querySelector("#sevenProfit"),
   sevenProfitRate: document.querySelector("#sevenProfitRate"),
+  sevenProfitRange: document.querySelector("#sevenProfitRange"),
   updatedAt: document.querySelector("#updatedAt"),
   status: document.querySelector("#statusBand"),
   totalTrendValue: document.querySelector("#totalTrendValue"),
@@ -132,6 +133,7 @@ function buildRows(quotes, histories, rates) {
     const pnl = marketValue - costValue;
     const todayPnl = (quote?.change || 0) * item.qty;
     const sevenPoint = history[Math.max(0, history.length - 8)];
+    const latestPoint = last(history);
     const sevenPnl = sevenPoint ? (price - sevenPoint.close) * item.qty : NaN;
     const row = {
       ...item,
@@ -145,6 +147,8 @@ function buildRows(quotes, histories, rates) {
       todayPnl,
       todayPnlRate: price ? ((quote?.change || 0) / (price - (quote?.change || 0))) * 100 : NaN,
       sevenPnl,
+      sevenStartDate: sevenPoint?.date || "",
+      sevenEndDate: latestPoint?.date || quote?.date || "",
       costCny: costValue * rate,
       valueCny: marketValue * rate,
       pnlCny: pnl * rate,
@@ -225,20 +229,28 @@ function buildPortfolioSeries(items, histories, rates, market = null) {
 
 function buildIntradaySeries(items, intraday, rates, market = null) {
   const selected = market ? items.filter((item) => item.market === market) : items;
-  const keys = [...new Set(selected.flatMap((item) => (intraday[item.sina] || []).map((p) => `${p.date} ${p.time}`)))].sort();
-  return keys.map((key) => {
+  const dates = selected.flatMap((item) => (intraday[item.sina] || []).map((p) => p.date)).sort();
+  const date = last(dates);
+  if (!date) return [];
+  const keys = [...new Set(selected.flatMap((item) => (intraday[item.sina] || [])
+    .filter((p) => p.date === date)
+    .map((p) => `${p.date} ${p.time}`)))].sort();
+  const series = keys.map((key) => {
     let value = 0, firstValue = 0, included = 0;
     selected.forEach((item) => {
-      const point = pointOnOrBeforeTime(intraday[item.sina] || [], key);
+      const daySeries = (intraday[item.sina] || []).filter((p) => p.date === date);
+      const point = pointOnOrBeforeTime(daySeries, key);
       if (!point) return;
-      const firstPoint = (intraday[item.sina] || [])[0];
+      const firstPoint = daySeries[0];
       const fx = rates[item.currency] || 1;
       value += point.close * item.qty * fx;
       firstValue += (firstPoint?.close || point.close) * item.qty * fx;
       included += 1;
     });
     return { key, value: value - firstValue, included };
-  }).filter((p) => p.included > 0).slice(-96);
+  }).filter((p) => p.included > 0);
+  if (!series.length) return [];
+  return [{ key: `${date} 00:00`, value: 0, included: series[0].included }, ...series];
 }
 
 function pointOnOrBefore(series, date) {
@@ -280,6 +292,7 @@ function renderSummary(rows, histories, intraday, rates) {
   els.sevenProfit.className = classFor(seven);
   els.sevenProfitRate.textContent = pct(cost ? seven / cost * 100 : NaN);
   els.sevenProfitRate.className = classFor(seven);
+  els.sevenProfitRange.textContent = sevenRangeLabel(rows);
   els.updatedAt.textContent = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
 
   const kline = buildPortfolioSeries(holdings, histories, rates);
@@ -297,6 +310,8 @@ function renderMarketOverview(rows, histories, intraday, rates) {
     const value = selected.reduce((total, row) => total + row.marketValue, 0);
     const pnl = value - cost;
     const rate = cost ? pnl / cost * 100 : NaN;
+    const today = selected.reduce((total, row) => total + (Number.isFinite(row.todayPnl) ? row.todayPnl : 0), 0);
+    const todayRate = value - today ? today / (value - today) * 100 : NaN;
     const kline = buildPortfolioSeries(holdings, histories, rates, market);
     const intradaySeries = buildIntradaySeries(holdings, intraday, rates, market);
     return `
@@ -305,6 +320,11 @@ function renderMarketOverview(rows, histories, intraday, rates) {
         <div class="market-money">
           <span>成本 <strong>${money(cost, currency)}</strong></span>
           <span>市值 <strong>${money(value, currency)}</strong></span>
+        </div>
+        <div class="market-today">
+          <span>今日盈亏</span>
+          <strong class="${classFor(today)}">${signed(today, currency)}</strong>
+          <small class="${classFor(todayRate)}">${pct(todayRate)}</small>
         </div>
         <strong class="${classFor(pnl)}">${signed(pnl, currency)}</strong>
         <small class="${classFor(rate)}">${pct(rate)}</small>
@@ -321,6 +341,13 @@ function sum(rows, key) {
   return rows.reduce((total, row) => total + (Number.isFinite(row[key]) ? row[key] : 0), 0);
 }
 
+function sevenRangeLabel(rows) {
+  const starts = rows.map((row) => row.sevenStartDate).filter(Boolean).sort();
+  const ends = rows.map((row) => row.sevenEndDate).filter(Boolean).sort();
+  if (!starts.length || !ends.length) return "等待30日历史数据";
+  return `${shortDate(starts[0])} 至 ${shortDate(last(ends))} · 最近7个交易日`;
+}
+
 function renderTrendBlock(valueEl, chartEl, series, currency) {
   const current = last(series);
   const previous = series[0];
@@ -331,10 +358,8 @@ function renderTrendBlock(valueEl, chartEl, series, currency) {
 
 function renderLineBlock(valueEl, chartEl, series, currency) {
   const current = last(series);
-  const previous = series[0];
-  const delta = current && previous ? current.value - previous.value : NaN;
-  valueEl.textContent = current ? `${signed(current.value, currency)} · 日内 ${signed(delta, currency)}` : "--";
-  valueEl.className = classFor(delta);
+  valueEl.textContent = current ? `${signed(current.value, currency)} · 今日波动` : "--";
+  valueEl.className = classFor(current?.value);
   chartEl.innerHTML = lineSvg(series, currency);
 }
 
@@ -367,33 +392,31 @@ function lineSvg(series) {
   if (!series.length) return '<div class="chart-empty">暂无日内数据</div>';
   const width = 760, height = 150, padL = 74, padR = 18, padT = 16, padB = 28;
   const values = series.map((p) => p.value);
-  let min = Math.min(...values), max = Math.max(...values);
+  let min = Math.min(...values, 0), max = Math.max(...values, 0);
   if (min === max) { min -= 1; max += 1; }
-  const x = (i) => padL + i * (width - padL - padR) / Math.max(series.length - 1, 1);
+  const plotW = width - padL - padR;
+  const x = (point) => padL + Math.max(0, Math.min(24, hourValue(point.key))) / 24 * plotW;
   const y = (v) => padT + (1 - ((v - min) / (max - min))) * (height - padT - padB);
-  const points = series.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
-  const cls = last(series).value >= series[0].value ? "chart-up" : "chart-down";
+  const points = series.map((p) => `${x(p).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const cls = last(series).value >= 0 ? "chart-up" : "chart-down";
   const ticks = [max, (max + min) / 2, min];
   const grid = ticks.map((tick) => `<g><line class="axis-grid" x1="${padL}" x2="${width - padR}" y1="${y(tick)}" y2="${y(tick)}"></line><text class="axis-label" x="8" y="${y(tick) + 4}">${compactMoney(tick)}</text></g>`).join("");
-  const hourLabels = hourTicks(series, padL, width - padR);
-  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="当日盈亏波动">${grid}<line class="axis-line" x1="${padL}" x2="${padL}" y1="${padT}" y2="${height - padB}"></line><line class="axis-line" x1="${padL}" x2="${width - padR}" y1="${height - padB}" y2="${height - padB}"></line><polyline class="trend-line ${cls}" points="${points}"></polyline>${hourLabels.map((tick) => `<text class="axis-label hour-label" x="${tick.x}" y="${height - 6}">${tick.label}</text>`).join("")}</svg>`;
+  const zero = `<line class="zero-axis subtle" x1="${padL}" x2="${width - padR}" y1="${y(0)}" y2="${y(0)}"></line>`;
+  const hourLabels = hourTicks(padL, width - padR);
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="当日盈亏波动">${grid}${zero}<line class="axis-line" x1="${padL}" x2="${padL}" y1="${padT}" y2="${height - padB}"></line><line class="axis-line" x1="${padL}" x2="${width - padR}" y1="${height - padB}" y2="${height - padB}"></line><polyline class="trend-line ${cls}" points="${points}"></polyline>${hourLabels.map((tick) => `<text class="axis-label hour-label" x="${tick.x}" y="${height - 6}">${tick.label}</text>`).join("")}</svg>`;
 }
 
-function hourTicks(series, left, right) {
-  const labels = [];
-  const seen = new Set();
-  series.forEach((point, index) => {
-    const hour = point.key.slice(11, 13);
-    if (seen.has(hour) || !point.key.endsWith(":00")) return;
-    seen.add(hour);
-    const x = left + index * (right - left) / Math.max(series.length - 1, 1);
-    labels.push({ x: Math.min(right - 22, Math.max(left, x)), label: `${Number(hour)}点` });
-  });
-  if (!labels.length && series.length) {
-    labels.push({ x: left, label: series[0].key.slice(11) });
-    labels.push({ x: right - 34, label: last(series).key.slice(11) });
-  }
-  return labels;
+function hourValue(key) {
+  const time = key.slice(11);
+  const [hour, minute] = time.split(":").map(Number);
+  return (Number.isFinite(hour) ? hour : 0) + (Number.isFinite(minute) ? minute / 60 : 0);
+}
+
+function hourTicks(left, right) {
+  return [0, 4, 8, 12, 16, 20, 24].map((hour) => ({
+    x: left + hour / 24 * (right - left),
+    label: `${hour}点`,
+  }));
 }
 
 function shortDate(date) {
