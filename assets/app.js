@@ -1,25 +1,6 @@
 const marketOrder = ["港股", "A股", "美股"];
 
-const holdings = [
-  { market: "美股", code: "COHX", name: "COHX", cost: 60, qty: 10, currency: "USD", sina: "gb_cohx" },
-  { market: "美股", code: "DRAM", name: "DRAM", cost: 55, qty: 160, currency: "USD", sina: "gb_dram" },
-  { market: "美股", code: "GLW", name: "康宁", cost: 179, qty: 14, currency: "USD", sina: "gb_glw" },
-  { market: "美股", code: "LITX", name: "LITX", cost: 59.5, qty: 10, currency: "USD", sina: "gb_litx" },
-  { market: "美股", code: "TSLL", name: "TSLL", cost: 15.5, qty: 100, currency: "USD", sina: "gb_tsll" },
-  { market: "港股", code: "00763", name: "中兴通讯", cost: 30.5, qty: 800, currency: "HKD", sina: "hk00763" },
-  { market: "港股", code: "01024", name: "快手-W", cost: 46, qty: 300, currency: "HKD", sina: "hk01024" },
-  { market: "港股", code: "01810", name: "小米集团-W", cost: 43.5, qty: 600, currency: "HKD", sina: "hk01810" },
-  { market: "港股", code: "02208", name: "金风科技", cost: 16.9, qty: 1600, currency: "HKD", sina: "hk02208" },
-  { market: "港股", code: "07709", name: "07709", cost: 90, qty: 800, currency: "HKD", sina: "hk07709" },
-  { market: "A股", code: "002217", name: "合力泰", cost: 3.6, qty: 3000, currency: "CNY", sina: "sz002217" },
-  { market: "A股", code: "300053", name: "航宇微", cost: 20.8, qty: 800, currency: "CNY", sina: "sz300053" },
-  { market: "A股", code: "300067", name: "安诺其", cost: 7.8, qty: 800, currency: "CNY", sina: "sz300067" },
-  { market: "A股", code: "002639", name: "雪人集团", cost: 21.8, qty: 600, currency: "CNY", sina: "sz002639" },
-  { market: "A股", code: "001896", name: "豫能控股", cost: 14.5, qty: 200, currency: "CNY", sina: "sz001896" },
-  { market: "A股", code: "600869", name: "远东股份", cost: 22, qty: 200, currency: "CNY", sina: "sh600869" },
-  { market: "A股", code: "300820", name: "英杰电气", cost: 58.5, qty: 100, currency: "CNY", sina: "sz300820" },
-  { market: "A股", code: "601138", name: "工业富联", cost: 55.8, qty: 100, currency: "CNY", sina: "sh601138" },
-];
+let holdings = [];
 
 const watchCandidates = [
   { market: "美股", code: "NVDA", name: "英伟达", currency: "USD", sina: "gb_nvda", theme: "AI GPU", baseHeat: 94, targetPct: 0.09, reason: "AI芯片仍是全球科技股定价锚，算力资本开支主线明确。" },
@@ -96,6 +77,25 @@ async function getJson(url, fallback) {
     return await response.json();
   } catch {
     return fallback;
+  }
+}
+
+async function loadHoldings() {
+  const data = await getJson("/holdings.json", []);
+  if (!Array.isArray(data) || !data.length) {
+    throw new Error("持仓数据表为空或格式不正确");
+  }
+  holdings = data.map((item) => ({
+    market: String(item.market || "").trim(),
+    code: String(item.code || "").trim(),
+    name: String(item.name || item.code || "").trim(),
+    cost: Number(item.cost),
+    qty: Number(item.qty),
+    currency: String(item.currency || "").trim().toUpperCase(),
+    sina: String(item.sina || "").trim().toLowerCase(),
+  })).filter((item) => item.market && item.code && item.currency && item.sina && Number.isFinite(item.cost) && Number.isFinite(item.qty));
+  if (!holdings.length) {
+    throw new Error("持仓数据表没有可用股票，请检查 market/code/cost/qty/currency/sina");
   }
 }
 
@@ -534,6 +534,13 @@ els.tabs.forEach((tab) => {
 if (location.protocol === "file:") {
   renderFileMode();
 } else {
-  refresh();
-  setInterval(refresh, 60 * 1000);
+  loadHoldings()
+    .then(() => {
+      refresh();
+      setInterval(refresh, 60 * 1000);
+    })
+    .catch((error) => {
+      els.refresh.disabled = true;
+      els.status.textContent = `持仓数据读取失败：${error.message}`;
+    });
 }
