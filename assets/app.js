@@ -59,6 +59,9 @@ const els = {
 const serviceUrl = "http://127.0.0.1:8787/";
 let currentMarket = "港股";
 let latestRows = [];
+let latestHistories = {};
+let latestIntraday = {};
+let latestRates = {};
 
 function money(value, currency = "CNY", digits = 2) {
   if (!Number.isFinite(value)) return "--";
@@ -287,7 +290,7 @@ function renderSummary(rows, histories, intraday, rates) {
 }
 
 function renderMarketOverview(rows, histories, intraday, rates) {
-  els.marketOverview.innerHTML = marketOrder.map((market) => {
+  els.marketOverview.innerHTML = marketOrder.filter((market) => market === currentMarket).map((market) => {
     const selected = rows.filter((row) => row.market === market);
     const currency = selected[0]?.currency || "CNY";
     const cost = selected.reduce((total, row) => total + row.costValue, 0);
@@ -297,7 +300,7 @@ function renderMarketOverview(rows, histories, intraday, rates) {
     const kline = buildPortfolioSeries(holdings, histories, rates, market);
     const intradaySeries = buildIntradaySeries(holdings, intraday, rates, market);
     return `
-      <article class="market-card ${market === currentMarket ? "active" : ""}" data-market-card="${market}">
+      <article class="market-card active" data-market-card="${market}">
         <div class="market-card-head"><span class="badge">${market}</span><span>${currency} 展示</span></div>
         <div class="market-money">
           <span>成本 <strong>${money(cost, currency)}</strong></span>
@@ -340,7 +343,7 @@ function candlestickSvg(series) {
   const width = 760, height = 210, padL = 74, padR = 18, padT = 16, padB = 28;
   const highs = series.map((p) => p.high);
   const lows = series.map((p) => p.low);
-  let min = Math.min(...lows), max = Math.max(...highs);
+  let min = Math.min(...lows, 0), max = Math.max(...highs, 0);
   if (min === max) { min -= 1; max += 1; }
   const plotW = width - padL - padR;
   const plotH = height - padT - padB;
@@ -356,7 +359,8 @@ function candlestickSvg(series) {
     return `<g class="${cls}"><line x1="${x}" x2="${x}" y1="${y(p.high)}" y2="${y(p.low)}"></line><rect x="${x - Math.max(2, step * 0.28)}" y="${top}" width="${Math.max(4, step * 0.56)}" height="${body}" rx="1"></rect></g>`;
   }).join("");
   const grid = ticks.map((tick) => `<g><line class="axis-grid" x1="${padL}" x2="${width - padR}" y1="${y(tick)}" y2="${y(tick)}"></line><text class="axis-label" x="8" y="${y(tick) + 4}">${compactMoney(tick)}</text></g>`).join("");
-  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="盈亏K线">${grid}<line class="axis-line" x1="${padL}" x2="${padL}" y1="${padT}" y2="${height - padB}"></line><line class="axis-line" x1="${padL}" x2="${width - padR}" y1="${height - padB}" y2="${height - padB}"></line>${candles}<text class="axis-label" x="${padL}" y="${height - 6}">${shortDate(series[0].date)}</text><text class="axis-label" x="${width - padR - 42}" y="${height - 6}">${shortDate(last(series).date)}</text></svg>`;
+  const zero = `<line class="zero-axis" x1="${padL}" x2="${width - padR}" y1="${y(0)}" y2="${y(0)}"></line><text class="zero-label" x="8" y="${Math.max(padT + 10, y(0) - 5)}">0</text>`;
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="盈亏K线">${grid}${zero}<line class="axis-line" x1="${padL}" x2="${padL}" y1="${padT}" y2="${height - padB}"></line><line class="axis-line" x1="${padL}" x2="${width - padR}" y1="${height - padB}" y2="${height - padB}"></line>${candles}<text class="axis-label" x="${padL}" y="${height - 6}">${shortDate(series[0].date)}</text><text class="axis-label" x="${width - padR - 42}" y="${height - 6}">${shortDate(last(series).date)}</text></svg>`;
 }
 
 function lineSvg(series) {
@@ -371,7 +375,25 @@ function lineSvg(series) {
   const cls = last(series).value >= series[0].value ? "chart-up" : "chart-down";
   const ticks = [max, (max + min) / 2, min];
   const grid = ticks.map((tick) => `<g><line class="axis-grid" x1="${padL}" x2="${width - padR}" y1="${y(tick)}" y2="${y(tick)}"></line><text class="axis-label" x="8" y="${y(tick) + 4}">${compactMoney(tick)}</text></g>`).join("");
-  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="当日盈亏波动">${grid}<line class="axis-line" x1="${padL}" x2="${padL}" y1="${padT}" y2="${height - padB}"></line><line class="axis-line" x1="${padL}" x2="${width - padR}" y1="${height - padB}" y2="${height - padB}"></line><polyline class="trend-line ${cls}" points="${points}"></polyline><text class="axis-label" x="${padL}" y="${height - 6}">0点</text><text class="axis-label" x="${width - padR - 52}" y="${height - 6}">${last(series).key.slice(11)}</text></svg>`;
+  const hourLabels = hourTicks(series, padL, width - padR);
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="当日盈亏波动">${grid}<line class="axis-line" x1="${padL}" x2="${padL}" y1="${padT}" y2="${height - padB}"></line><line class="axis-line" x1="${padL}" x2="${width - padR}" y1="${height - padB}" y2="${height - padB}"></line><polyline class="trend-line ${cls}" points="${points}"></polyline>${hourLabels.map((tick) => `<text class="axis-label hour-label" x="${tick.x}" y="${height - 6}">${tick.label}</text>`).join("")}</svg>`;
+}
+
+function hourTicks(series, left, right) {
+  const labels = [];
+  const seen = new Set();
+  series.forEach((point, index) => {
+    const hour = point.key.slice(11, 13);
+    if (seen.has(hour) || !point.key.endsWith(":00")) return;
+    seen.add(hour);
+    const x = left + index * (right - left) / Math.max(series.length - 1, 1);
+    labels.push({ x: Math.min(right - 22, Math.max(left, x)), label: `${Number(hour)}点` });
+  });
+  if (!labels.length && series.length) {
+    labels.push({ x: left, label: series[0].key.slice(11) });
+    labels.push({ x: right - 34, label: last(series).key.slice(11) });
+  }
+  return labels;
 }
 
 function shortDate(date) {
@@ -443,6 +465,9 @@ async function refresh() {
     const [quotes, rates] = await Promise.all([fetchQuotes(), fetchRates()]);
     const rows = buildRows(quotes, {}, rates);
     latestRows = rows;
+    latestHistories = {};
+    latestIntraday = {};
+    latestRates = rates;
     renderSummary(rows, {}, {}, rates);
     renderMarketOverview(rows, {}, {}, rates);
     renderTable(rows);
@@ -452,6 +477,9 @@ async function refresh() {
     const [histories, intraday] = await Promise.all([fetchHistory(), fetchIntraday()]);
     const rowsWithHistory = buildRows(quotes, histories, rates);
     latestRows = rowsWithHistory;
+    latestHistories = histories;
+    latestIntraday = intraday;
+    latestRates = rates;
     renderSummary(rowsWithHistory, histories, intraday, rates);
     renderMarketOverview(rowsWithHistory, histories, intraday, rates);
     renderTable(rowsWithHistory);
@@ -475,10 +503,8 @@ els.tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     currentMarket = tab.dataset.market;
     els.tabs.forEach((item) => item.classList.toggle("active", item.dataset.market === currentMarket));
+    renderMarketOverview(latestRows, latestHistories, latestIntraday, latestRates);
     renderTable(latestRows);
-    document.querySelectorAll("[data-market-card]").forEach((card) => {
-      card.classList.toggle("active", card.dataset.marketCard === currentMarket);
-    });
   });
 });
 
