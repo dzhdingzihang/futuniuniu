@@ -55,12 +55,19 @@ footer {
 }
 
 .refresh-button,
+.edit-data-link,
 .tab {
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--ink);
   cursor: pointer;
   font: inherit;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .refresh-button {
@@ -70,6 +77,20 @@ footer {
   min-height: 42px;
   padding: 0 16px;
   border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.edit-data-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 900;
+  text-decoration: none;
   box-shadow: var(--shadow);
 }
 
