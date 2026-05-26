@@ -9,7 +9,7 @@
   { "market": "港股", "code": "01024", "name": "快手-W", "cost": 46, "qty": 300, "currency": "HKD", "sina": "hk01024" },
   { "market": "港股", "code": "01810", "name": "小米集团-W", "cost": 43.5, "qty": 600, "currency": "HKD", "sina": "hk01810" },
   { "market": "港股", "code": "02208", "name": "金风科技", "cost": 16.9, "qty": 1600, "currency": "HKD", "sina": "hk02208" },
-  { "market": "港股", "code": "07709", "name": "2倍做多海力士", "cost": 88, "qty": 200, "currency": "HKD", "sina": "hk07709" },
+  { "market": "港股", "code": "07709", "name": "2倍做多海力士", "cost": 105, "qty": 400, "currency": "HKD", "sina": "hk07709" },
   { "market": "A股", "code": "002217", "name": "合力泰", "cost": 3.6, "qty": 3000, "currency": "CNY", "sina": "sz002217" },
   { "market": "A股", "code": "300053", "name": "航宇微", "cost": 20.8, "qty": 800, "currency": "CNY", "sina": "sz300053" },
   { "market": "A股", "code": "300067", "name": "安诺其", "cost": 7.8, "qty": 800, "currency": "CNY", "sina": "sz300067" },
