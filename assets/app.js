@@ -73,15 +73,22 @@ function classFor(value) {
 async function getJson(url, fallback) {
   try {
     const response = await fetch(url, { cache: "no-store" });
-    if (!response.ok) throw new Error("request failed");
+    if (!response.ok) throw new Error(`${url} 返回 ${response.status}`);
     return await response.json();
-  } catch {
-    return fallback;
+  } catch (error) {
+    if (arguments.length >= 2) return fallback;
+    throw error;
   }
 }
 
 async function loadHoldings() {
-  const data = await getJson("/holdings.json", []);
+  let data;
+  try {
+    data = await getJson("holdings.json");
+  } catch (error) {
+    throw new Error(`持仓数据表读取失败：${error.message}`);
+  }
+
   if (!Array.isArray(data) || !data.length) {
     throw new Error("持仓数据表为空或格式不正确");
   }
