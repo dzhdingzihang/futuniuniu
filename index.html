@@ -14,6 +14,7 @@
       </div>
       <div class="top-actions">
         <a class="edit-data-link" href="https://github.com/dzhdingzihang/futuniuniu/edit/main/holdings.json" target="_blank" rel="noopener">修改持仓</a>
+        <a class="edit-data-link secondary" href="https://github.com/dzhdingzihang/futuniuniu/edit/main/trades.json" target="_blank" rel="noopener">修改交易</a>
         <button class="refresh-button" id="refreshButton" type="button" title="刷新行情">
           <span aria-hidden="true">↻</span>
           刷新
@@ -61,19 +62,21 @@
           </div>
           <span id="totalTrendHint">按当前汇率折算人民币</span>
         </div>
-        <div class="chart-card wide">
-          <div class="chart-meta">
-            <span>近 30 个交易日盈亏 K 线</span>
-            <strong id="totalTrendValue">--</strong>
+        <div class="chart-pair">
+          <div class="chart-card">
+            <div class="chart-meta">
+              <span>近 30 个交易日盈亏 K 线</span>
+              <strong id="totalTrendValue">--</strong>
+            </div>
+            <div class="sparkline large" id="totalTrendChart"></div>
           </div>
-          <div class="sparkline large" id="totalTrendChart"></div>
-        </div>
-        <div class="chart-card wide intraday-card">
-          <div class="chart-meta">
-            <span>当日 24 小时波动</span>
-            <strong id="totalIntradayValue">--</strong>
+          <div class="chart-card">
+            <div class="chart-meta">
+              <span>当日 24 小时波动</span>
+              <strong id="totalIntradayValue">--</strong>
+            </div>
+            <div class="sparkline intraday" id="totalIntradayChart"></div>
           </div>
-          <div class="sparkline intraday" id="totalIntradayChart"></div>
         </div>
       </section>
 
@@ -110,6 +113,112 @@
           </thead>
           <tbody id="holdingsBody"></tbody>
         </table>
+      </section>
+
+      <section class="trade-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Trade Ledger</p>
+            <h2>买卖操作记录</h2>
+          </div>
+          <div class="trade-actions">
+            <button class="text-button" id="newTradeButton" type="button">新增记录</button>
+            <button class="text-button" id="exportTradesButton" type="button">导出 JSON</button>
+          </div>
+        </div>
+        <div class="trade-summary">
+          <div class="trade-metric">
+            <span>已完成盈亏</span>
+            <strong id="realizedProfit">--</strong>
+            <small>来自卖出记录</small>
+          </div>
+          <div class="trade-metric">
+            <span>未完成持仓盈亏</span>
+            <strong id="openProfit">--</strong>
+            <small>来自当前持仓</small>
+          </div>
+          <div class="trade-metric">
+            <span>交易记录</span>
+            <strong id="tradeCount">--</strong>
+            <small id="tradeSyncStatus">读取 trades.json</small>
+          </div>
+        </div>
+        <form class="trade-form" id="tradeForm">
+          <input id="tradeId" type="hidden" />
+          <label>
+            日期
+            <input id="tradeDate" type="date" required />
+          </label>
+          <label>
+            操作
+            <select id="tradeAction" required>
+              <option value="buy">买入</option>
+              <option value="sell">卖出</option>
+            </select>
+          </label>
+          <label>
+            市场
+            <select id="tradeMarket" required>
+              <option value="港股">港股</option>
+              <option value="A股">A股</option>
+              <option value="美股">美股</option>
+            </select>
+          </label>
+          <label>
+            股票代码
+            <input id="tradeCode" type="text" placeholder="如 01810" required />
+          </label>
+          <label>
+            名称
+            <input id="tradeName" type="text" placeholder="如 小米集团-W" />
+          </label>
+          <label>
+            价格
+            <input id="tradePrice" type="number" min="0" step="0.0001" required />
+          </label>
+          <label>
+            数量
+            <input id="tradeQty" type="number" min="0" step="1" required />
+          </label>
+          <label>
+            币种
+            <select id="tradeCurrency" required>
+              <option value="HKD">HKD</option>
+              <option value="CNY">CNY</option>
+              <option value="USD">USD</option>
+            </select>
+          </label>
+          <label>
+            行情代码
+            <input id="tradeSina" type="text" placeholder="如 hk01810" required />
+          </label>
+          <label class="form-wide">
+            备注
+            <input id="tradeNote" type="text" placeholder="补仓、止盈、调仓原因" />
+          </label>
+          <div class="form-buttons">
+            <button class="refresh-button" type="submit">保存记录</button>
+            <button class="text-button" id="resetTradeButton" type="button">清空</button>
+          </div>
+        </form>
+        <div class="table-wrap trade-table-wrap">
+          <table class="trade-table">
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>操作</th>
+                <th>股票</th>
+                <th>价格</th>
+                <th>数量</th>
+                <th>成交额</th>
+                <th>操作后波动</th>
+                <th>备注</th>
+                <th>记录</th>
+              </tr>
+            </thead>
+            <tbody id="tradesBody"></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="recommendations">

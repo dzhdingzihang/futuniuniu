@@ -1,6 +1,8 @@
 const marketOrder = ["港股", "A股", "美股"];
+const tradesStorageKey = "piggy-trades-v1";
 
 let holdings = [];
+let trades = [];
 
 const watchCandidates = [
   { market: "美股", code: "NVDA", name: "英伟达", currency: "USD", sina: "gb_nvda", theme: "AI GPU", baseHeat: 94, targetPct: 0.09, reason: "AI芯片仍是全球科技股定价锚，算力资本开支主线明确。" },
@@ -36,6 +38,26 @@ const els = {
   recommendations: document.querySelector("#recommendationsBody"),
   watchlistDate: document.querySelector("#watchlistDate"),
   tabs: document.querySelectorAll(".tab"),
+  realizedProfit: document.querySelector("#realizedProfit"),
+  openProfit: document.querySelector("#openProfit"),
+  tradeCount: document.querySelector("#tradeCount"),
+  tradeSyncStatus: document.querySelector("#tradeSyncStatus"),
+  tradeForm: document.querySelector("#tradeForm"),
+  tradeId: document.querySelector("#tradeId"),
+  tradeDate: document.querySelector("#tradeDate"),
+  tradeAction: document.querySelector("#tradeAction"),
+  tradeMarket: document.querySelector("#tradeMarket"),
+  tradeCode: document.querySelector("#tradeCode"),
+  tradeName: document.querySelector("#tradeName"),
+  tradePrice: document.querySelector("#tradePrice"),
+  tradeQty: document.querySelector("#tradeQty"),
+  tradeCurrency: document.querySelector("#tradeCurrency"),
+  tradeSina: document.querySelector("#tradeSina"),
+  tradeNote: document.querySelector("#tradeNote"),
+  tradesBody: document.querySelector("#tradesBody"),
+  newTradeButton: document.querySelector("#newTradeButton"),
+  exportTradesButton: document.querySelector("#exportTradesButton"),
+  resetTradeButton: document.querySelector("#resetTradeButton"),
 };
 
 const serviceUrl = "http://127.0.0.1:8787/";
@@ -106,6 +128,52 @@ async function loadHoldings() {
   }
 }
 
+async function loadTrades() {
+  const local = readLocalTrades();
+  if (local) {
+    trades = normalizeTrades(local);
+    els.tradeSyncStatus.textContent = "使用本地记录";
+    return;
+  }
+
+  const data = await getJson("trades.json", []);
+  trades = normalizeTrades(Array.isArray(data) ? data : []);
+  els.tradeSyncStatus.textContent = "读取 trades.json";
+}
+
+function normalizeTrades(items) {
+  return items.map((item, index) => {
+    const action = item.action === "sell" ? "sell" : "buy";
+    return {
+      id: String(item.id || `trade-${index + 1}-${Date.now()}`),
+      date: String(item.date || "").trim(),
+      action,
+      market: String(item.market || "").trim(),
+      code: String(item.code || "").trim(),
+      name: String(item.name || item.code || "").trim(),
+      price: Number(item.price),
+      qty: Number(item.qty),
+      currency: String(item.currency || "").trim().toUpperCase(),
+      sina: String(item.sina || "").trim().toLowerCase(),
+      note: String(item.note || "").trim(),
+    };
+  }).filter((item) => item.date && item.market && item.code && item.currency && item.sina && Number.isFinite(item.price) && Number.isFinite(item.qty) && item.qty > 0);
+}
+
+function readLocalTrades() {
+  try {
+    const raw = localStorage.getItem(tradesStorageKey);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistTrades() {
+  localStorage.setItem(tradesStorageKey, JSON.stringify(trades, null, 2));
+  els.tradeSyncStatus.textContent = "已保存到本机浏览器";
+}
+
 async function fetchQuotes() {
   const symbols = [...new Set([...holdings, ...watchCandidates].map((item) => item.sina))].join(",");
   const payload = await getJson(`/api/quotes?symbols=${encodeURIComponent(symbols)}`, { quotes: {} });
@@ -168,6 +236,47 @@ function buildRows(quotes, histories, rates) {
     row.action = actionFor(row);
     return row;
   });
+}
+
+function buildTradeStats(rows, rates) {
+  const lots = new Map();
+  let realizedCny = 0;
+  const sorted = [...trades].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+
+  sorted.forEach((trade) => {
+    const key = trade.sina || `${trade.market}:${trade.code}`;
+    const fx = rates[trade.currency] || 1;
+    if (!lots.has(key)) lots.set(key, []);
+    const queue = lots.get(key);
+
+    if (trade.action === "buy") {
+      queue.push({ qty: trade.qty, price: trade.price, currency: trade.currency });
+      return;
+    }
+
+    let remaining = trade.qty;
+    while (remaining > 0 && queue.length) {
+      const lot = queue[0];
+      const matched = Math.min(remaining, lot.qty);
+      realizedCny += (trade.price - lot.price) * matched * fx;
+      lot.qty -= matched;
+      remaining -= matched;
+      if (lot.qty <= 0.000001) queue.shift();
+    }
+  });
+
+  const openCny = sum(rows, "pnlCny");
+  return {
+    realizedCny,
+    openCny,
+    totalTrades: trades.length,
+  };
+}
+
+function rowForTrade(trade, rows) {
+  return rows.find((row) => row.sina === trade.sina)
+    || rows.find((row) => row.market === trade.market && row.code === trade.code)
+    || null;
 }
 
 function buyZoneFor(row) {
@@ -307,6 +416,7 @@ function renderSummary(rows, histories, intraday, rates) {
   renderTrendBlock(els.totalTrendValue, els.totalTrendChart, kline, "CNY");
   renderLineBlock(els.totalIntradayValue, els.totalIntradayChart, line, "CNY");
   els.totalTrendHint.textContent = `红涨绿跌 · ${kline.length} 个交易点`;
+  renderTradeSummary(rows, rates);
 }
 
 function renderMarketOverview(rows, histories, intraday, rates) {
@@ -335,13 +445,31 @@ function renderMarketOverview(rows, histories, intraday, rates) {
         </div>
         <strong class="${classFor(pnl)}">${signed(pnl, currency)}</strong>
         <small class="${classFor(rate)}">${pct(rate)}</small>
-        <div class="mini-title">30日盈亏K线</div>
-        <div class="sparkline compact">${candlestickSvg(kline, currency)}</div>
-        <div class="mini-title">当日24小时波动</div>
-        <div class="sparkline compact">${lineSvg(intradaySeries, currency)}</div>
+        <div class="market-chart-pair">
+          <div>
+            <div class="mini-title">30日盈亏K线</div>
+            <div class="sparkline compact">${candlestickSvg(kline, currency)}</div>
+          </div>
+          <div>
+            <div class="mini-title">当日24小时波动</div>
+            <div class="sparkline compact">${lineSvg(intradaySeries, currency)}</div>
+          </div>
+        </div>
       </article>
     `;
   }).join("");
+}
+
+function renderTradeSummary(rows, rates) {
+  const stats = buildTradeStats(rows, rates);
+  els.realizedProfit.textContent = signed(stats.realizedCny, "CNY");
+  els.realizedProfit.className = classFor(stats.realizedCny);
+  if (rows.length) {
+    els.openProfit.textContent = signed(stats.openCny, "CNY");
+    els.openProfit.className = classFor(stats.openCny);
+  }
+  els.tradeCount.textContent = `${stats.totalTrades} 条`;
+  renderTrades(rows, rates);
 }
 
 function sum(rows, key) {
@@ -398,14 +526,16 @@ function candlestickSvg(series) {
 function lineSvg(series) {
   if (!series.length) return '<div class="chart-empty">暂无日内数据</div>';
   const width = 760, height = 150, padL = 74, padR = 18, padT = 16, padB = 28;
-  const values = series.map((p) => p.value);
+  const cleaned = series.filter((p) => Number.isFinite(p.value) && Number.isFinite(hourValue(p.key)));
+  if (!cleaned.length) return '<div class="chart-empty">暂无日内数据</div>';
+  const values = cleaned.map((p) => p.value);
   let min = Math.min(...values, 0), max = Math.max(...values, 0);
   if (min === max) { min -= 1; max += 1; }
   const plotW = width - padL - padR;
   const x = (point) => padL + Math.max(0, Math.min(24, hourValue(point.key))) / 24 * plotW;
   const y = (v) => padT + (1 - ((v - min) / (max - min))) * (height - padT - padB);
-  const points = series.map((p) => `${x(p).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
-  const cls = last(series).value >= 0 ? "chart-up" : "chart-down";
+  const points = cleaned.map((p) => `${x(p).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const cls = last(cleaned).value >= 0 ? "chart-up" : "chart-down";
   const ticks = [max, (max + min) / 2, min];
   const grid = ticks.map((tick) => `<g><line class="axis-grid" x1="${padL}" x2="${width - padR}" y1="${y(tick)}" y2="${y(tick)}"></line><text class="axis-label" x="8" y="${y(tick) + 4}">${compactMoney(tick)}</text></g>`).join("");
   const zero = `<line class="zero-axis subtle" x1="${padL}" x2="${width - padR}" y1="${y(0)}" y2="${y(0)}"></line>`;
@@ -417,6 +547,46 @@ function hourValue(key) {
   const time = key.slice(11);
   const [hour, minute] = time.split(":").map(Number);
   return (Number.isFinite(hour) ? hour : 0) + (Number.isFinite(minute) ? minute / 60 : 0);
+}
+
+function renderTrades(rows, rates) {
+  const sorted = [...trades].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  if (!sorted.length) {
+    els.tradesBody.innerHTML = '<tr><td colspan="9" class="empty-row">暂无交易记录。点击“新增记录”开始记录买入/卖出。</td></tr>';
+    return;
+  }
+
+  els.tradesBody.innerHTML = sorted.map((trade) => {
+    const row = rowForTrade(trade, rows);
+    const currentPrice = row?.price;
+    const fx = rates[trade.currency] || 1;
+    const amount = trade.price * trade.qty;
+    const move = Number.isFinite(currentPrice)
+      ? (trade.action === "buy" ? currentPrice - trade.price : trade.price - currentPrice) * trade.qty
+      : NaN;
+    const moveRate = Number.isFinite(currentPrice) && trade.price ? (trade.action === "buy" ? currentPrice - trade.price : trade.price - currentPrice) / trade.price * 100 : NaN;
+    const actionLabel = trade.action === "buy" ? "买入" : "卖出";
+    const moveLabel = trade.action === "buy" ? "买入后" : "卖出后";
+    return `
+      <tr>
+        <td>${trade.date}</td>
+        <td><span class="trade-pill ${trade.action}">${actionLabel}</span></td>
+        <td><div class="stock-name"><strong>${trade.code}</strong><span>${trade.name || trade.sina}</span></div></td>
+        <td>${money(trade.price, trade.currency)}</td>
+        <td>${number(trade.qty, 0)}</td>
+        <td>${money(amount, trade.currency)}</td>
+        <td>
+          <strong class="${classFor(move)}">${Number.isFinite(move) ? `${moveLabel} ${signed(move, trade.currency)}` : "等待行情"}</strong>
+          <span class="trade-note">${pct(moveRate)} · 折人民币 ${signed(Number.isFinite(move) ? move * fx : NaN, "CNY")}</span>
+        </td>
+        <td>${trade.note || '<span class="muted">--</span>'}</td>
+        <td>
+          <button class="icon-button" type="button" data-trade-edit="${trade.id}">编辑</button>
+          <button class="icon-button danger" type="button" data-trade-delete="${trade.id}">删除</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function hourTicks(left, right) {
@@ -488,6 +658,99 @@ function renderWatchlist(quotes, histories) {
   `).join("");
 }
 
+function resetTradeForm() {
+  els.tradeForm.reset();
+  els.tradeId.value = "";
+  els.tradeDate.value = new Date().toISOString().slice(0, 10);
+  els.tradeAction.value = "buy";
+  els.tradeMarket.value = currentMarket;
+  const sample = holdings.find((item) => item.market === currentMarket) || holdings[0];
+  if (sample) {
+    els.tradeCurrency.value = sample.currency;
+  }
+}
+
+function fillTradeForm(trade) {
+  els.tradeId.value = trade.id;
+  els.tradeDate.value = trade.date;
+  els.tradeAction.value = trade.action;
+  els.tradeMarket.value = trade.market;
+  els.tradeCode.value = trade.code;
+  els.tradeName.value = trade.name;
+  els.tradePrice.value = Number.isFinite(trade.price) ? trade.price : "";
+  els.tradeQty.value = Number.isFinite(trade.qty) ? trade.qty : "";
+  els.tradeCurrency.value = trade.currency;
+  els.tradeSina.value = trade.sina;
+  els.tradeNote.value = trade.note;
+  els.tradeForm.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function tradeFromForm() {
+  const id = els.tradeId.value || `trade-${Date.now()}`;
+  return {
+    id,
+    date: els.tradeDate.value,
+    action: els.tradeAction.value,
+    market: els.tradeMarket.value,
+    code: els.tradeCode.value.trim(),
+    name: els.tradeName.value.trim() || els.tradeCode.value.trim(),
+    price: Number(els.tradePrice.value),
+    qty: Number(els.tradeQty.value),
+    currency: els.tradeCurrency.value,
+    sina: els.tradeSina.value.trim().toLowerCase(),
+    note: els.tradeNote.value.trim(),
+  };
+}
+
+function saveTrade(event) {
+  event.preventDefault();
+  const next = tradeFromForm();
+  if (!next.date || !next.code || !next.sina || !Number.isFinite(next.price) || !Number.isFinite(next.qty) || next.price <= 0 || next.qty <= 0) {
+    els.status.textContent = "交易记录未保存：请填写日期、代码、行情代码、价格和数量。";
+    return;
+  }
+
+  const index = trades.findIndex((trade) => trade.id === next.id);
+  if (index >= 0) {
+    trades[index] = next;
+  } else {
+    trades.push(next);
+  }
+  trades = normalizeTrades(trades);
+  persistTrades();
+  renderTradeSummary(latestRows, latestRates);
+  resetTradeForm();
+  els.status.textContent = "交易记录已保存到本机浏览器；需要同步仓库时点击“导出 JSON”。";
+}
+
+function deleteTrade(id) {
+  trades = trades.filter((trade) => trade.id !== id);
+  persistTrades();
+  renderTradeSummary(latestRows, latestRates);
+  els.status.textContent = "交易记录已删除，并已保存到本机浏览器。";
+}
+
+function exportTrades() {
+  const text = JSON.stringify([...trades].sort((a, b) => a.date.localeCompare(b.date)), null, 2);
+  navigator.clipboard?.writeText(text).then(() => {
+    els.status.textContent = "交易记录 JSON 已复制，可以粘贴到 GitHub 的 trades.json。";
+  }).catch(() => {
+    els.status.textContent = "交易记录 JSON 已生成；如果复制失败，请从弹窗内容手动复制。";
+  });
+  window.prompt("复制下面内容到 trades.json：", text);
+}
+
+function autofillTradeFields() {
+  const code = els.tradeCode.value.trim();
+  if (!code) return;
+  const found = holdings.find((item) => item.code === code || item.sina === code.toLowerCase());
+  if (!found) return;
+  els.tradeMarket.value = found.market;
+  els.tradeName.value = els.tradeName.value || found.name;
+  els.tradeCurrency.value = found.currency;
+  els.tradeSina.value = els.tradeSina.value || found.sina;
+}
+
 async function refresh() {
   els.refresh.disabled = true;
   els.status.textContent = "正在连接实时行情...";
@@ -529,6 +792,20 @@ function renderFileMode() {
 }
 
 els.refresh.addEventListener("click", refresh);
+els.tradeForm.addEventListener("submit", saveTrade);
+els.resetTradeButton.addEventListener("click", resetTradeForm);
+els.newTradeButton.addEventListener("click", resetTradeForm);
+els.exportTradesButton.addEventListener("click", exportTrades);
+els.tradeCode.addEventListener("blur", autofillTradeFields);
+els.tradesBody.addEventListener("click", (event) => {
+  const editId = event.target.dataset.tradeEdit;
+  const deleteId = event.target.dataset.tradeDelete;
+  if (editId) {
+    const trade = trades.find((item) => item.id === editId);
+    if (trade) fillTradeForm(trade);
+  }
+  if (deleteId) deleteTrade(deleteId);
+});
 els.tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     currentMarket = tab.dataset.market;
@@ -541,8 +818,9 @@ els.tabs.forEach((tab) => {
 if (location.protocol === "file:") {
   renderFileMode();
 } else {
-  loadHoldings()
+  Promise.all([loadHoldings(), loadTrades()])
     .then(() => {
+      resetTradeForm();
       refresh();
       setInterval(refresh, 60 * 1000);
     })
