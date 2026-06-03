@@ -124,6 +124,8 @@
           <div class="trade-actions">
             <button class="text-button" id="newTradeButton" type="button">新增记录</button>
             <button class="text-button" id="exportTradesButton" type="button">导出 JSON</button>
+            <button class="text-button" id="exportHoldingsButton" type="button">导出持仓</button>
+            <button class="text-button" id="resetLinkedHoldingsButton" type="button">重置联动</button>
           </div>
         </div>
         <div class="trade-summary">
@@ -195,6 +197,10 @@
           <label class="form-wide">
             备注
             <input id="tradeNote" type="text" placeholder="补仓、止盈、调仓原因" />
+          </label>
+          <label class="checkbox-label">
+            <input id="tradeAffectsHoldings" type="checkbox" checked />
+            联动当前持仓
           </label>
           <div class="form-buttons">
             <button class="refresh-button" type="submit">保存记录</button>
