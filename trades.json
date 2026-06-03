@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "id": "20260601-sell-astx-001",
+    "date": "2026-06-01",
+    "action": "sell",
+    "market": "美股",
+    "code": "ASTX",
+    "name": "2倍做多ASTS",
+    "price": 47,
+    "qty": 10,
+    "currency": "USD",
+    "sina": "gb_astx",
+    "note": "卖出 10 股，形成当前持仓"
+  },
+  {
+    "id": "20260601-buy-dknx-001",
+    "date": "2026-06-01",
+    "action": "buy",
+    "market": "美股",
+    "code": "DKNX",
+    "name": "2倍做多DKNG",
+    "price": 21.8,
+    "qty": 20,
+    "currency": "USD",
+    "sina": "gb_dknx",
+    "note": "买入 20 股，形成当前持仓"
+  }
+]
