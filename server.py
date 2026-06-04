@@ -19,6 +19,7 @@ EASTMONEY_KLINE_URL = (
     "&klt=101&fqt=1&end=20500101&lmt={limit}"
 )
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range={range}&interval={interval}"
+YAHOO_QUOTE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1d&interval=1m&includePrePost=true"
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Referer": "https://finance.sina.com.cn/",
@@ -50,14 +51,25 @@ def parse_quote(symbol, raw):
     if symbol.startswith(("sh", "sz")):
         price = to_float(parts, 3)
         prev_close = to_float(parts, 2)
+        open_price = to_float(parts, 1)
+        high = to_float(parts, 4)
+        low = to_float(parts, 5)
         change = price - prev_close if price and prev_close else None
         change_pct = change / prev_close * 100 if change is not None and prev_close else None
     elif symbol.startswith("hk"):
         price = to_float(parts, 6)
+        prev_close = price - to_float(parts, 7) if to_float(parts, 7) is not None and price else None
+        open_price = to_float(parts, 2)
+        high = to_float(parts, 4)
+        low = to_float(parts, 5)
         change = to_float(parts, 7)
         change_pct = to_float(parts, 8)
     else:
         price = to_float(parts, 1)
+        prev_close = price - to_float(parts, 4) if to_float(parts, 4) is not None and price else None
+        open_price = None
+        high = None
+        low = None
         change_pct = to_float(parts, 2)
         change = to_float(parts, 4)
 
@@ -68,7 +80,65 @@ def parse_quote(symbol, raw):
         "price": price,
         "change": change,
         "changePct": change_pct,
+        "prevClose": prev_close,
+        "open": open_price,
+        "high": high,
+        "low": low,
+        "session": "实时/延时",
+        "source": "sina",
     }
+
+
+def parse_yahoo_quote_payload(payload):
+    result = (payload.get("chart", {}).get("result") or [None])[0]
+    if not result:
+        return None
+    meta = result.get("meta") or {}
+    timestamps = result.get("timestamp") or []
+    quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+    closes = quote.get("close") or []
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
+    opens = quote.get("open") or []
+    regular = meta.get("regularMarketPrice")
+    prev_close = meta.get("chartPreviousClose") or meta.get("previousClose")
+    pre = meta.get("preMarketPrice")
+    post = meta.get("postMarketPrice")
+    price = post or pre or regular
+    session = "盘后" if post else "盘前" if pre else "实时/延时"
+
+    for index in range(len(closes) - 1, -1, -1):
+        close = closes[index]
+        if close and close > 0:
+            price = price or close
+            break
+
+    if not price or price <= 0:
+        return None
+
+    change = price - prev_close if prev_close else None
+    ts = meta.get("postMarketTime") or meta.get("preMarketTime") or meta.get("regularMarketTime") or (timestamps[-1] if timestamps else None)
+    return {
+        "price": price,
+        "change": change,
+        "changePct": change / prev_close * 100 if change is not None and prev_close else None,
+        "prevClose": prev_close,
+        "open": next((value for value in opens if value and value > 0), price),
+        "high": max([value for value in highs if value and value > 0] or [price]),
+        "low": min([value for value in lows if value and value > 0] or [price]),
+        "date": datetime.fromtimestamp(ts).strftime("%Y-%m-%d") if ts else datetime.now().strftime("%Y-%m-%d"),
+        "time": datetime.fromtimestamp(ts).strftime("%H:%M") if ts else datetime.now().strftime("%H:%M"),
+        "session": session,
+        "source": "yahoo",
+    }
+
+
+def fetch_yahoo_live_quote(symbol):
+    mapped = yahoo_symbol(symbol)
+    if not mapped:
+        return None
+    payload = fetch_json(YAHOO_QUOTE_URL.format(symbol=mapped), timeout=8)
+    return parse_yahoo_quote_payload(payload)
 
 
 def handle_quotes(symbols):
@@ -90,6 +160,21 @@ def handle_quotes(symbols):
         quote = parse_quote(symbol, match.group(1))
         if quote:
             quotes[symbol] = quote
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(fetch_yahoo_live_quote, symbol): symbol
+            for symbol in safe_symbols
+            if symbol.startswith("gb_") or symbol not in quotes
+        }
+        for future in as_completed(futures):
+            symbol = futures[future]
+            try:
+                quote = future.result()
+                if quote:
+                    quotes[symbol] = quote
+            except Exception:
+                continue
 
     return {"quotes": quotes}
 
@@ -137,12 +222,15 @@ def parse_yahoo_payload(payload):
         if not close or close <= 0:
             continue
         date = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+        open_price = opens[index] if index < len(opens) and opens[index] else close
+        high = highs[index] if index < len(highs) and highs[index] else close
+        low = lows[index] if index < len(lows) and lows[index] else close
         series.append({
             "date": date,
             "time": datetime.fromtimestamp(ts).strftime("%H:%M"),
-            "open": opens[index] if index < len(opens) and opens[index] else close,
-            "high": highs[index] if index < len(highs) and highs[index] else close,
-            "low": lows[index] if index < len(lows) and lows[index] else close,
+            "open": open_price,
+            "high": max(high, open_price, close),
+            "low": min(low, open_price, close),
             "close": close,
         })
 
@@ -153,7 +241,8 @@ def fetch_yahoo_history(symbol, days, range_value="2mo", interval="1d"):
     mapped = yahoo_symbol(symbol)
     if not mapped:
         return []
-    payload = fetch_json(YAHOO_CHART_URL.format(symbol=mapped, range=range_value, interval=interval), timeout=8)
+    include = "&includePrePost=true" if interval != "1d" else ""
+    payload = fetch_json(YAHOO_CHART_URL.format(symbol=mapped, range=range_value, interval=interval) + include, timeout=8)
     return parse_yahoo_payload(payload)[-days:]
 
 
@@ -166,19 +255,23 @@ def parse_kline_payload(payload):
             continue
         close = to_float(parts, 2)
         if close and close > 0:
-            series.append({"date": parts[0], "time": "", "open": to_float(parts, 1) or close, "high": to_float(parts, 3) or close, "low": to_float(parts, 4) or close, "close": close})
+            open_price = to_float(parts, 1) or close
+            high = to_float(parts, 3) or close
+            low = to_float(parts, 4) or close
+            series.append({"date": parts[0], "time": "", "open": open_price, "high": max(high, open_price, close), "low": min(low, open_price, close), "close": close})
     return series
 
 
 def fetch_history_for_symbol(symbol, days):
-    try:
-        series = fetch_yahoo_history(symbol, days)
-        if series:
-            return series
-    except Exception:
-        pass
-
     limit = max(days + 10, 45)
+    if symbol.startswith("gb_"):
+        try:
+            series = fetch_yahoo_history(symbol, days)
+            if series:
+                return series
+        except Exception:
+            pass
+
     for secid in eastmoney_secids(symbol):
         try:
             payload = fetch_json(EASTMONEY_KLINE_URL.format(secid=secid, limit=limit), timeout=8)
@@ -187,6 +280,12 @@ def fetch_history_for_symbol(symbol, days):
                 return series[-days:]
         except Exception:
             continue
+    try:
+        series = fetch_yahoo_history(symbol, days)
+        if series:
+            return series
+    except Exception:
+        pass
     return []
 
 

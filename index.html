@@ -78,6 +78,16 @@
             <div class="sparkline intraday" id="totalIntradayChart"></div>
           </div>
         </div>
+        <div class="weekly-advice-panel">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">Next Week Plan</p>
+              <h2>持股未来一周操作建议</h2>
+            </div>
+            <span id="weeklyAdviceHint">根据实时价、近30日波动和持仓盈亏自动生成</span>
+          </div>
+          <div class="weekly-advice-grid" id="weeklyAdviceBody"></div>
+        </div>
       </section>
 
       <section class="status-band" id="statusBand">
@@ -235,12 +245,17 @@
           </div>
           <span id="watchlistDate">每天随行情刷新，只做观察，不等于买入指令</span>
         </div>
+        <div class="watch-tabs" aria-label="观察池市场筛选">
+          <button class="watch-tab active" type="button" data-watch-market="A股">A股</button>
+          <button class="watch-tab" type="button" data-watch-market="美股">美股</button>
+          <button class="watch-tab" type="button" data-watch-market="港股">港股</button>
+        </div>
         <div class="recommend-grid" id="recommendationsBody"></div>
       </section>
     </main>
 
     <footer>
-      数据来自公开行情接口，可能有延迟；港股单位为港币，美股单位为美元，A股单位为人民币，顶部已按实时汇率估算成人民币。页面建议基于价格、盈亏和主题热度规则生成，不构成投资建议。
+      数据来自公开行情接口，可能有延迟；港股单位为港币，美股单位为美元，A股单位为人民币，顶部已按实时汇率估算成人民币。美股会优先参考盘前/盘后可用价格。页面建议基于价格、盈亏、波动和主题热度规则生成，不构成投资建议。
     </footer>
 
     <script src="assets/app.js"></script>

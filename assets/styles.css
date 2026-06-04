@@ -105,7 +105,7 @@ footer {
 
 .hero-dashboard {
   display: grid;
-  grid-template-columns: 1.35fr repeat(3, 1fr);
+  grid-template-columns: minmax(420px, 1.7fr) repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -130,6 +130,9 @@ footer {
 .hero-metric.primary {
   grid-row: span 2;
   min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   background: linear-gradient(150deg, rgba(14, 165, 233, 0.14), rgba(255, 255, 255, 0.98));
 }
 
@@ -152,13 +155,20 @@ footer {
   word-break: break-word;
 }
 
-.hero-metric.primary strong { font-size: clamp(42px, 6vw, 72px); }
+.hero-metric.primary strong {
+  font-size: clamp(54px, 7.6vw, 104px);
+  letter-spacing: 0;
+}
 
 .hero-metric small {
   display: inline-block;
   margin-top: 10px;
   font-size: 16px;
   font-weight: 900;
+}
+
+.hero-metric.primary small {
+  font-size: clamp(24px, 2.8vw, 38px);
 }
 
 .positive { color: var(--up); }
@@ -186,6 +196,12 @@ footer {
 .section-heading {
   align-items: end;
   margin-bottom: 14px;
+}
+
+.section-heading.compact {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
 }
 
 .section-heading h2 {
@@ -328,15 +344,17 @@ footer {
 .market-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
   margin: 14px 0 0;
 }
 
 .tab {
-  min-width: 92px;
-  min-height: 40px;
-  padding: 0 16px;
+  min-width: 132px;
+  min-height: 58px;
+  padding: 0 24px;
   border-radius: 8px;
+  font-size: 20px;
+  font-weight: 950;
 }
 
 .tab.active {
@@ -344,6 +362,7 @@ footer {
   background: #e0f2fe;
   color: #0369a1;
   font-weight: 900;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.18);
 }
 
 .market-overview {
@@ -480,6 +499,25 @@ td:last-child {
   font-weight: 950;
 }
 
+.pnl-cell,
+.pnl-rate-cell {
+  display: inline-block;
+  line-height: 1.05;
+  font-weight: 950;
+}
+
+.pnl-cell {
+  font-size: 22px;
+}
+
+.pnl-cell.day {
+  font-size: 20px;
+}
+
+.pnl-rate-cell {
+  font-size: 18px;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -531,6 +569,84 @@ td:last-child {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.weekly-advice-panel {
+  margin-top: 4px;
+}
+
+.weekly-advice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.weekly-advice-card,
+.empty-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 15px;
+  background: #ffffff;
+}
+
+.weekly-advice-card.positive {
+  border-color: rgba(220, 38, 38, 0.24);
+}
+
+.weekly-advice-card.negative {
+  border-color: rgba(22, 163, 74, 0.24);
+}
+
+.weekly-advice-top {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.weekly-advice-top strong {
+  font-size: 16px;
+}
+
+.weekly-advice-top span:last-child,
+.advice-reason,
+.empty-card {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.weekly-stance {
+  margin: 12px 0 8px;
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.weekly-advice-card p {
+  min-height: 44px;
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.weekly-advice-card dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.weekly-advice-card dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.weekly-advice-card dd {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 950;
 }
 
 .trade-actions,
@@ -711,6 +827,33 @@ td:last-child {
   gap: 12px;
 }
 
+.watch-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.watch-tab {
+  min-width: 104px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.watch-tab.active {
+  border-color: var(--blue);
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
 .recommend-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -774,6 +917,7 @@ footer {
 
   .hero-dashboard,
   .recommend-grid,
+  .weekly-advice-grid,
   .chart-pair,
   .market-chart-pair,
   .trade-summary,
@@ -784,6 +928,15 @@ footer {
   .hero-metric.primary {
     grid-row: auto;
     min-height: 190px;
+  }
+
+  .tab {
+    flex: 1 1 30%;
+    min-width: 100px;
+  }
+
+  .weekly-advice-card dl {
+    grid-template-columns: 1fr;
   }
 
   .market-money {
@@ -803,6 +956,7 @@ footer {
 @media (min-width: 921px) and (max-width: 1180px) {
   .hero-dashboard,
   .recommend-grid,
+  .weekly-advice-grid,
   .trade-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

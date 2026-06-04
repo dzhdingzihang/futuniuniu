@@ -18,7 +18,20 @@ function parseKlines(payload, days) {
     .map((line) => {
       const parts = line.split(",");
       const close = Number(parts[2]);
-      return Number.isFinite(close) && close > 0 ? { date: parts[0], close } : null;
+      const open = Number(parts[1]);
+      const high = Number(parts[3]);
+      const low = Number(parts[4]);
+      const openPrice = Number.isFinite(open) && open > 0 ? open : close;
+      const highPrice = Number.isFinite(high) && high > 0 ? high : close;
+      const lowPrice = Number.isFinite(low) && low > 0 ? low : close;
+      return Number.isFinite(close) && close > 0 ? {
+        date: parts[0],
+        time: "",
+        open: openPrice,
+        high: Math.max(highPrice, openPrice, close),
+        low: Math.min(lowPrice, openPrice, close),
+        close,
+      } : null;
     })
     .filter(Boolean)
     .slice(-days);
@@ -37,13 +50,23 @@ function parseYahooPayload(payload, days) {
   if (!result) return [];
   const timestamps = result.timestamp || [];
   const closes = result.indicators?.quote?.[0]?.close || [];
+  const opens = result.indicators?.quote?.[0]?.open || [];
+  const highs = result.indicators?.quote?.[0]?.high || [];
+  const lows = result.indicators?.quote?.[0]?.low || [];
 
   return timestamps
     .map((timestamp, index) => {
       const close = closes[index];
       if (!close || close <= 0) return null;
+      const open = opens[index] || close;
+      const high = highs[index] || close;
+      const low = lows[index] || close;
       return {
         date: new Date(timestamp * 1000).toISOString().slice(0, 10),
+        time: "",
+        open,
+        high: Math.max(high, open, close),
+        low: Math.min(low, open, close),
         close,
       };
     })
@@ -62,11 +85,13 @@ async function fetchYahooHistory(symbol, days) {
 }
 
 async function fetchHistory(symbol, days) {
-  try {
-    const series = await fetchYahooHistory(symbol, days);
-    if (series.length) return series;
-  } catch {
-    // Fall through to Eastmoney.
+  if (symbol.startsWith("gb_")) {
+    try {
+      const series = await fetchYahooHistory(symbol, days);
+      if (series.length) return series;
+    } catch {
+      // Fall through to Eastmoney.
+    }
   }
 
   const limit = Math.max(days + 10, 45);
@@ -89,6 +114,12 @@ async function fetchHistory(symbol, days) {
     } catch {
       continue;
     }
+  }
+  try {
+    const series = await fetchYahooHistory(symbol, days);
+    if (series.length) return series;
+  } catch {
+    // No history fallback left.
   }
   return [];
 }
