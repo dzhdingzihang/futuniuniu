@@ -148,16 +148,35 @@ footer {
   font-size: 12px;
 }
 
+.metric-breakdown,
+.cell-sub {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.hero-metric.primary .metric-breakdown {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
 .hero-metric strong {
   display: block;
   font-size: clamp(22px, 3vw, 38px);
   line-height: 1.05;
-  word-break: break-word;
+  white-space: nowrap;
 }
 
 .hero-metric.primary strong {
-  font-size: clamp(54px, 7.6vw, 104px);
+  font-size: clamp(42px, 5.8vw, 82px);
   letter-spacing: 0;
+}
+
+#updatedAt {
+  font-size: clamp(24px, 2.4vw, 32px);
 }
 
 .hero-metric small {
@@ -300,6 +319,11 @@ footer {
 .axis-label {
   fill: var(--muted);
   font-size: 12px;
+}
+
+.date-label {
+  font-size: 10px;
+  text-anchor: middle;
 }
 
 .hour-label {
@@ -448,7 +472,7 @@ footer {
 
 table {
   width: 100%;
-  min-width: 1620px;
+  min-width: 1780px;
   border-collapse: collapse;
 }
 
@@ -471,6 +495,24 @@ th {
   z-index: 1;
 }
 
+.sort-button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.sort-button.active {
+  background: #e0f2fe;
+  color: #0369a1;
+  padding: 0 8px;
+}
+
 th:first-child,
 td:first-child,
 th:nth-child(2),
@@ -482,6 +524,16 @@ td:last-child {
   width: 360px;
   color: var(--muted);
   line-height: 1.45;
+}
+
+td:nth-child(3),
+td:nth-child(5),
+td:nth-child(6),
+td:nth-child(7),
+td:nth-child(8),
+td:nth-child(9),
+td:nth-child(10) {
+  white-space: nowrap;
 }
 
 .stock-name {
@@ -508,6 +560,7 @@ td:last-child {
 
 .pnl-cell {
   font-size: 22px;
+  min-width: 138px;
 }
 
 .pnl-cell.day {
@@ -573,6 +626,34 @@ td:last-child {
 
 .weekly-advice-panel {
   margin-top: 4px;
+}
+
+.advice-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.advice-tab {
+  min-width: 118px;
+  min-height: 46px;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 950;
+}
+
+.advice-tab.active {
+  border-color: var(--blue);
+  background: #e0f2fe;
+  color: #0369a1;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.14);
 }
 
 .weekly-advice-grid {

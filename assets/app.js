@@ -22,12 +22,17 @@ const els = {
   refresh: document.querySelector("#refreshButton"),
   totalProfit: document.querySelector("#totalProfit"),
   totalProfitRate: document.querySelector("#totalProfitRate"),
+  totalProfitBreakdown: document.querySelector("#totalProfitBreakdown"),
   totalCost: document.querySelector("#totalCost"),
+  totalCostBreakdown: document.querySelector("#totalCostBreakdown"),
   totalValue: document.querySelector("#totalValue"),
+  totalValueBreakdown: document.querySelector("#totalValueBreakdown"),
   todayProfit: document.querySelector("#todayProfit"),
   todayProfitRate: document.querySelector("#todayProfitRate"),
+  todayProfitBreakdown: document.querySelector("#todayProfitBreakdown"),
   sevenProfit: document.querySelector("#sevenProfit"),
   sevenProfitRate: document.querySelector("#sevenProfitRate"),
+  sevenProfitBreakdown: document.querySelector("#sevenProfitBreakdown"),
   sevenProfitRange: document.querySelector("#sevenProfitRange"),
   updatedAt: document.querySelector("#updatedAt"),
   status: document.querySelector("#statusBand"),
@@ -43,6 +48,8 @@ const els = {
   watchlistDate: document.querySelector("#watchlistDate"),
   tabs: document.querySelectorAll(".tab"),
   watchTabs: document.querySelectorAll(".watch-tab"),
+  adviceTabs: document.querySelectorAll(".advice-tab"),
+  sortButtons: document.querySelectorAll(".sort-button"),
   realizedProfit: document.querySelector("#realizedProfit"),
   openProfit: document.querySelector("#openProfit"),
   tradeCount: document.querySelector("#tradeCount"),
@@ -71,6 +78,8 @@ const els = {
 const serviceUrl = "http://127.0.0.1:8787/";
 let currentMarket = "港股";
 let currentWatchMarket = "A股";
+let currentAdviceMarket = "港股";
+let tableSort = { key: "pnl", dir: "asc" };
 let latestRows = [];
 let latestHistories = {};
 let latestIntraday = {};
@@ -90,6 +99,11 @@ function number(value, digits = 2) {
 function signed(value, currency) {
   if (!Number.isFinite(value)) return "--";
   return `${value > 0 ? "+" : ""}${money(value, currency)}`;
+}
+
+function signedPlain(value, currency) {
+  if (!Number.isFinite(value)) return "--";
+  return `${value > 0 ? "赚 " : value < 0 ? "亏 " : ""}${money(Math.abs(value), currency)}`;
 }
 
 function pct(value) {
@@ -269,12 +283,18 @@ function buildRows(quotes, histories, rates) {
       todayPnlCny: todayPnl * rate,
       sevenPnlCny: Number.isFinite(sevenPnl) ? sevenPnl * rate : NaN,
       changePct: quote?.changePct ?? NaN,
+      marketHeat: marketHeatFor(item.market),
     };
     row.buyZone = buyZoneFor(row);
     row.sellZone = sellZoneFor(row);
     row.action = actionFor(row);
     return row;
   });
+}
+
+function marketHeatFor(market) {
+  const base = { "美股": 4, "港股": 1, "A股": 2 }[market] || 0;
+  return base;
 }
 
 function mergeQuoteIntoHistory(history, quote) {
@@ -463,6 +483,7 @@ function weeklyAdviceFor(row) {
   const low20 = Math.min(...lows);
   const rangePct = row.price ? ((high20 - low20) / row.price) * 100 : NaN;
   const momentum = closes.length >= 6 ? ((last(closes) - closes[closes.length - 6]) / closes[closes.length - 6]) * 100 : 0;
+  const sentiment = marketHeatFor(row.market) + clamp(momentum, -8, 8) * 0.35 + clamp(row.changePct || 0, -5, 5) * 0.5;
   const drawdown = high20 ? ((row.price - high20) / high20) * 100 : 0;
   const nearCost = row.cost ? ((row.price - row.cost) / row.cost) * 100 : 0;
 
@@ -487,8 +508,8 @@ function weeklyAdviceFor(row) {
     : Math.max(row.cost * 1.03, row.price * 1.055);
   const tLow = Math.max(low20, row.price * (1 - clamp(rangePct, 4, 12) / 220));
   const tHigh = Math.min(high20 || row.price * 1.05, row.price * (1 + clamp(rangePct, 4, 12) / 180));
-  const isStrong = momentum > 2 && row.price >= ma5;
-  const isWeak = momentum < -2 || drawdown < -10;
+  const isStrong = (momentum > 2 || sentiment > 4) && row.price >= ma5;
+  const isWeak = momentum < -2 || sentiment < -3 || drawdown < -10;
   const stance = isStrong ? "回踩低吸/冲高减仓" : isWeak ? "防守反弹减仓" : "区间做T";
   const tone = isStrong ? "positive" : isWeak ? "negative" : "neutral";
   const summary = isStrong
@@ -505,7 +526,7 @@ function weeklyAdviceFor(row) {
     sell,
     tLow,
     tHigh,
-    reason: `近5日动量 ${pct(momentum)}，20日波动区间 ${money(low20, row.currency)}-${money(high20, row.currency)}，相对成本 ${pct(nearCost)}。`,
+    reason: `近5日动量 ${pct(momentum)}，今日 ${pct(row.changePct)}，市场情绪分 ${number(sentiment, 1)}；20日区间 ${money(low20, row.currency)}-${money(high20, row.currency)}，相对成本 ${pct(nearCost)}。`,
   };
 }
 
@@ -595,16 +616,21 @@ function renderSummary(rows, histories, intraday, rates) {
   els.totalProfit.className = classFor(pnl);
   els.totalProfitRate.textContent = pct(cost ? pnl / cost * 100 : NaN);
   els.totalProfitRate.className = classFor(pnl);
+  els.totalProfitBreakdown.textContent = marketBreakdown(rows, "pnl");
   els.totalCost.textContent = money(cost, "CNY");
+  els.totalCostBreakdown.textContent = marketBreakdown(rows, "costValue", false);
   els.totalValue.textContent = money(value, "CNY");
+  els.totalValueBreakdown.textContent = marketBreakdown(rows, "marketValue", false);
   els.todayProfit.textContent = signed(today, "CNY");
   els.todayProfit.className = classFor(today);
   els.todayProfitRate.textContent = pct(value ? today / (value - today) * 100 : NaN);
   els.todayProfitRate.className = classFor(today);
+  els.todayProfitBreakdown.textContent = marketBreakdown(rows, "todayPnl");
   els.sevenProfit.textContent = signed(seven, "CNY");
   els.sevenProfit.className = classFor(seven);
   els.sevenProfitRate.textContent = pct(cost ? seven / cost * 100 : NaN);
   els.sevenProfitRate.className = classFor(seven);
+  els.sevenProfitBreakdown.textContent = marketBreakdown(rows, "sevenPnl");
   els.sevenProfitRange.textContent = sevenRangeLabel(rows);
   els.updatedAt.textContent = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
 
@@ -618,8 +644,8 @@ function renderSummary(rows, histories, intraday, rates) {
 }
 
 function renderWeeklyAdvice(rows) {
-  const marketRows = rows.filter((row) => row.market === currentMarket);
-  els.weeklyAdviceHint.textContent = `${currentMarket} · 未来一周规则建议 · ${new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date())}`;
+  const marketRows = rows.filter((row) => row.market === currentAdviceMarket);
+  els.weeklyAdviceHint.textContent = `${currentAdviceMarket} · 参考实时价格、近30日波动、当日涨跌和市场情绪 · ${new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date())}`;
   if (!marketRows.length) {
     els.weeklyAdvice.innerHTML = '<div class="empty-card">当前市场没有持股。</div>';
     return;
@@ -644,6 +670,16 @@ function renderWeeklyAdvice(rows) {
       </article>
     `;
   }).join("");
+}
+
+function marketBreakdown(rows, key, signedValue = true) {
+  return marketOrder.map((market) => {
+    const selected = rows.filter((row) => row.market === market);
+    if (!selected.length) return "";
+    const currency = selected[0]?.currency || "CNY";
+    const total = selected.reduce((sumValue, row) => sumValue + (Number.isFinite(row[key]) ? row[key] : 0), 0);
+    return `${market}${signedValue ? signedPlain(total, currency) : money(total, currency)}`;
+  }).filter(Boolean).join(" ｜ ");
 }
 
 function renderMarketOverview(rows, histories, intraday, rates) {
@@ -728,7 +764,7 @@ function renderLineBlock(valueEl, chartEl, series, currency) {
 
 function candlestickSvg(series) {
   if (!series.length) return '<div class="chart-empty">暂无历史K线</div>';
-  const width = 760, height = 210, padL = 74, padR = 18, padT = 16, padB = 28;
+  const width = 760, height = 230, padL = 84, padR = 18, padT = 16, padB = 36;
   const highs = series.map((p) => p.high);
   const lows = series.map((p) => p.low);
   let min = Math.min(...lows, 0), max = Math.max(...highs, 0);
@@ -737,7 +773,7 @@ function candlestickSvg(series) {
   const plotH = height - padT - padB;
   const step = plotW / series.length;
   const y = (v) => padT + (1 - ((v - min) / (max - min))) * plotH;
-  const ticks = [max, (max + min) / 2, min];
+  const ticks = moneyTicks(min, max, 2000);
   const candles = series.map((p, index) => {
     const x = padL + index * step + step / 2;
     const up = p.close >= p.open;
@@ -748,7 +784,8 @@ function candlestickSvg(series) {
   }).join("");
   const grid = ticks.map((tick) => `<g><line class="axis-grid" x1="${padL}" x2="${width - padR}" y1="${y(tick)}" y2="${y(tick)}"></line><text class="axis-label" x="8" y="${y(tick) + 4}">${compactMoney(tick)}</text></g>`).join("");
   const zero = `<line class="zero-axis" x1="${padL}" x2="${width - padR}" y1="${y(0)}" y2="${y(0)}"></line><text class="zero-label" x="8" y="${Math.max(padT + 10, y(0) - 5)}">0</text>`;
-  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="盈亏K线">${grid}${zero}<line class="axis-line" x1="${padL}" x2="${padL}" y1="${padT}" y2="${height - padB}"></line><line class="axis-line" x1="${padL}" x2="${width - padR}" y1="${height - padB}" y2="${height - padB}"></line>${candles}<text class="axis-label" x="${padL}" y="${height - 6}">${shortDate(series[0].date)}</text><text class="axis-label" x="${width - padR - 42}" y="${height - 6}">${shortDate(last(series).date)}</text></svg>`;
+  const labels = tradingDateLabels(series, padL, plotW);
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="盈亏K线">${grid}${zero}<line class="axis-line" x1="${padL}" x2="${padL}" y1="${padT}" y2="${height - padB}"></line><line class="axis-line" x1="${padL}" x2="${width - padR}" y1="${height - padB}" y2="${height - padB}"></line>${candles}${labels.map((tick) => `<text class="axis-label date-label" x="${tick.x}" y="${height - 9}">${tick.label}</text>`).join("")}</svg>`;
 }
 
 function lineSvg(series) {
@@ -766,9 +803,33 @@ function lineSvg(series) {
   const cls = last(cleaned).value >= 0 ? "chart-up" : "chart-down";
   const ticks = [max, (max + min) / 2, min];
   const grid = ticks.map((tick) => `<g><line class="axis-grid" x1="${padL}" x2="${width - padR}" y1="${y(tick)}" y2="${y(tick)}"></line><text class="axis-label" x="8" y="${y(tick) + 4}">${compactMoney(tick)}</text></g>`).join("");
-  const zero = `<line class="zero-axis subtle" x1="${padL}" x2="${width - padR}" y1="${y(0)}" y2="${y(0)}"></line>`;
+  const zero = `<line class="zero-axis subtle" x1="${padL}" x2="${width - padR}" y1="${y(0)}" y2="${y(0)}"></line><text class="zero-label" x="8" y="${Math.max(padT + 10, y(0) - 4)}">0</text>`;
   const hourLabels = hourTicks(padL, width - padR);
   return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="当日盈亏波动">${grid}${zero}<line class="axis-line" x1="${padL}" x2="${padL}" y1="${padT}" y2="${height - padB}"></line><line class="axis-line" x1="${padL}" x2="${width - padR}" y1="${height - padB}" y2="${height - padB}"></line><polyline class="trend-line ${cls}" points="${points}"></polyline>${hourLabels.map((tick) => `<text class="axis-label hour-label" x="${tick.x}" y="${height - 6}">${tick.label}</text>`).join("")}</svg>`;
+}
+
+function moneyTicks(min, max, step = 2000) {
+  const start = Math.floor(min / step) * step;
+  const end = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let value = end; value >= start; value -= step) ticks.push(value);
+  if (!ticks.includes(0)) ticks.push(0);
+  const unique = [...new Set(ticks)].sort((a, b) => b - a);
+  if (unique.length <= 7) return unique;
+  return unique.filter((_, index) => index % Math.ceil(unique.length / 7) === 0 || unique[index] === 0).slice(0, 8);
+}
+
+function tradingDateLabels(series, padL, plotW) {
+  const wanted = new Set([1, 3, 5]);
+  const step = plotW / series.length;
+  const labels = series
+    .map((point, index) => ({ point, index, day: new Date(`${point.date}T00:00:00`).getDay() }))
+    .filter((item) => wanted.has(item.day));
+  const fallback = series.length ? [{ point: series[0], index: 0 }, { point: last(series), index: series.length - 1 }] : [];
+  return (labels.length ? labels : fallback).map((item) => ({
+    x: padL + item.index * step + step / 2,
+    label: shortDate(item.point.date),
+  }));
 }
 
 function hourValue(key) {
@@ -839,14 +900,24 @@ function compactMoney(value) {
 }
 
 function renderTable(rows) {
-  const sorted = rows.filter((row) => row.market === currentMarket);
+  const sorted = rows
+    .filter((row) => row.market === currentMarket)
+    .sort((a, b) => sortValue(a, tableSort.key) === sortValue(b, tableSort.key)
+      ? a.code.localeCompare(b.code)
+      : (sortValue(a, tableSort.key) - sortValue(b, tableSort.key)) * (tableSort.dir === "asc" ? 1 : -1));
+  els.sortButtons.forEach((button) => {
+    const active = button.dataset.sortKey === tableSort.key;
+    button.classList.toggle("active", active);
+    button.textContent = `${button.dataset.label || button.textContent.replace(/[↑↓]/g, "").trim()}${active ? (tableSort.dir === "asc" ? " ↑" : " ↓") : ""}`;
+  });
   els.body.innerHTML = sorted.map((row) => `
     <tr>
       <td><span class="badge">${row.market}</span></td>
       <td><div class="stock-name"><strong>${row.code}</strong><span>${row.name}</span></div></td>
-      <td>${money(row.cost, row.currency)}</td>
+      <td><strong>${money(row.costValue, row.currency)}</strong><span class="cell-sub">${money(row.cost, row.currency)} / 股</span></td>
       <td>${number(row.qty, 0)}</td>
       <td><strong class="price-cell">${money(row.price, row.currency)}</strong></td>
+      <td><strong>${money(row.marketValue, row.currency)}</strong><span class="cell-sub">折人民币 ${money(row.valueCny, "CNY")}</span></td>
       <td><strong class="pnl-cell ${classFor(row.pnl)}">${signed(row.pnl, row.currency)}</strong></td>
       <td><strong class="pnl-rate-cell ${classFor(row.pnlRate)}">${pct(row.pnlRate)}</strong></td>
       <td><strong class="pnl-cell day ${classFor(row.todayPnl)}">${signed(row.todayPnl, row.currency)}</strong></td>
@@ -857,6 +928,11 @@ function renderTable(rows) {
       <td><span class="conclusion ${row.action.conclusion === "涨" ? "up" : row.action.conclusion === "跌" ? "down" : "flat"}">未来3天：${row.action.conclusion}</span><span class="action ${row.action.type}">${row.action.label}</span><span class="advice-detail">${row.action.text}</span></td>
     </tr>
   `).join("");
+}
+
+function sortValue(row, key) {
+  const value = row[key];
+  return Number.isFinite(value) ? value : -Infinity;
 }
 
 function renderWatchlist(quotes, histories) {
@@ -953,7 +1029,7 @@ function saveTrade(event) {
   persistTrades();
   rebuildLinkedHoldings();
   resetTradeForm();
-  els.status.textContent = "交易记录已保存，并已自动联动本地持仓；需要同步仓库时导出 trades.json 和 holdings.json。";
+  els.status.textContent = "交易记录已保存，持仓成本和数量已自动重算。备份按钮只在你想留档时使用。";
   refresh();
 }
 
@@ -968,21 +1044,21 @@ function deleteTrade(id) {
 function exportTrades() {
   const text = JSON.stringify([...trades].sort((a, b) => a.date.localeCompare(b.date)), null, 2);
   navigator.clipboard?.writeText(text).then(() => {
-    els.status.textContent = "交易记录 JSON 已复制，可以粘贴到 GitHub 的 trades.json。";
+    els.status.textContent = "交易记录 JSON 已复制，作为备份使用。";
   }).catch(() => {
     els.status.textContent = "交易记录 JSON 已生成；如果复制失败，请从弹窗内容手动复制。";
   });
-  window.prompt("复制下面内容到 trades.json：", text);
+  window.prompt("交易记录备份 JSON：", text);
 }
 
 function exportHoldings() {
   const text = JSON.stringify(holdingsForExport(), null, 2);
   navigator.clipboard?.writeText(text).then(() => {
-    els.status.textContent = "当前持仓 JSON 已复制，可以粘贴到 GitHub 的 holdings.json。";
+    els.status.textContent = "当前持仓 JSON 已复制，作为备份使用。";
   }).catch(() => {
     els.status.textContent = "当前持仓 JSON 已生成；如果复制失败，请从弹窗内容手动复制。";
   });
-  window.prompt("复制下面内容到 holdings.json：", text);
+  window.prompt("当前持仓备份 JSON：", text);
 }
 
 function holdingsForExport() {
@@ -1007,13 +1083,34 @@ function resetLinkedHoldings() {
 
 function autofillTradeFields() {
   const code = els.tradeCode.value.trim();
+  syncTradeMarketDefaults();
   if (!code) return;
-  const found = holdings.find((item) => item.code === code || item.sina === code.toLowerCase());
-  if (!found) return;
+  const found = holdings.find((item) => item.code.toLowerCase() === code.toLowerCase() || item.sina === code.toLowerCase());
+  if (!found) {
+    if (!els.tradeSina.value.trim()) els.tradeSina.value = inferSina(els.tradeMarket.value, code);
+    return;
+  }
   els.tradeMarket.value = found.market;
   els.tradeName.value = els.tradeName.value || found.name;
   els.tradeCurrency.value = found.currency;
   els.tradeSina.value = els.tradeSina.value || found.sina;
+}
+
+function syncTradeMarketDefaults() {
+  const currencies = { "港股": "HKD", "A股": "CNY", "美股": "USD" };
+  els.tradeCurrency.value = currencies[els.tradeMarket.value] || els.tradeCurrency.value;
+  const code = els.tradeCode.value.trim();
+  if (code && !els.tradeSina.value.trim()) els.tradeSina.value = inferSina(els.tradeMarket.value, code);
+}
+
+function inferSina(market, code) {
+  const raw = code.trim();
+  if (!raw) return "";
+  if (/^(sh|sz|hk|gb_)/i.test(raw)) return raw.toLowerCase();
+  if (market === "港股") return `hk${raw.padStart(5, "0")}`.toLowerCase();
+  if (market === "美股") return `gb_${raw}`.toLowerCase();
+  if (market === "A股") return `${raw.startsWith("6") ? "sh" : "sz"}${raw}`.toLowerCase();
+  return raw.toLowerCase();
 }
 
 async function refresh() {
@@ -1069,6 +1166,7 @@ els.exportTradesButton.addEventListener("click", exportTrades);
 els.exportHoldingsButton.addEventListener("click", exportHoldings);
 els.resetLinkedHoldingsButton.addEventListener("click", resetLinkedHoldings);
 els.tradeCode.addEventListener("blur", autofillTradeFields);
+els.tradeMarket.addEventListener("change", syncTradeMarketDefaults);
 els.tradesBody.addEventListener("click", (event) => {
   const editId = event.target.dataset.tradeEdit;
   const deleteId = event.target.dataset.tradeDelete;
@@ -1083,8 +1181,14 @@ els.tabs.forEach((tab) => {
     currentMarket = tab.dataset.market;
     els.tabs.forEach((item) => item.classList.toggle("active", item.dataset.market === currentMarket));
     renderMarketOverview(latestRows, latestHistories, latestIntraday, latestRates);
-    renderWeeklyAdvice(latestRows);
     renderTable(latestRows);
+  });
+});
+els.adviceTabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    currentAdviceMarket = tab.dataset.adviceMarket;
+    els.adviceTabs.forEach((item) => item.classList.toggle("active", item.dataset.adviceMarket === currentAdviceMarket));
+    renderWeeklyAdvice(latestRows);
   });
 });
 els.watchTabs.forEach((tab) => {
@@ -1092,6 +1196,16 @@ els.watchTabs.forEach((tab) => {
     currentWatchMarket = tab.dataset.watchMarket;
     els.watchTabs.forEach((item) => item.classList.toggle("active", item.dataset.watchMarket === currentWatchMarket));
     renderWatchlist(latestQuotes, latestHistories);
+  });
+});
+els.sortButtons.forEach((button) => {
+  button.dataset.label = button.textContent.trim();
+  button.addEventListener("click", () => {
+    const key = button.dataset.sortKey;
+    tableSort = tableSort.key === key
+      ? { key, dir: tableSort.dir === "desc" ? "asc" : "desc" }
+      : { key, dir: "desc" };
+    renderTable(latestRows);
   });
 });
 
