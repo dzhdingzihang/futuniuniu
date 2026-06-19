@@ -254,11 +254,47 @@ h1 {
 
 .pnl-split-card small {
   display: block;
-  margin-top: 12px;
+  margin-top: 10px;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 12px;
+  line-height: 1.45;
 }
+
+.market-breakdown-list,
+.metric-breakdown {
+  display: grid;
+  gap: 4px;
+}
+
+.market-breakdown-list span,
+.metric-breakdown span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 18px;
+}
+
+.market-breakdown-list em,
+.metric-breakdown em {
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 850;
+}
+
+.market-breakdown-list strong,
+.metric-breakdown strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.market-breakdown-list strong.positive,
+.metric-breakdown strong.positive { color: var(--up); }
+
+.market-breakdown-list strong.negative,
+.metric-breakdown strong.negative { color: var(--down); }
 
 .pnl-card .metric-breakdown { display: none; }
 
@@ -297,15 +333,16 @@ h1 {
 }
 
 .pig-character {
-  --pig: #ffc0ce;
-  --pig-deep: #f790a6;
-  --pig-dark: #8a4f3d;
+  --pig: #ffc7d4;
+  --pig-deep: #f89aaa;
+  --pig-dark: #86503e;
   --pig-blush: rgba(255, 137, 158, 0.5);
   position: relative;
-  width: min(236px, 92%);
+  width: min(250px, 92%);
   aspect-ratio: 1;
   transform-origin: 50% 82%;
   animation: pigBodyBreathe 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 18px 22px rgba(255, 135, 160, 0.16));
 }
 
 .pig-character span,
@@ -315,10 +352,10 @@ h1 {
 }
 
 .pig-shadow {
-  left: 18%;
-  right: 18%;
-  bottom: 4%;
-  height: 18px;
+  left: 20%;
+  right: 20%;
+  bottom: 3%;
+  height: 16px;
   border-radius: 999px;
   background: rgba(129, 72, 88, 0.13);
   filter: blur(4px);
@@ -326,71 +363,74 @@ h1 {
 }
 
 .pig-body {
-  left: 22%;
-  bottom: 13%;
-  width: 56%;
-  height: 58%;
-  border-radius: 48% 48% 42% 42%;
+  left: 21%;
+  bottom: 10%;
+  width: 58%;
+  height: 60%;
+  border-radius: 49% 49% 44% 44%;
   background:
-    radial-gradient(circle at 33% 32%, rgba(255, 255, 255, 0.68), transparent 24%),
-    linear-gradient(145deg, #ffd8df 0%, var(--pig) 48%, #f7a4b4 100%);
-  box-shadow: inset -18px -18px 34px rgba(201, 83, 106, 0.13), 0 18px 26px rgba(255, 138, 168, 0.2);
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.78), transparent 23%),
+    radial-gradient(circle at 50% 64%, rgba(255, 235, 240, 0.72), transparent 32%),
+    linear-gradient(145deg, #ffe0e7 0%, var(--pig) 50%, #f6a4b4 100%);
+  box-shadow: inset -18px -18px 34px rgba(201, 83, 106, 0.11), 0 18px 26px rgba(255, 138, 168, 0.14);
 }
 
 .pig-face {
-  left: 21%;
-  top: 13%;
-  width: 58%;
-  height: 53%;
-  border-radius: 52% 52% 47% 47%;
+  left: 17%;
+  top: 9%;
+  width: 66%;
+  height: 58%;
+  border-radius: 55% 55% 48% 48%;
   background:
-    radial-gradient(circle at 30% 35%, rgba(255, 255, 255, 0.78), transparent 20%),
-    linear-gradient(145deg, #ffdce3 0%, var(--pig) 55%, #f49aab 100%);
-  box-shadow: inset -15px -13px 26px rgba(198, 78, 101, 0.11);
+    radial-gradient(circle at 31% 31%, rgba(255, 255, 255, 0.84), transparent 18%),
+    radial-gradient(circle at 44% 70%, rgba(255, 151, 171, 0.16), transparent 38%),
+    linear-gradient(145deg, #ffe2e8 0%, var(--pig) 56%, #f5a0b0 100%);
+  box-shadow: inset -15px -13px 26px rgba(198, 78, 101, 0.09);
 }
 
 .pig-ear {
-  top: 10%;
-  width: 25%;
-  height: 27%;
-  border-radius: 74% 28% 68% 30%;
+  top: 8%;
+  width: 26%;
+  height: 28%;
+  border-radius: 76% 30% 70% 32%;
   background:
-    radial-gradient(circle at 50% 54%, #ff879c 0 34%, transparent 36%),
-    linear-gradient(145deg, #ffd8df, #f49aaa);
+    radial-gradient(circle at 50% 54%, #ff8fa3 0 31%, transparent 33%),
+    linear-gradient(145deg, #ffe1e8, #f4a0af);
   transform-origin: 70% 82%;
   box-shadow: inset -8px -7px 18px rgba(192, 72, 96, 0.13);
 }
 
 .pig-ear-left {
-  left: 19%;
+  left: 14%;
   transform: rotate(-30deg);
   animation: leftEar 3.8s ease-in-out infinite;
 }
 
 .pig-ear-right {
-  right: 18%;
+  right: 14%;
   transform: scaleX(-1) rotate(-25deg);
   animation: rightEar 4s ease-in-out infinite;
 }
 
 .pig-eye {
-  top: 32%;
-  width: 14%;
-  height: 17%;
+  top: 31%;
+  width: 15%;
+  height: 18%;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 58% 58%, #2d1d1a 0 28%, transparent 29%),
-    radial-gradient(circle at 42% 38%, #ffffff 0 16%, transparent 17%),
+    radial-gradient(circle at 58% 60%, #2d1d1a 0 30%, transparent 31%),
+    radial-gradient(circle at 40% 35%, #ffffff 0 16%, transparent 17%),
+    radial-gradient(circle at 70% 34%, rgba(255,255,255,0.9) 0 8%, transparent 9%),
     #fffaf8;
   box-shadow: 0 1px 0 rgba(96, 50, 44, 0.14);
   animation: pigBlink 5.4s ease-in-out infinite;
 }
 
-.pig-eye-left { left: 35%; }
-.pig-eye-right { right: 35%; }
+.pig-eye-left { left: 34%; }
+.pig-eye-right { right: 34%; }
 
 .pig-brow {
-  top: 28%;
+  top: 27%;
   width: 14%;
   height: 4px;
   border-radius: 999px;
@@ -409,30 +449,42 @@ h1 {
 }
 
 .pig-snout {
-  left: 38%;
+  left: 37%;
   top: 43%;
-  width: 24%;
-  height: 17%;
-  border-radius: 48% 48% 54% 54%;
+  width: 26%;
+  height: 18%;
+  border-radius: 50% 50% 54% 54%;
   background:
-    radial-gradient(circle at 35% 53%, #9f4351 0 11%, transparent 12%),
-    radial-gradient(circle at 65% 53%, #9f4351 0 11%, transparent 12%),
-    linear-gradient(180deg, #ff9cae, #f77f96);
+    radial-gradient(circle at 35% 54%, #9a4250 0 10%, transparent 11%),
+    radial-gradient(circle at 65% 54%, #9a4250 0 10%, transparent 11%),
+    linear-gradient(180deg, #ffa5b4, #f6849b);
   box-shadow: inset 0 -4px 9px rgba(132, 54, 66, 0.14);
 }
 
+.pig-cheek {
+  top: 51%;
+  width: 16%;
+  height: 12%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 127, 154, 0.42), rgba(255, 127, 154, 0.02) 68%);
+  filter: blur(0.2px);
+}
+
+.pig-cheek-left { left: 23%; }
+.pig-cheek-right { right: 23%; }
+
 .pig-mouth {
-  left: 46%;
-  top: 62%;
-  width: 8%;
-  height: 5%;
-  border-bottom: 3px solid #914b44;
+  left: 44%;
+  top: 63%;
+  width: 12%;
+  height: 7%;
+  border-bottom: 4px solid #8e4843;
   border-radius: 0 0 999px 999px;
 }
 
 .pig-arm {
-  width: 17%;
-  height: 31%;
+  width: 18%;
+  height: 30%;
   border-radius: 999px;
   background: linear-gradient(180deg, #ffc9d4, #f19aaa);
   transform-origin: 50% 12%;
@@ -440,14 +492,14 @@ h1 {
 }
 
 .pig-arm-left {
-  left: 20%;
-  top: 54%;
+  left: 18%;
+  top: 55%;
   transform: rotate(28deg);
 }
 
 .pig-arm-right {
-  right: 19%;
-  top: 52%;
+  right: 18%;
+  top: 55%;
   transform: rotate(-26deg);
 }
 
@@ -465,15 +517,15 @@ h1 {
 }
 
 .pig-leg {
-  bottom: 9%;
-  width: 17%;
+  bottom: 8%;
+  width: 18%;
   height: 18%;
   border-radius: 999px;
   background: linear-gradient(180deg, #ffc7d2, #ef96a8);
 }
 
-.pig-leg-left { left: 29%; transform: rotate(8deg); }
-.pig-leg-right { right: 29%; transform: rotate(-8deg); }
+.pig-leg-left { left: 28%; transform: rotate(8deg); }
+.pig-leg-right { right: 28%; transform: rotate(-8deg); }
 
 .pig-tail {
   right: 14%;
@@ -489,9 +541,9 @@ h1 {
 }
 
 .tea-cup {
-  left: 39%;
-  top: 67%;
-  width: 23%;
+  left: 38%;
+  top: 66%;
+  width: 24%;
   height: 25%;
   border: 3px solid rgba(255, 255, 255, 0.9);
   border-radius: 7px 7px 16px 16px;
@@ -731,7 +783,7 @@ h1 {
 
 .hero-metric .metric-breakdown,
 .hero-metric .metric-note {
-  max-height: 42px;
+  max-height: 70px;
   overflow: hidden;
 }
 

@@ -679,26 +679,26 @@ function renderSummary(rows, histories, intraday, rates) {
   els.totalProfitBreakdown.textContent = `持仓盈亏 ${signedPlain(holdingPnl, "CNY")} ｜ 卖出盈亏 ${signedPlain(soldPnl, "CNY")}`;
   els.holdingProfit.textContent = signed(holdingPnl, "CNY");
   els.holdingProfit.className = classFor(holdingPnl);
-  els.holdingProfitBreakdown.textContent = marketBreakdownCny(rows, "holding");
+  els.holdingProfitBreakdown.innerHTML = marketBreakdownCny(rows, "holding");
   els.soldProfit.textContent = signed(soldPnl, "CNY");
   els.soldProfit.className = classFor(soldPnl);
-  els.soldProfitBreakdown.textContent = marketBreakdownCny(rows, "sold");
+  els.soldProfitBreakdown.innerHTML = marketBreakdownCny(rows, "sold");
   els.totalCost.textContent = money(cost, "CNY");
   els.totalCostBreakdown.textContent = `现金成本 ${money(cashCost, "CNY")} ｜ 持仓成本 ${money(holdingCost, "CNY")}`;
   els.cashCost.textContent = money(cashCost, "CNY");
   els.cashCostBreakdown.textContent = `卖出成本 ${money(cashCost, "CNY")} ｜ 持仓成本 ${money(holdingCost, "CNY")}`;
   els.totalValue.textContent = money(value, "CNY");
-  els.totalValueBreakdown.textContent = marketBreakdown(rows, "marketValue", false);
+  els.totalValueBreakdown.innerHTML = marketBreakdown(rows, "marketValue", false);
   els.todayProfit.textContent = signed(today, "CNY");
   els.todayProfit.className = classFor(today);
   els.todayProfitRate.textContent = pct(value ? today / (value - today) * 100 : NaN);
   els.todayProfitRate.className = classFor(today);
-  els.todayProfitBreakdown.textContent = marketBreakdown(rows, "todayPnl");
+  els.todayProfitBreakdown.innerHTML = marketBreakdown(rows, "todayPnl");
   els.sevenProfit.textContent = signed(seven, "CNY");
   els.sevenProfit.className = classFor(seven);
   els.sevenProfitRate.textContent = pct(cost ? seven / cost * 100 : NaN);
   els.sevenProfitRate.className = classFor(seven);
-  els.sevenProfitBreakdown.textContent = marketBreakdown(rows, "sevenPnl");
+  els.sevenProfitBreakdown.innerHTML = marketBreakdown(rows, "sevenPnl");
   els.sevenProfitRange.textContent = sevenRangeLabel(rows);
   els.updatedAt.textContent = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
   els.marketStatus.textContent = marketStatusText(rows);
@@ -753,21 +753,22 @@ function renderWeeklyAdvice(rows) {
 }
 
 function marketBreakdown(rows, key, signedValue = true) {
-  return marketOrder.map((market) => {
+  return summaryMarketOrder.map((market) => {
     const selected = rows.filter((row) => row.market === market);
     if (!selected.length) return "";
     const currency = selected[0]?.currency || "CNY";
     const total = selected.reduce((sumValue, row) => sumValue + (Number.isFinite(row[key]) ? row[key] : 0), 0);
-    return `${market}${signedValue ? signedPlain(total, currency) : money(total, currency)}`;
-  }).filter(Boolean).join(" ｜ ");
+    const value = signedValue ? signed(total, currency) : money(total, currency);
+    return `<span><em>${market}</em><strong class="${signedValue ? classFor(total) : "neutral"}">${value}</strong></span>`;
+  }).filter(Boolean).join("");
 }
 
 function marketBreakdownCny(rows, status) {
   return summaryMarketOrder.map((market) => {
     const selected = rows.filter((row) => row.market === market && (status === "sold" ? row.status === "sold" : row.status !== "sold"));
     const total = selected.reduce((sumValue, row) => sumValue + (Number.isFinite(row.pnlCny) ? row.pnlCny : 0), 0);
-    return `${market} ${signed(total, "CNY")}`;
-  }).join(" ｜ ");
+    return `<span><em>${market}</em><strong class="${classFor(total)}">${signed(total, "CNY")}</strong></span>`;
+  }).join("");
 }
 
 function renderPigMood(todayCny) {
