@@ -32,5 +32,5 @@
   { "market": "A股", "code": "002217", "name": "合力泰", "status": "sold", "cost": 4, "sellPrice": 2.5, "sellDate": "2026-06-17","qty": 2900, "currency": "CNY", "sina": "sz002217" },
   { "market": "A股", "code": "001896", "name": "豫能控股", "status": "holding", "cost": 15.5, "qty": 200, "currency": "CNY", "sina": "sz001896" },
   { "market": "A股", "code": "000630", "name": "铜陵有色", "status": "holding", "cost": 7.6, "qty": 1000, "currency": "CNY", "sina": "sz000630" },
-  { "market": "A股", "code": "000988", "name": "华工科技", "status": "holding", "cost": 172, "sellPrice": 180, "sellDate": "2026-06-17", "qty": 100, "currency": "CNY", "sina": "sz000988" },  
+  { "market": "A股", "code": "000988", "name": "华工科技", "status": "sold", "cost": 172, "sellPrice": 180, "sellDate": "2026-06-17", "qty": 100, "currency": "CNY", "sina": "sz000988" },  
 ]
