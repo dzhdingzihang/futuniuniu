@@ -1,6 +1,7 @@
 const marketOrder = ["港股", "A股", "美股"];
 const tradesStorageKey = "piggy-trades-v1";
 const holdingsStorageKey = "piggy-linked-holdings-v1";
+const roundTripFeeUsd = 30;
 
 let holdings = [];
 let baseHoldings = [];
@@ -151,15 +152,25 @@ async function loadHoldings() {
 }
 
 function normalizeHoldings(items) {
-  return items.map((item) => ({
-    market: String(item.market || "").trim(),
-    code: String(item.code || "").trim(),
-    name: String(item.name || item.code || "").trim(),
-    cost: Number(item.cost),
-    qty: Number(item.qty),
-    currency: String(item.currency || "").trim().toUpperCase(),
-    sina: String(item.sina || "").trim().toLowerCase(),
-  })).filter((item) => item.market && item.code && item.currency && item.sina && Number.isFinite(item.cost) && Number.isFinite(item.qty) && item.qty > 0);
+  return items.map((item) => {
+    const rawStatus = String(item.status || "holding").trim().toLowerCase();
+    const status = rawStatus === "sold" || rawStatus === "卖出" || rawStatus === "已卖出" ? "sold" : "holding";
+    return {
+      market: String(item.market || "").trim(),
+      code: String(item.code || "").trim(),
+      name: String(item.name || item.code || "").trim(),
+      cost: Number(item.cost),
+      qty: Number(item.qty),
+      currency: String(item.currency || "").trim().toUpperCase(),
+      sina: String(item.sina || "").trim().toLowerCase(),
+      status,
+      sellPrice: Number(item.sellPrice ?? item.soldPrice ?? item.exitPrice),
+      sellDate: String(item.sellDate || item.soldDate || "").trim(),
+    };
+  }).filter((item) => {
+    const hasBaseFields = item.market && item.code && item.currency && item.sina && Number.isFinite(item.cost) && Number.isFinite(item.qty) && item.qty > 0;
+    return hasBaseFields && (item.status === "holding" || Number.isFinite(item.sellPrice));
+  });
 }
 
 function readLocalHoldings() {
@@ -228,7 +239,7 @@ function persistTrades() {
 }
 
 async function fetchQuotes() {
-  const symbols = [...new Set([...holdings, ...watchCandidates].map((item) => item.sina))].join(",");
+  const symbols = [...new Set([...activeHoldings(), ...watchCandidates].map((item) => item.sina))].join(",");
   const payload = await getJson(`/api/quotes?symbols=${encodeURIComponent(symbols)}`, { quotes: {} });
   return new Map(Object.entries(payload.quotes || {}));
 }
@@ -239,41 +250,58 @@ async function fetchRates() {
 }
 
 async function fetchHistory() {
-  const symbols = [...new Set([...holdings, ...watchCandidates].map((item) => item.sina))].join(",");
+  const symbols = [...new Set([...activeHoldings(), ...watchCandidates].map((item) => item.sina))].join(",");
   const payload = await getJson(`/api/history?symbols=${encodeURIComponent(symbols)}&days=30`, { histories: {} });
   return payload.histories || {};
 }
 
 async function fetchIntraday() {
-  const symbols = [...new Set(holdings.map((item) => item.sina))].join(",");
+  const symbols = [...new Set(activeHoldings().map((item) => item.sina))].join(",");
   const payload = await getJson(`/api/intraday?symbols=${encodeURIComponent(symbols)}`, { intraday: {} });
   return payload.intraday || {};
+}
+
+function activeHoldings() {
+  return holdings.filter((item) => item.status !== "sold");
+}
+
+function feeForCurrency(currency, rates) {
+  const usdToCny = rates.USD || 7.22;
+  const currencyToCny = rates[currency] || 1;
+  return (roundTripFeeUsd * usdToCny) / currencyToCny;
 }
 
 function buildRows(quotes, histories, rates) {
   return holdings.map((item) => {
     const quote = quotes.get(item.sina) || null;
     const history = mergeQuoteIntoHistory(histories[item.sina] || [], quote);
-    const price = quote?.price || last(history)?.close || NaN;
+    const isSold = item.status === "sold";
+    const price = isSold ? item.sellPrice : quote?.price || last(history)?.close || NaN;
     const rate = rates[item.currency] || 1;
+    const fee = feeForCurrency(item.currency, rates);
+    const feeCny = fee * rate;
     const costValue = item.cost * item.qty;
-    const marketValue = price * item.qty;
-    const pnl = marketValue - costValue;
-    const todayPnl = (quote?.change || 0) * item.qty;
+    const marketValue = isSold ? 0 : price * item.qty;
+    const exitValue = price * item.qty;
+    const pnl = Number.isFinite(price) ? exitValue - costValue - fee : NaN;
+    const todayPnl = isSold ? 0 : (quote?.change || 0) * item.qty;
     const sevenPoint = history[Math.max(0, history.length - 8)];
     const latestPoint = last(history);
-    const sevenPnl = sevenPoint ? (price - sevenPoint.close) * item.qty : NaN;
+    const sevenPnl = isSold ? 0 : sevenPoint ? (price - sevenPoint.close) * item.qty : NaN;
     const row = {
       ...item,
       price,
       quote,
       history,
+      fee,
+      feeCny,
       costValue,
       marketValue,
+      exitValue,
       pnl,
       pnlRate: costValue ? (pnl / costValue) * 100 : NaN,
       todayPnl,
-      todayPnlRate: price ? ((quote?.change || 0) / (price - (quote?.change || 0))) * 100 : NaN,
+      todayPnlRate: isSold ? 0 : price ? ((quote?.change || 0) / (price - (quote?.change || 0))) * 100 : NaN,
       sevenPnl,
       sevenStartDate: sevenPoint?.date || "",
       sevenEndDate: latestPoint?.date || quote?.date || "",
@@ -353,6 +381,7 @@ function buildTradeStats(rows, rates) {
       remaining -= matched;
       if (lot.qty <= 0.000001) queue.shift();
     }
+    if (remaining < trade.qty) realizedCny -= roundTripFeeUsd * (rates.USD || 7.22);
   });
 
   const openCny = sum(rows, "pnlCny");
@@ -371,7 +400,7 @@ function rowForTrade(trade, rows) {
 
 function applyTradeToHoldings(trade, sourceHoldings) {
   const next = sourceHoldings.map((item) => ({ ...item }));
-  const index = next.findIndex((item) => item.sina === trade.sina);
+  const index = next.findIndex((item) => item.sina === trade.sina && item.status !== "sold");
 
   if (trade.action === "buy") {
     if (index >= 0) {
@@ -385,6 +414,7 @@ function applyTradeToHoldings(trade, sourceHoldings) {
         name: trade.name || current.name,
         currency: trade.currency || current.currency,
         sina: trade.sina || current.sina,
+        status: "holding",
         qty: totalQty,
         cost: totalQty ? totalCost / totalQty : current.cost,
       };
@@ -397,11 +427,22 @@ function applyTradeToHoldings(trade, sourceHoldings) {
         qty: trade.qty,
         currency: trade.currency,
         sina: trade.sina,
+        status: "holding",
       });
     }
   } else if (index >= 0) {
     const current = next[index];
     const qty = Math.max(0, current.qty - trade.qty);
+    const soldQty = Math.min(current.qty, trade.qty);
+    if (soldQty > 0) {
+      next.push({
+        ...current,
+        qty: soldQty,
+        status: "sold",
+        sellPrice: trade.price,
+        sellDate: trade.date,
+      });
+    }
     if (qty <= 0.000001) {
       next.splice(index, 1);
     } else {
@@ -540,7 +581,7 @@ function last(arr) {
 }
 
 function buildPortfolioSeries(items, histories, rates, market = null) {
-  const selected = market ? items.filter((item) => item.market === market) : items;
+  const selected = (market ? items.filter((item) => item.market === market) : items).filter((item) => item.status !== "sold");
   const historyFor = (item) => histories[item.sina] || item.history || [];
   const dates = [...new Set(selected.flatMap((item) => historyFor(item).map((p) => p.date)))].sort().slice(-30);
   return dates.map((date) => {
@@ -562,7 +603,7 @@ function buildPortfolioSeries(items, histories, rates, market = null) {
 }
 
 function buildIntradaySeries(items, intraday, rates, market = null) {
-  const selected = market ? items.filter((item) => item.market === market) : items;
+  const selected = (market ? items.filter((item) => item.market === market) : items).filter((item) => item.status !== "sold");
   const dates = selected.flatMap((item) => (intraday[item.sina] || []).map((p) => p.date)).sort();
   const date = last(dates);
   if (!date) return [];
@@ -609,7 +650,7 @@ function pointOnOrBeforeTime(series, key) {
 function renderSummary(rows, histories, intraday, rates) {
   const cost = sum(rows, "costCny");
   const value = sum(rows, "valueCny");
-  const pnl = value - cost;
+  const pnl = sum(rows, "pnlCny");
   const today = sum(rows, "todayPnlCny");
   const seven = sum(rows, "sevenPnlCny");
   els.totalProfit.textContent = signed(pnl, "CNY");
@@ -635,7 +676,7 @@ function renderSummary(rows, histories, intraday, rates) {
   els.updatedAt.textContent = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
 
   const kline = buildPortfolioSeries(rows, histories, rates);
-  const line = buildIntradaySeries(holdings, intraday, rates);
+  const line = buildIntradaySeries(rows, intraday, rates);
   renderTrendBlock(els.totalTrendValue, els.totalTrendChart, kline, "CNY");
   renderLineBlock(els.totalIntradayValue, els.totalIntradayChart, line, "CNY");
   els.totalTrendHint.textContent = `红涨绿跌 · ${kline.length} 个交易点`;
@@ -644,7 +685,7 @@ function renderSummary(rows, histories, intraday, rates) {
 }
 
 function renderWeeklyAdvice(rows) {
-  const marketRows = rows.filter((row) => row.market === currentAdviceMarket);
+  const marketRows = rows.filter((row) => row.market === currentAdviceMarket && row.status !== "sold");
   els.weeklyAdviceHint.textContent = `${currentAdviceMarket} · 参考实时价格、近30日波动、当日涨跌和市场情绪 · ${new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date())}`;
   if (!marketRows.length) {
     els.weeklyAdvice.innerHTML = '<div class="empty-card">当前市场没有持股。</div>';
@@ -688,12 +729,12 @@ function renderMarketOverview(rows, histories, intraday, rates) {
     const currency = selected[0]?.currency || "CNY";
     const cost = selected.reduce((total, row) => total + row.costValue, 0);
     const value = selected.reduce((total, row) => total + row.marketValue, 0);
-    const pnl = value - cost;
+    const pnl = selected.reduce((total, row) => total + (Number.isFinite(row.pnl) ? row.pnl : 0), 0);
     const rate = cost ? pnl / cost * 100 : NaN;
     const today = selected.reduce((total, row) => total + (Number.isFinite(row.todayPnl) ? row.todayPnl : 0), 0);
     const todayRate = value - today ? today / (value - today) * 100 : NaN;
     const kline = buildPortfolioSeries(rows, histories, rates, market);
-    const intradaySeries = buildIntradaySeries(holdings, intraday, rates, market);
+    const intradaySeries = buildIntradaySeries(rows, intraday, rates, market);
     return `
       <article class="market-card active" data-market-card="${market}">
         <div class="market-card-head"><span class="badge">${market}</span><span>${currency} 展示</span></div>
@@ -725,8 +766,10 @@ function renderMarketOverview(rows, histories, intraday, rates) {
 
 function renderTradeSummary(rows, rates) {
   const stats = buildTradeStats(rows, rates);
-  els.realizedProfit.textContent = signed(stats.realizedCny, "CNY");
-  els.realizedProfit.className = classFor(stats.realizedCny);
+  const realizedFromHoldings = rows.filter((row) => row.status === "sold").reduce((total, row) => total + (Number.isFinite(row.pnlCny) ? row.pnlCny : 0), 0);
+  const realizedCny = realizedFromHoldings || stats.realizedCny;
+  els.realizedProfit.textContent = signed(realizedCny, "CNY");
+  els.realizedProfit.className = classFor(realizedCny);
   if (rows.length) {
     els.openProfit.textContent = signed(stats.openCny, "CNY");
     els.openProfit.className = classFor(stats.openCny);
@@ -913,19 +956,19 @@ function renderTable(rows) {
   els.body.innerHTML = sorted.map((row) => `
     <tr>
       <td><span class="badge">${row.market}</span></td>
-      <td><div class="stock-name"><strong>${row.code}</strong><span>${row.name}</span></div></td>
-      <td><strong>${money(row.costValue, row.currency)}</strong><span class="cell-sub">${money(row.cost, row.currency)} / 股</span></td>
+      <td><div class="stock-name"><strong>${row.code}</strong><span>${row.name} · ${row.status === "sold" ? "已卖出" : "持有中"}</span></div></td>
+      <td><strong>${money(row.costValue, row.currency)}</strong><span class="cell-sub">${money(row.cost, row.currency)} / 股 · 手续费 ${money(row.fee, row.currency)}</span></td>
       <td>${number(row.qty, 0)}</td>
-      <td><strong class="price-cell">${money(row.price, row.currency)}</strong></td>
-      <td><strong>${money(row.marketValue, row.currency)}</strong><span class="cell-sub">折人民币 ${money(row.valueCny, "CNY")}</span></td>
+      <td><strong class="price-cell">${money(row.price, row.currency)}</strong><span class="cell-sub">${row.status === "sold" ? `卖出价${row.sellDate ? ` · ${row.sellDate}` : ""}` : "实时/延时"}</span></td>
+      <td><strong>${row.status === "sold" ? money(row.exitValue, row.currency) : money(row.marketValue, row.currency)}</strong><span class="cell-sub">${row.status === "sold" ? "卖出金额" : `折人民币 ${money(row.valueCny, "CNY")}`}</span></td>
       <td><strong class="pnl-cell ${classFor(row.pnl)}">${signed(row.pnl, row.currency)}</strong></td>
       <td><strong class="pnl-rate-cell ${classFor(row.pnlRate)}">${pct(row.pnlRate)}</strong></td>
       <td><strong class="pnl-cell day ${classFor(row.todayPnl)}">${signed(row.todayPnl, row.currency)}</strong></td>
       <td><strong class="pnl-rate-cell ${classFor(row.todayPnlRate)}">${pct(row.todayPnlRate)}</strong></td>
-      <td><div class="buy-zone ${row.buyZone.tone}"><strong>≤ ${money(row.buyZone.price, row.currency)}</strong><span>${row.buyZone.label} · ${row.buyZone.text}</span></div></td>
-      <td><div class="sell-zone ${row.sellZone.tone}"><strong>≥ ${money(row.sellZone.price, row.currency)}</strong><span>${row.sellZone.label} · ${row.sellZone.text}</span></div></td>
+      <td>${row.status === "sold" ? '<span class="muted">--</span>' : `<div class="buy-zone ${row.buyZone.tone}"><strong>≤ ${money(row.buyZone.price, row.currency)}</strong><span>${row.buyZone.label} · ${row.buyZone.text}</span></div>`}</td>
+      <td>${row.status === "sold" ? '<span class="muted">--</span>' : `<div class="sell-zone ${row.sellZone.tone}"><strong>≥ ${money(row.sellZone.price, row.currency)}</strong><span>${row.sellZone.label} · ${row.sellZone.text}</span></div>`}</td>
       <td class="${classFor(row.changePct)}">${pct(row.changePct)}</td>
-      <td><span class="conclusion ${row.action.conclusion === "涨" ? "up" : row.action.conclusion === "跌" ? "down" : "flat"}">未来3天：${row.action.conclusion}</span><span class="action ${row.action.type}">${row.action.label}</span><span class="advice-detail">${row.action.text}</span></td>
+      <td>${row.status === "sold" ? '<span class="conclusion flat">已落袋</span><span class="advice-detail">按买入价、卖出价和手续费计算</span>' : `<span class="conclusion ${row.action.conclusion === "涨" ? "up" : row.action.conclusion === "跌" ? "down" : "flat"}">未来3天：${row.action.conclusion}</span><span class="action ${row.action.type}">${row.action.label}</span><span class="advice-detail">${row.action.text}</span>`}</td>
     </tr>
   `).join("");
 }
@@ -1062,15 +1105,23 @@ function exportHoldings() {
 }
 
 function holdingsForExport() {
-  return holdings.map((item) => ({
-    market: item.market,
-    code: item.code,
-    name: item.name,
-    cost: Number(item.cost.toFixed(4)),
-    qty: Number(item.qty.toFixed(4)),
-    currency: item.currency,
-    sina: item.sina,
-  }));
+  return holdings.map((item) => {
+    const row = {
+      market: item.market,
+      code: item.code,
+      name: item.name,
+      status: item.status === "sold" ? "sold" : "holding",
+      cost: Number(item.cost.toFixed(4)),
+      qty: Number(item.qty.toFixed(4)),
+      currency: item.currency,
+      sina: item.sina,
+    };
+    if (item.status === "sold") {
+      row.sellPrice = Number(item.sellPrice.toFixed(4));
+      if (item.sellDate) row.sellDate = item.sellDate;
+    }
+    return row;
+  });
 }
 
 function resetLinkedHoldings() {
