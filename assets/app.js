@@ -36,6 +36,8 @@ const els = {
   moodTabs: document.querySelectorAll(".mood-tabs span"),
   totalCost: document.querySelector("#totalCost"),
   totalCostBreakdown: document.querySelector("#totalCostBreakdown"),
+  cashCost: document.querySelector("#cashCost"),
+  cashCostBreakdown: document.querySelector("#cashCostBreakdown"),
   totalValue: document.querySelector("#totalValue"),
   totalValueBreakdown: document.querySelector("#totalValueBreakdown"),
   todayProfit: document.querySelector("#todayProfit"),
@@ -46,6 +48,7 @@ const els = {
   sevenProfitBreakdown: document.querySelector("#sevenProfitBreakdown"),
   sevenProfitRange: document.querySelector("#sevenProfitRange"),
   updatedAt: document.querySelector("#updatedAt"),
+  marketStatus: document.querySelector("#marketStatus"),
   status: document.querySelector("#statusBand"),
   totalTrendValue: document.querySelector("#totalTrendValue"),
   totalTrendChart: document.querySelector("#totalTrendChart"),
@@ -662,6 +665,7 @@ function pointOnOrBeforeTime(series, key) {
 function renderSummary(rows, histories, intraday, rates) {
   const cost = sum(rows, "costCny");
   const holdingCost = sum(rows.filter((row) => row.status !== "sold"), "costCny");
+  const cashCost = Math.max(0, cost - holdingCost);
   const value = sum(rows, "valueCny");
   const pnl = sum(rows, "pnlCny");
   const holdingPnl = sum(rows.filter((row) => row.status !== "sold"), "pnlCny");
@@ -680,7 +684,9 @@ function renderSummary(rows, histories, intraday, rates) {
   els.soldProfit.className = classFor(soldPnl);
   els.soldProfitBreakdown.textContent = marketBreakdownCny(rows, "sold");
   els.totalCost.textContent = money(cost, "CNY");
-  els.totalCostBreakdown.textContent = `现金成本 ${money(cost, "CNY")} ｜ 持仓成本 ${money(holdingCost, "CNY")}`;
+  els.totalCostBreakdown.textContent = `现金成本 ${money(cashCost, "CNY")} ｜ 持仓成本 ${money(holdingCost, "CNY")}`;
+  els.cashCost.textContent = money(cashCost, "CNY");
+  els.cashCostBreakdown.textContent = `卖出成本 ${money(cashCost, "CNY")} ｜ 持仓成本 ${money(holdingCost, "CNY")}`;
   els.totalValue.textContent = money(value, "CNY");
   els.totalValueBreakdown.textContent = marketBreakdown(rows, "marketValue", false);
   els.todayProfit.textContent = signed(today, "CNY");
@@ -695,6 +701,7 @@ function renderSummary(rows, histories, intraday, rates) {
   els.sevenProfitBreakdown.textContent = marketBreakdown(rows, "sevenPnl");
   els.sevenProfitRange.textContent = sevenRangeLabel(rows);
   els.updatedAt.textContent = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+  els.marketStatus.textContent = marketStatusText(rows);
   renderPigMood(today);
 
   const kline = buildPortfolioSeries(rows, histories, rates);
@@ -704,6 +711,16 @@ function renderSummary(rows, histories, intraday, rates) {
   els.totalTrendHint.textContent = `红涨绿跌 · ${kline.length} 个交易点`;
   renderWeeklyAdvice(rows);
   renderTradeSummary(rows, rates);
+}
+
+function marketStatusText(rows) {
+  const active = rows.filter((row) => row.status !== "sold");
+  const upCount = active.filter((row) => Number.isFinite(row.todayPnlCny) && row.todayPnlCny > 0).length;
+  const downCount = active.filter((row) => Number.isFinite(row.todayPnlCny) && row.todayPnlCny < 0).length;
+  if (!active.length) return "市场状态 等待持仓";
+  if (upCount > downCount) return `市场状态 正常交易中 ｜ ${upCount}涨 ${downCount}跌`;
+  if (downCount > upCount) return `市场状态 防守观察中 ｜ ${upCount}涨 ${downCount}跌`;
+  return `市场状态 分化震荡 ｜ ${upCount}涨 ${downCount}跌`;
 }
 
 function renderWeeklyAdvice(rows) {
@@ -818,31 +835,17 @@ function renderMarketOverview(rows, histories, intraday, rates) {
     const rate = cost ? pnl / cost * 100 : NaN;
     const today = selected.reduce((total, row) => total + (Number.isFinite(row.todayPnl) ? row.todayPnl : 0), 0);
     const todayRate = value - today ? today / (value - today) * 100 : NaN;
-    const kline = buildPortfolioSeries(rows, histories, rates, market);
-    const intradaySeries = buildIntradaySeries(rows, intraday, rates, market);
     return `
       <article class="market-card active" data-market-card="${market}">
-        <div class="market-card-head"><span class="badge">${market}</span><span>${currency} 展示</span></div>
-        <div class="market-money">
-          <span>成本 <strong>${money(cost, currency)}</strong></span>
-          <span>市值 <strong>${money(value, currency)}</strong></span>
+        <div class="market-card-head">
+          <span class="badge">${market}</span>
+          <span>${currency} 展示</span>
         </div>
-        <div class="market-today">
-          <span>今日盈亏</span>
-          <strong class="${classFor(today)}">${signed(today, currency)}</strong>
-          <small class="${classFor(todayRate)}">${pct(todayRate)}</small>
-        </div>
-        <strong class="${classFor(pnl)}">${signed(pnl, currency)}</strong>
-        <small class="${classFor(rate)}">${pct(rate)}</small>
-        <div class="market-chart-pair">
-          <div>
-            <div class="mini-title">30日盈亏K线</div>
-            <div class="sparkline compact">${candlestickSvg(kline, currency)}</div>
-          </div>
-          <div>
-            <div class="mini-title">当日24小时波动</div>
-            <div class="sparkline compact">${lineSvg(intradaySeries, currency)}</div>
-          </div>
+        <div class="market-summary-grid">
+          <div><span>成本</span><strong>${money(cost, currency)}</strong></div>
+          <div><span>市值</span><strong>${money(value, currency)}</strong></div>
+          <div><span>今日盈亏</span><strong class="${classFor(today)}">${signed(today, currency)}</strong><small class="${classFor(todayRate)}">${pct(todayRate)}</small></div>
+          <div><span>整体盈亏</span><strong class="${classFor(pnl)}">${signed(pnl, currency)}</strong><small class="${classFor(rate)}">${pct(rate)}</small></div>
         </div>
       </article>
     `;
