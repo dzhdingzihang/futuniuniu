@@ -751,21 +751,21 @@ h1 {
 }
 
 .hero-metric {
-  min-height: 108px;
-  padding: 14px;
+  min-height: 120px;
+  padding: 13px 14px;
 }
 
 .hero-metric strong {
   display: block;
-  margin-top: 10px;
-  font-size: clamp(20px, 1.75vw, 28px);
+  margin-top: 9px;
+  font-size: clamp(19px, 1.65vw, 26px);
   line-height: 1.05;
   word-break: break-word;
 }
 
 .hero-metric small {
   display: block;
-  margin-top: 7px;
+  margin-top: 6px;
   font-size: 13px;
   font-weight: 950;
 }
@@ -783,8 +783,44 @@ h1 {
 
 .hero-metric .metric-breakdown,
 .hero-metric .metric-note {
-  max-height: 70px;
+  max-height: none;
   overflow: hidden;
+}
+
+.hero-metric .metric-breakdown {
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.hero-metric .metric-breakdown span {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  justify-content: start;
+  min-height: 15px;
+  gap: 6px;
+}
+
+.hero-metric .metric-breakdown em {
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.hero-metric .metric-breakdown strong {
+  justify-self: start;
+  margin: 0;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-metric .metric-note {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.25;
 }
 
 #updatedAt { font-size: clamp(19px, 1.7vw, 26px); }
