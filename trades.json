@@ -7,52 +7,11 @@
     "code": "ASTX",
     "name": "2倍做多ASTS",
     "price": 47,
-    "qty": 10,
+    "qty": 0,
     "currency": "USD",
     "sina": "gb_astx",
-    "note": "卖出 10 股，形成当前持仓",
+    "note": "卖出 0 股，形成当前持仓",
     "affectsHoldings": false
   },
-  {
-    "id": "20260601-buy-dknx-001",
-    "date": "2026-06-01",
-    "action": "buy",
-    "market": "美股",
-    "code": "DKNX",
-    "name": "2倍做多DKNG",
-    "price": 21.8,
-    "qty": 20,
-    "currency": "USD",
-    "sina": "gb_dknx",
-    "note": "买入 20 股，形成当前持仓",
-    "affectsHoldings": false
-  },
-  {
-    "id": "trade-1780623860021",
-    "date": "2026-06-03",
-    "action": "buy",
-    "market": "美股",
-    "code": "OKLL",
-    "name": "2倍做多OKLO",
-    "price": 8.6,
-    "qty": 300,
-    "currency": "USD",
-    "sina": "gb_okll",
-    "note": "补仓",
-    "affectsHoldings": true
-  },
-  {
-    "id": "trade-1780623927401",
-    "date": "2026-06-05",
-    "action": "buy",
-    "market": "港股",
-    "code": "07709",
-    "name": "2倍做多海力士",
-    "price": 113,
-    "qty": 100,
-    "currency": "HKD",
-    "sina": "hk07709",
-    "note": "补仓",
-    "affectsHoldings": true
-  }
+ 
 ]
