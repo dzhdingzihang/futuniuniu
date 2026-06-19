@@ -83,21 +83,6 @@
             <div class="sparkline intraday" id="totalIntradayChart"></div>
           </div>
         </div>
-        <div class="weekly-advice-panel">
-          <div class="section-heading compact">
-            <div>
-              <p class="eyebrow">Next Week Plan</p>
-              <h2>持股未来一周操作建议</h2>
-            </div>
-            <span id="weeklyAdviceHint">根据实时价、近30日波动和持仓盈亏自动生成</span>
-          </div>
-          <div class="advice-tabs" aria-label="持股建议市场筛选">
-            <button class="advice-tab active" type="button" data-advice-market="港股">港股</button>
-            <button class="advice-tab" type="button" data-advice-market="A股">A股</button>
-            <button class="advice-tab" type="button" data-advice-market="美股">美股</button>
-          </div>
-          <div class="weekly-advice-grid" id="weeklyAdviceBody"></div>
-        </div>
       </section>
 
       <section class="status-band" id="statusBand">
@@ -111,6 +96,22 @@
       </section>
 
       <section class="market-overview" id="marketOverview"></section>
+
+      <section class="weekly-advice-panel">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">Next Week Plan</p>
+            <h2>持股未来一周操作建议</h2>
+          </div>
+          <span id="weeklyAdviceHint">根据当前市场、实时价、近30日波动和持仓盈亏自动生成</span>
+        </div>
+        <div class="weekly-advice-grid" id="weeklyAdviceBody"></div>
+      </section>
+
+      <section class="position-tabs" aria-label="个股明细类型筛选">
+        <button class="position-tab active" type="button" data-position-status="holding">持仓个股</button>
+        <button class="position-tab" type="button" data-position-status="sold">卖出个股</button>
+      </section>
 
       <section class="table-wrap">
         <table>

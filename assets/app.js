@@ -49,7 +49,7 @@ const els = {
   watchlistDate: document.querySelector("#watchlistDate"),
   tabs: document.querySelectorAll(".tab"),
   watchTabs: document.querySelectorAll(".watch-tab"),
-  adviceTabs: document.querySelectorAll(".advice-tab"),
+  positionTabs: document.querySelectorAll(".position-tab"),
   sortButtons: document.querySelectorAll(".sort-button"),
   realizedProfit: document.querySelector("#realizedProfit"),
   openProfit: document.querySelector("#openProfit"),
@@ -79,7 +79,7 @@ const els = {
 const serviceUrl = "http://127.0.0.1:8787/";
 let currentMarket = "港股";
 let currentWatchMarket = "A股";
-let currentAdviceMarket = "港股";
+let currentPositionStatus = "holding";
 let tableSort = { key: "pnl", dir: "asc" };
 let latestRows = [];
 let latestHistories = {};
@@ -239,7 +239,7 @@ function persistTrades() {
 }
 
 async function fetchQuotes() {
-  const symbols = [...new Set([...activeHoldings(), ...watchCandidates].map((item) => item.sina))].join(",");
+  const symbols = [...new Set([...holdings, ...watchCandidates].map((item) => item.sina))].join(",");
   const payload = await getJson(`/api/quotes?symbols=${encodeURIComponent(symbols)}`, { quotes: {} });
   return new Map(Object.entries(payload.quotes || {}));
 }
@@ -250,7 +250,7 @@ async function fetchRates() {
 }
 
 async function fetchHistory() {
-  const symbols = [...new Set([...activeHoldings(), ...watchCandidates].map((item) => item.sina))].join(",");
+  const symbols = [...new Set([...holdings, ...watchCandidates].map((item) => item.sina))].join(",");
   const payload = await getJson(`/api/history?symbols=${encodeURIComponent(symbols)}&days=30`, { histories: {} });
   return payload.histories || {};
 }
@@ -276,7 +276,8 @@ function buildRows(quotes, histories, rates) {
     const quote = quotes.get(item.sina) || null;
     const history = mergeQuoteIntoHistory(histories[item.sina] || [], quote);
     const isSold = item.status === "sold";
-    const price = isSold ? item.sellPrice : quote?.price || last(history)?.close || NaN;
+    const livePrice = quote?.price || last(history)?.close || NaN;
+    const price = isSold ? item.sellPrice : livePrice;
     const rate = rates[item.currency] || 1;
     const fee = feeForCurrency(item.currency, rates);
     const feeCny = fee * rate;
@@ -291,6 +292,7 @@ function buildRows(quotes, histories, rates) {
     const row = {
       ...item,
       price,
+      livePrice,
       quote,
       history,
       fee,
@@ -384,7 +386,7 @@ function buildTradeStats(rows, rates) {
     if (remaining < trade.qty) realizedCny -= roundTripFeeUsd * (rates.USD || 7.22);
   });
 
-  const openCny = sum(rows, "pnlCny");
+  const openCny = sum(rows.filter((row) => row.status !== "sold"), "pnlCny");
   return {
     realizedCny,
     openCny,
@@ -649,17 +651,20 @@ function pointOnOrBeforeTime(series, key) {
 
 function renderSummary(rows, histories, intraday, rates) {
   const cost = sum(rows, "costCny");
+  const holdingCost = sum(rows.filter((row) => row.status !== "sold"), "costCny");
   const value = sum(rows, "valueCny");
   const pnl = sum(rows, "pnlCny");
+  const holdingPnl = sum(rows.filter((row) => row.status !== "sold"), "pnlCny");
+  const soldPnl = sum(rows.filter((row) => row.status === "sold"), "pnlCny");
   const today = sum(rows, "todayPnlCny");
   const seven = sum(rows, "sevenPnlCny");
   els.totalProfit.textContent = signed(pnl, "CNY");
   els.totalProfit.className = classFor(pnl);
   els.totalProfitRate.textContent = pct(cost ? pnl / cost * 100 : NaN);
   els.totalProfitRate.className = classFor(pnl);
-  els.totalProfitBreakdown.textContent = marketBreakdown(rows, "pnl");
+  els.totalProfitBreakdown.textContent = `持仓盈亏 ${signedPlain(holdingPnl, "CNY")} ｜ 卖出盈亏 ${signedPlain(soldPnl, "CNY")}`;
   els.totalCost.textContent = money(cost, "CNY");
-  els.totalCostBreakdown.textContent = marketBreakdown(rows, "costValue", false);
+  els.totalCostBreakdown.textContent = `现金成本 ${money(cost, "CNY")} ｜ 持仓成本 ${money(holdingCost, "CNY")}`;
   els.totalValue.textContent = money(value, "CNY");
   els.totalValueBreakdown.textContent = marketBreakdown(rows, "marketValue", false);
   els.todayProfit.textContent = signed(today, "CNY");
@@ -685,8 +690,8 @@ function renderSummary(rows, histories, intraday, rates) {
 }
 
 function renderWeeklyAdvice(rows) {
-  const marketRows = rows.filter((row) => row.market === currentAdviceMarket && row.status !== "sold");
-  els.weeklyAdviceHint.textContent = `${currentAdviceMarket} · 参考实时价格、近30日波动、当日涨跌和市场情绪 · ${new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date())}`;
+  const marketRows = rows.filter((row) => row.market === currentMarket && row.status !== "sold");
+  els.weeklyAdviceHint.textContent = `${currentMarket} · 参考实时价格、近30日波动、当日涨跌和市场情绪 · ${new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(new Date())}`;
   if (!marketRows.length) {
     els.weeklyAdvice.innerHTML = '<div class="empty-card">当前市场没有持股。</div>';
     return;
@@ -944,7 +949,7 @@ function compactMoney(value) {
 
 function renderTable(rows) {
   const sorted = rows
-    .filter((row) => row.market === currentMarket)
+    .filter((row) => row.market === currentMarket && row.status === currentPositionStatus)
     .sort((a, b) => sortValue(a, tableSort.key) === sortValue(b, tableSort.key)
       ? a.code.localeCompare(b.code)
       : (sortValue(a, tableSort.key) - sortValue(b, tableSort.key)) * (tableSort.dir === "asc" ? 1 : -1));
@@ -953,13 +958,17 @@ function renderTable(rows) {
     button.classList.toggle("active", active);
     button.textContent = `${button.dataset.label || button.textContent.replace(/[↑↓]/g, "").trim()}${active ? (tableSort.dir === "asc" ? " ↑" : " ↓") : ""}`;
   });
+  if (!sorted.length) {
+    els.body.innerHTML = `<tr><td colspan="14" class="empty-row">当前市场暂无${currentPositionStatus === "sold" ? "卖出" : "持仓"}个股。</td></tr>`;
+    return;
+  }
   els.body.innerHTML = sorted.map((row) => `
     <tr>
       <td><span class="badge">${row.market}</span></td>
       <td><div class="stock-name"><strong>${row.code}</strong><span>${row.name} · ${row.status === "sold" ? "已卖出" : "持有中"}</span></div></td>
       <td><strong>${money(row.costValue, row.currency)}</strong><span class="cell-sub">${money(row.cost, row.currency)} / 股 · 手续费 ${money(row.fee, row.currency)}</span></td>
       <td>${number(row.qty, 0)}</td>
-      <td><strong class="price-cell">${money(row.price, row.currency)}</strong><span class="cell-sub">${row.status === "sold" ? `卖出价${row.sellDate ? ` · ${row.sellDate}` : ""}` : "实时/延时"}</span></td>
+      <td><strong class="price-cell">${money(row.status === "sold" ? row.livePrice : row.price, row.currency)}</strong><span class="cell-sub">${row.status === "sold" ? `实时价 · 卖出价 ${money(row.sellPrice, row.currency)}${row.sellDate ? ` · ${row.sellDate}` : ""}` : "实时/延时"}</span></td>
       <td><strong>${row.status === "sold" ? money(row.exitValue, row.currency) : money(row.marketValue, row.currency)}</strong><span class="cell-sub">${row.status === "sold" ? "卖出金额" : `折人民币 ${money(row.valueCny, "CNY")}`}</span></td>
       <td><strong class="pnl-cell ${classFor(row.pnl)}">${signed(row.pnl, row.currency)}</strong></td>
       <td><strong class="pnl-rate-cell ${classFor(row.pnlRate)}">${pct(row.pnlRate)}</strong></td>
@@ -1232,14 +1241,15 @@ els.tabs.forEach((tab) => {
     currentMarket = tab.dataset.market;
     els.tabs.forEach((item) => item.classList.toggle("active", item.dataset.market === currentMarket));
     renderMarketOverview(latestRows, latestHistories, latestIntraday, latestRates);
+    renderWeeklyAdvice(latestRows);
     renderTable(latestRows);
   });
 });
-els.adviceTabs.forEach((tab) => {
+els.positionTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
-    currentAdviceMarket = tab.dataset.adviceMarket;
-    els.adviceTabs.forEach((item) => item.classList.toggle("active", item.dataset.adviceMarket === currentAdviceMarket));
-    renderWeeklyAdvice(latestRows);
+    currentPositionStatus = tab.dataset.positionStatus;
+    els.positionTabs.forEach((item) => item.classList.toggle("active", item.dataset.positionStatus === currentPositionStatus));
+    renderTable(latestRows);
   });
 });
 els.watchTabs.forEach((tab) => {
@@ -1268,7 +1278,6 @@ if (location.protocol === "file:") {
       if (trades.some((trade) => trade.affectsHoldings)) rebuildLinkedHoldings();
       resetTradeForm();
       refresh();
-      setInterval(refresh, 30 * 1000);
     })
     .catch((error) => {
       els.refresh.disabled = true;

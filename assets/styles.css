@@ -57,6 +57,7 @@ footer {
 .refresh-button,
 .edit-data-link,
 .tab,
+.position-tab,
 .text-button,
 .icon-button {
   border: 1px solid var(--line);
@@ -111,6 +112,7 @@ footer {
 
 .hero-metric,
 .trend-panel,
+.weekly-advice-panel,
 .status-band,
 .market-card,
 .table-wrap,
@@ -195,6 +197,7 @@ footer {
 .neutral { color: var(--muted); }
 
 .trend-panel,
+.weekly-advice-panel,
 .trade-panel,
 .recommendations {
   margin-top: 14px;
@@ -221,6 +224,12 @@ footer {
   margin-top: 18px;
   padding-top: 16px;
   border-top: 1px solid var(--line);
+}
+
+.weekly-advice-panel .section-heading.compact {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .section-heading h2 {
@@ -372,7 +381,8 @@ footer {
   margin: 14px 0 0;
 }
 
-.tab {
+.tab,
+.position-tab {
   min-width: 132px;
   min-height: 58px;
   padding: 0 24px;
@@ -381,12 +391,25 @@ footer {
   font-weight: 950;
 }
 
-.tab.active {
+.tab.active,
+.position-tab.active {
   border-color: var(--blue);
   background: #e0f2fe;
   color: #0369a1;
   font-weight: 900;
   box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.18);
+}
+
+.position-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.position-tab {
+  min-height: 48px;
+  font-size: 17px;
 }
 
 .market-overview {
@@ -622,10 +645,6 @@ td:nth-child(10) {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
-}
-
-.weekly-advice-panel {
-  margin-top: 4px;
 }
 
 .advice-tabs {
