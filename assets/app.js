@@ -1,4 +1,5 @@
 const marketOrder = ["港股", "A股", "美股"];
+const summaryMarketOrder = ["港股", "美股", "A股"];
 const tradesStorageKey = "piggy-trades-v1";
 const holdingsStorageKey = "piggy-linked-holdings-v1";
 const roundTripFeeUsd = 30;
@@ -24,6 +25,15 @@ const els = {
   totalProfit: document.querySelector("#totalProfit"),
   totalProfitRate: document.querySelector("#totalProfitRate"),
   totalProfitBreakdown: document.querySelector("#totalProfitBreakdown"),
+  holdingProfit: document.querySelector("#holdingProfit"),
+  holdingProfitBreakdown: document.querySelector("#holdingProfitBreakdown"),
+  soldProfit: document.querySelector("#soldProfit"),
+  soldProfitBreakdown: document.querySelector("#soldProfitBreakdown"),
+  pigMoodCard: document.querySelector("#pigMoodCard"),
+  pigMoodImage: document.querySelector("#pigMoodImage"),
+  pigMoodTitle: document.querySelector("#pigMoodTitle"),
+  pigMoodSubtitle: document.querySelector("#pigMoodSubtitle"),
+  moodTabs: document.querySelectorAll(".mood-tabs span"),
   totalCost: document.querySelector("#totalCost"),
   totalCostBreakdown: document.querySelector("#totalCostBreakdown"),
   totalValue: document.querySelector("#totalValue"),
@@ -663,6 +673,12 @@ function renderSummary(rows, histories, intraday, rates) {
   els.totalProfitRate.textContent = pct(cost ? pnl / cost * 100 : NaN);
   els.totalProfitRate.className = classFor(pnl);
   els.totalProfitBreakdown.textContent = `持仓盈亏 ${signedPlain(holdingPnl, "CNY")} ｜ 卖出盈亏 ${signedPlain(soldPnl, "CNY")}`;
+  els.holdingProfit.textContent = signed(holdingPnl, "CNY");
+  els.holdingProfit.className = classFor(holdingPnl);
+  els.holdingProfitBreakdown.textContent = marketBreakdownCny(rows, "holding");
+  els.soldProfit.textContent = signed(soldPnl, "CNY");
+  els.soldProfit.className = classFor(soldPnl);
+  els.soldProfitBreakdown.textContent = marketBreakdownCny(rows, "sold");
   els.totalCost.textContent = money(cost, "CNY");
   els.totalCostBreakdown.textContent = `现金成本 ${money(cost, "CNY")} ｜ 持仓成本 ${money(holdingCost, "CNY")}`;
   els.totalValue.textContent = money(value, "CNY");
@@ -679,6 +695,7 @@ function renderSummary(rows, histories, intraday, rates) {
   els.sevenProfitBreakdown.textContent = marketBreakdown(rows, "sevenPnl");
   els.sevenProfitRange.textContent = sevenRangeLabel(rows);
   els.updatedAt.textContent = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+  renderPigMood(today);
 
   const kline = buildPortfolioSeries(rows, histories, rates);
   const line = buildIntradaySeries(rows, intraday, rates);
@@ -726,6 +743,70 @@ function marketBreakdown(rows, key, signedValue = true) {
     const total = selected.reduce((sumValue, row) => sumValue + (Number.isFinite(row[key]) ? row[key] : 0), 0);
     return `${market}${signedValue ? signedPlain(total, currency) : money(total, currency)}`;
   }).filter(Boolean).join(" ｜ ");
+}
+
+function marketBreakdownCny(rows, status) {
+  return summaryMarketOrder.map((market) => {
+    const selected = rows.filter((row) => row.market === market && (status === "sold" ? row.status === "sold" : row.status !== "sold"));
+    const total = selected.reduce((sumValue, row) => sumValue + (Number.isFinite(row.pnlCny) ? row.pnlCny : 0), 0);
+    return `${market} ${signed(total, "CNY")}`;
+  }).join(" ｜ ");
+}
+
+function renderPigMood(todayCny) {
+  const mood = pigMoodFor(todayCny);
+  els.pigMoodCard.className = `pig-mood-card ${mood.className}`;
+  els.pigMoodImage.src = mood.image;
+  els.pigMoodImage.alt = mood.title;
+  els.pigMoodTitle.textContent = mood.title;
+  els.pigMoodSubtitle.textContent = mood.subtitle;
+  els.moodTabs.forEach((tab) => tab.classList.toggle("active", tab.textContent === mood.tab));
+}
+
+function pigMoodFor(todayCny) {
+  if (!Number.isFinite(todayCny) || Math.abs(todayCny) < 100) {
+    return {
+      className: "mood-neutral",
+      image: "assets/pig-tea.png",
+      title: "喝奶茶观察中",
+      subtitle: "今天波动不大，猪猪先稳住节奏，不乱动。",
+      tab: "开心",
+    };
+  }
+  if (todayCny >= 5000) {
+    return {
+      className: "mood-party",
+      image: "assets/pig-happy.png",
+      title: "开心到举手",
+      subtitle: `今日浮盈 ${signed(todayCny, "CNY")}，可以高兴，但先别追高。`,
+      tab: "高兴",
+    };
+  }
+  if (todayCny > 0) {
+    return {
+      className: "mood-happy",
+      image: "assets/pig-tea.png",
+      title: "开心喝奶茶",
+      subtitle: `今日盈亏 ${signed(todayCny, "CNY")}，猪猪慢慢吸一口甜的。`,
+      tab: "开心",
+    };
+  }
+  if (todayCny <= -5000) {
+    return {
+      className: "mood-angry",
+      image: "assets/pig-angry.png",
+      title: "生气但不乱卖",
+      subtitle: `今日回撤 ${signed(todayCny, "CNY")}，先看仓位和止损线。`,
+      tab: "生气",
+    };
+  }
+  return {
+    className: "mood-sad",
+    image: "assets/pig-angry.png",
+    title: "有点不爽",
+    subtitle: `今日回撤 ${signed(todayCny, "CNY")}，猪猪抱臂等反弹确认。`,
+    tab: "不爽",
+  };
 }
 
 function renderMarketOverview(rows, histories, intraday, rates) {
@@ -947,6 +1028,20 @@ function compactMoney(value) {
   return `${sign}${number(abs, 0)}`;
 }
 
+function tableActionHtml(row) {
+  if (row.status === "sold") {
+    return '<span class="conclusion flat">已落袋</span><span class="advice-detail">收益已扣除买卖手续费。</span>';
+  }
+  const conclusionClass = row.action.conclusion === "涨" ? "up" : row.action.conclusion === "跌" ? "down" : "flat";
+  const shortAdvice = row.action.conclusion === "涨"
+    ? "回踩不破再跟随，冲高不追。"
+    : row.action.conclusion === "跌"
+      ? "先控仓，反弹到卖出参考附近减压。"
+      : "区间观察，按补仓/卖出参考价处理。";
+  const actionChip = row.action.label === row.action.conclusion ? "" : `<span class="action ${row.action.type}">${row.action.label}</span>`;
+  return `<span class="conclusion ${conclusionClass}">未来3天：${row.action.conclusion}</span>${actionChip}<span class="advice-detail">${shortAdvice}</span>`;
+}
+
 function renderTable(rows) {
   const sorted = rows
     .filter((row) => row.market === currentMarket && row.status === currentPositionStatus)
@@ -977,7 +1072,7 @@ function renderTable(rows) {
       <td>${row.status === "sold" ? '<span class="muted">--</span>' : `<div class="buy-zone ${row.buyZone.tone}"><strong>≤ ${money(row.buyZone.price, row.currency)}</strong><span>${row.buyZone.label} · ${row.buyZone.text}</span></div>`}</td>
       <td>${row.status === "sold" ? '<span class="muted">--</span>' : `<div class="sell-zone ${row.sellZone.tone}"><strong>≥ ${money(row.sellZone.price, row.currency)}</strong><span>${row.sellZone.label} · ${row.sellZone.text}</span></div>`}</td>
       <td class="${classFor(row.changePct)}">${pct(row.changePct)}</td>
-      <td>${row.status === "sold" ? '<span class="conclusion flat">已落袋</span><span class="advice-detail">按买入价、卖出价和手续费计算</span>' : `<span class="conclusion ${row.action.conclusion === "涨" ? "up" : row.action.conclusion === "跌" ? "down" : "flat"}">未来3天：${row.action.conclusion}</span><span class="action ${row.action.type}">${row.action.label}</span><span class="advice-detail">${row.action.text}</span>`}</td>
+      <td>${tableActionHtml(row)}</td>
     </tr>
   `).join("");
 }
@@ -997,7 +1092,8 @@ function renderWatchlist(quotes, histories) {
     const heat = Math.max(55, Math.min(99, Math.round(item.baseHeat + momentum * 0.8)));
     const targetPct = item.targetPct + Math.max(-0.02, Math.min(0.03, momentum / 500));
     const probability = Math.max(45, Math.min(86, Math.round(heat * 0.55 + Math.max(-8, Math.min(12, momentum)) + targetPct * 120)));
-    return { ...item, price, heat, probability, target: Number.isFinite(price) ? price * (1 + targetPct) : NaN, momentum, session: quote.session || "实时/延时" };
+    const buyPrice = Number.isFinite(price) ? price * (momentum > 4 ? 0.97 : 0.985) : NaN;
+    return { ...item, price, heat, probability, target: Number.isFinite(price) ? price * (1 + targetPct) : NaN, buyPrice, momentum, session: quote.session || "实时/延时" };
   }).filter((row) => row.market === currentWatchMarket).sort((a, b) => b.probability - a.probability);
 
   els.recommendations.innerHTML = rows.map((row) => `
@@ -1008,9 +1104,9 @@ function renderWatchlist(quotes, histories) {
       <div class="recommend-price">${money(row.price, row.currency)}</div>
       <dl>
         <div><dt>现价</dt><dd>${money(row.price, row.currency)} · ${row.session}</dd></div>
-        <div><dt>一周目标价</dt><dd class="positive">${money(row.target, row.currency)}</dd></div>
-        <div><dt>推荐原因</dt><dd>${row.reason}</dd></div>
-        <div><dt>量化理由</dt><dd>近30日动量 ${pct(row.momentum)}，主题热度 ${row.heat}/100，上涨推测概率 ${row.probability}%；若跌破5日低点，观察结论自动降级。</dd></div>
+        <div><dt>建议买入价</dt><dd class="positive">≤ ${money(row.buyPrice, row.currency)}</dd></div>
+        <div><dt>买入原因</dt><dd>${row.reason}</dd></div>
+        <div><dt>观察规则</dt><dd>近30日动量 ${pct(row.momentum)}，主题热度 ${row.heat}/100，上涨推测概率 ${row.probability}%；买入价上方不追，跌破5日低点自动降级。</dd></div>
       </dl>
     </article>
   `).join("") || '<div class="empty-card">当前市场暂无观察标的。</div>';

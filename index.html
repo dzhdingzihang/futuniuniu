@@ -4,15 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>猪猪投资存钱罐</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="assets/styles.css" />
   </head>
   <body>
     <header class="topbar">
-      <div>
-        <p class="eyebrow">Portfolio Dashboard</p>
-        <h1>猪猪投资存钱罐</h1>
+      <div class="brand">
+        <img src="assets/pig-tea.png" alt="" />
+        <div>
+          <h1>猪猪投资存钱罐</h1>
+          <p>Portfolio Dashboard</p>
+        </div>
       </div>
       <div class="top-actions">
+        <span class="live-pill">实时行情已更新</span>
         <a class="edit-data-link" href="https://github.com/dzhdingzihang/futuniuniu/edit/main/holdings.json" target="_blank" rel="noopener">修改持仓</a>
         <a class="edit-data-link secondary" href="https://github.com/dzhdingzihang/futuniuniu/edit/main/trades.json" target="_blank" rel="noopener">修改交易</a>
         <button class="refresh-button" id="refreshButton" type="button" title="刷新行情">
@@ -23,13 +28,49 @@
     </header>
 
     <main>
-      <section class="hero-dashboard">
-        <div class="hero-metric primary">
-          <span>总体盈亏 人民币</span>
+      <section class="dashboard-hero">
+        <article class="pnl-card">
+          <div class="card-title-row">
+            <span>总体盈亏 · 人民币</span>
+            <small>按实时汇率估算</small>
+          </div>
           <strong id="totalProfit">--</strong>
           <small id="totalProfitRate">--</small>
+          <div class="pnl-split">
+            <div class="pnl-split-card holding">
+              <span>持仓盈亏</span>
+              <b id="holdingProfit">--</b>
+              <small id="holdingProfitBreakdown">港股 -- ｜ 美股 -- ｜ A股 --</small>
+            </div>
+            <div class="pnl-split-card sold">
+              <span>卖出盈亏</span>
+              <b id="soldProfit">--</b>
+              <small id="soldProfitBreakdown">港股 -- ｜ 美股 -- ｜ A股 --</small>
+            </div>
+          </div>
           <span class="metric-breakdown" id="totalProfitBreakdown">--</span>
-        </div>
+        </article>
+
+        <article class="pig-mood-card mood-neutral" id="pigMoodCard">
+          <div class="card-title-row">
+            <span>今日心情</span>
+            <small>随今日盈亏变化</small>
+          </div>
+          <h2 id="pigMoodTitle">喝奶茶观察中</h2>
+          <p id="pigMoodSubtitle">行情还在加载，先让猪猪喝一口奶茶。</p>
+          <div class="pig-stage">
+            <img id="pigMoodImage" src="assets/pig-tea.png" alt="今日心情小猪" />
+          </div>
+          <div class="mood-tabs" aria-label="小猪心情状态">
+            <span class="active">开心</span>
+            <span>高兴</span>
+            <span>生气</span>
+            <span>伤心</span>
+            <span>不爽</span>
+          </div>
+        </article>
+
+        <section class="metric-grid" aria-label="组合指标">
         <div class="hero-metric">
           <span>总成本</span>
           <strong id="totalCost">--</strong>
@@ -57,6 +98,7 @@
           <span class="metric-breakdown" id="sevenProfitBreakdown">--</span>
           <span class="metric-note" id="sevenProfitRange">--</span>
         </div>
+        </section>
       </section>
 
       <section class="trend-panel">
@@ -97,20 +139,16 @@
 
       <section class="market-overview" id="marketOverview"></section>
 
-      <section class="weekly-advice-panel">
-        <div class="section-heading compact">
-          <div>
-            <p class="eyebrow">Next Week Plan</p>
-            <h2>持股未来一周操作建议</h2>
-          </div>
-          <span id="weeklyAdviceHint">根据当前市场、实时价、近30日波动和持仓盈亏自动生成</span>
+      <section class="position-toolbar">
+        <div class="position-tabs" aria-label="个股明细类型筛选">
+          <button class="position-tab active" type="button" data-position-status="holding">持仓个股</button>
+          <button class="position-tab" type="button" data-position-status="sold">卖出个股</button>
         </div>
-        <div class="weekly-advice-grid" id="weeklyAdviceBody"></div>
-      </section>
-
-      <section class="position-tabs" aria-label="个股明细类型筛选">
-        <button class="position-tab active" type="button" data-position-status="holding">持仓个股</button>
-        <button class="position-tab" type="button" data-position-status="sold">卖出个股</button>
+        <div class="table-actions">
+          <button class="text-button" type="button">筛选</button>
+          <button class="text-button" type="button">列设置</button>
+          <button class="text-button" type="button">导出</button>
+        </div>
       </section>
 
       <section class="table-wrap">
@@ -137,7 +175,19 @@
         </table>
       </section>
 
-      <section class="trade-panel">
+      <section class="weekly-advice-panel">
+        <div class="section-heading compact">
+          <div>
+            <p class="eyebrow">Next Week Plan</p>
+            <h2>持股未来一周操作建议</h2>
+          </div>
+          <span id="weeklyAdviceHint">根据当前市场、实时价、近30日波动和持仓盈亏自动生成</span>
+        </div>
+        <div class="weekly-advice-grid" id="weeklyAdviceBody"></div>
+      </section>
+
+      <section class="bottom-grid">
+      <section class="trade-panel compact-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Trade Ledger</p>
@@ -249,7 +299,7 @@
         </div>
       </section>
 
-      <section class="recommendations">
+      <section class="recommendations compact-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Weekly Watchlist</p>
@@ -263,6 +313,7 @@
           <button class="watch-tab" type="button" data-watch-market="港股">港股</button>
         </div>
         <div class="recommend-grid" id="recommendationsBody"></div>
+      </section>
       </section>
     </main>
 
