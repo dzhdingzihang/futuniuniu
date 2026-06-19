@@ -290,22 +290,381 @@ h1 {
   position: relative;
   display: grid;
   flex: 1;
-  min-height: 220px;
+  min-height: 244px;
   place-items: center;
-  margin: 6px 0 8px;
+  margin: 4px 0 10px;
 }
 
-.pig-stage img {
-  width: min(280px, 92%);
-  max-height: 280px;
-  object-fit: contain;
-  filter: drop-shadow(0 18px 20px rgba(255, 138, 168, 0.24));
-  animation: pigBreathe 3.6s ease-in-out infinite;
+.pig-character {
+  --pig: #ffc0ce;
+  --pig-deep: #f790a6;
+  --pig-dark: #8a4f3d;
+  --pig-blush: rgba(255, 137, 158, 0.5);
+  position: relative;
+  width: min(270px, 94%);
+  aspect-ratio: 1;
+  transform-origin: 50% 82%;
+  animation: pigBodyBreathe 3.2s ease-in-out infinite;
 }
 
-.mood-party .pig-stage img { animation: pigCelebrate 1.8s ease-in-out infinite; }
-.mood-angry .pig-stage img,
-.mood-sad .pig-stage img { animation: pigShake 2.2s ease-in-out infinite; }
+.pig-character span,
+.pig-character i {
+  position: absolute;
+  display: block;
+}
+
+.pig-shadow {
+  left: 18%;
+  right: 18%;
+  bottom: 4%;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(129, 72, 88, 0.13);
+  filter: blur(4px);
+  animation: pigShadow 3.2s ease-in-out infinite;
+}
+
+.pig-body {
+  left: 22%;
+  bottom: 13%;
+  width: 56%;
+  height: 58%;
+  border-radius: 48% 48% 42% 42%;
+  background:
+    radial-gradient(circle at 33% 32%, rgba(255, 255, 255, 0.68), transparent 24%),
+    linear-gradient(145deg, #ffd8df 0%, var(--pig) 48%, #f7a4b4 100%);
+  box-shadow: inset -18px -18px 34px rgba(201, 83, 106, 0.13), 0 18px 26px rgba(255, 138, 168, 0.2);
+}
+
+.pig-face {
+  left: 21%;
+  top: 13%;
+  width: 58%;
+  height: 53%;
+  border-radius: 52% 52% 47% 47%;
+  background:
+    radial-gradient(circle at 30% 35%, rgba(255, 255, 255, 0.78), transparent 20%),
+    linear-gradient(145deg, #ffdce3 0%, var(--pig) 55%, #f49aab 100%);
+  box-shadow: inset -15px -13px 26px rgba(198, 78, 101, 0.11);
+}
+
+.pig-ear {
+  top: 10%;
+  width: 25%;
+  height: 27%;
+  border-radius: 74% 28% 68% 30%;
+  background:
+    radial-gradient(circle at 50% 54%, #ff879c 0 34%, transparent 36%),
+    linear-gradient(145deg, #ffd8df, #f49aaa);
+  transform-origin: 70% 82%;
+  box-shadow: inset -8px -7px 18px rgba(192, 72, 96, 0.13);
+}
+
+.pig-ear-left {
+  left: 19%;
+  transform: rotate(-30deg);
+  animation: leftEar 3.8s ease-in-out infinite;
+}
+
+.pig-ear-right {
+  right: 18%;
+  transform: scaleX(-1) rotate(-25deg);
+  animation: rightEar 4s ease-in-out infinite;
+}
+
+.pig-eye {
+  top: 32%;
+  width: 14%;
+  height: 17%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 58% 58%, #2d1d1a 0 28%, transparent 29%),
+    radial-gradient(circle at 42% 38%, #ffffff 0 16%, transparent 17%),
+    #fffaf8;
+  box-shadow: 0 1px 0 rgba(96, 50, 44, 0.14);
+  animation: pigBlink 5.4s ease-in-out infinite;
+}
+
+.pig-eye-left { left: 35%; }
+.pig-eye-right { right: 35%; }
+
+.pig-brow {
+  top: 28%;
+  width: 14%;
+  height: 4px;
+  border-radius: 999px;
+  background: #9d5947;
+  opacity: 0.45;
+}
+
+.pig-brow-left {
+  left: 34%;
+  transform: rotate(-9deg);
+}
+
+.pig-brow-right {
+  right: 34%;
+  transform: rotate(9deg);
+}
+
+.pig-snout {
+  left: 38%;
+  top: 43%;
+  width: 24%;
+  height: 17%;
+  border-radius: 48% 48% 54% 54%;
+  background:
+    radial-gradient(circle at 35% 53%, #9f4351 0 11%, transparent 12%),
+    radial-gradient(circle at 65% 53%, #9f4351 0 11%, transparent 12%),
+    linear-gradient(180deg, #ff9cae, #f77f96);
+  box-shadow: inset 0 -4px 9px rgba(132, 54, 66, 0.14);
+}
+
+.pig-mouth {
+  left: 46%;
+  top: 62%;
+  width: 8%;
+  height: 5%;
+  border-bottom: 3px solid #914b44;
+  border-radius: 0 0 999px 999px;
+}
+
+.pig-arm {
+  width: 17%;
+  height: 31%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffc9d4, #f19aaa);
+  transform-origin: 50% 12%;
+  box-shadow: inset -7px -8px 14px rgba(144, 66, 77, 0.09);
+}
+
+.pig-arm-left {
+  left: 20%;
+  top: 54%;
+  transform: rotate(28deg);
+}
+
+.pig-arm-right {
+  right: 19%;
+  top: 52%;
+  transform: rotate(-26deg);
+}
+
+.pig-arm::after,
+.pig-leg::after {
+  content: "";
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: -1px;
+  height: 22%;
+  border-radius: 999px;
+  background: var(--pig-dark);
+  opacity: 0.88;
+}
+
+.pig-leg {
+  bottom: 9%;
+  width: 17%;
+  height: 18%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffc7d2, #ef96a8);
+}
+
+.pig-leg-left { left: 29%; transform: rotate(8deg); }
+.pig-leg-right { right: 29%; transform: rotate(-8deg); }
+
+.pig-tail {
+  right: 14%;
+  bottom: 30%;
+  width: 28px;
+  height: 28px;
+  border: 5px solid #ef91a2;
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  transform: rotate(35deg);
+  animation: tailWiggle 2.2s ease-in-out infinite;
+}
+
+.tea-cup {
+  left: 39%;
+  top: 67%;
+  width: 23%;
+  height: 25%;
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  border-radius: 7px 7px 16px 16px;
+  background:
+    radial-gradient(circle at 32% 76%, #d87888 0 5%, transparent 6%),
+    radial-gradient(circle at 55% 82%, #d87888 0 5%, transparent 6%),
+    radial-gradient(circle at 72% 72%, #d87888 0 4%, transparent 5%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.46), rgba(255, 151, 171, 0.76));
+  box-shadow: 0 10px 20px rgba(203, 89, 111, 0.15);
+  transform-origin: 50% 100%;
+}
+
+.tea-cup::before {
+  content: "";
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  top: -13%;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 2px solid rgba(255, 255, 255, 0.92);
+}
+
+.tea-cup i {
+  left: 52%;
+  bottom: 76%;
+  width: 5px;
+  height: 62px;
+  border-radius: 999px;
+  background: #ff83a0;
+  transform: rotate(-18deg);
+  transform-origin: bottom;
+}
+
+.mood-mark {
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+
+.mood-mark-left {
+  left: 12%;
+  top: 28%;
+}
+
+.mood-mark-right {
+  right: 12%;
+  top: 22%;
+}
+
+.mood-mark::before,
+.mood-mark::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.pig-sipping .tea-cup i { animation: strawSip 1.9s ease-in-out infinite; }
+.pig-sipping .pig-arm-left { animation: sipLeftArm 2.4s ease-in-out infinite; }
+.pig-sipping .pig-arm-right { animation: sipRightArm 2.4s ease-in-out infinite; }
+
+.pig-celebrate {
+  animation: pigHop 1.55s ease-in-out infinite;
+}
+
+.pig-celebrate .tea-cup { opacity: 0; }
+.pig-celebrate .pig-arm-left {
+  left: 19%;
+  top: 56%;
+  transform: rotate(34deg);
+}
+.pig-celebrate .pig-arm-right {
+  right: 16%;
+  top: 37%;
+  transform-origin: 44% 92%;
+  animation: armWaveRight 1.2s ease-in-out infinite;
+}
+.pig-celebrate .pig-mouth {
+  left: 43%;
+  top: 61%;
+  width: 14%;
+  height: 9%;
+  border: 0;
+  border-radius: 0 0 999px 999px;
+  background: #7e3c3d;
+}
+.pig-celebrate .mood-mark {
+  color: #ffc33f;
+  opacity: 1;
+  animation: sparkle 1.6s ease-in-out infinite;
+}
+.pig-celebrate .mood-mark::before {
+  left: 10px;
+  top: 0;
+  width: 4px;
+  height: 24px;
+}
+.pig-celebrate .mood-mark::after {
+  left: 0;
+  top: 10px;
+  width: 24px;
+  height: 4px;
+}
+
+.pig-angry-state {
+  animation: pigGrumble 1.8s ease-in-out infinite;
+}
+.pig-angry-state .tea-cup,
+.pig-sulk .tea-cup { opacity: 0; }
+.pig-angry-state .pig-brow-left {
+  top: 27%;
+  transform: rotate(18deg);
+  opacity: 1;
+}
+.pig-angry-state .pig-brow-right {
+  top: 27%;
+  transform: rotate(-18deg);
+  opacity: 1;
+}
+.pig-angry-state .pig-mouth,
+.pig-sulk .pig-mouth {
+  left: 44%;
+  top: 63%;
+  width: 12%;
+  height: 5%;
+  border: 0;
+  border-top: 3px solid #8f4641;
+  border-radius: 999px 999px 0 0;
+}
+.pig-angry-state .pig-arm-left,
+.pig-sulk .pig-arm-left {
+  left: 31%;
+  top: 64%;
+  height: 19%;
+  transform: rotate(75deg);
+}
+.pig-angry-state .pig-arm-right,
+.pig-sulk .pig-arm-right {
+  right: 31%;
+  top: 64%;
+  height: 19%;
+  transform: rotate(-75deg);
+}
+.pig-angry-state .mood-mark {
+  color: #ff6b6b;
+  opacity: 1;
+}
+.pig-angry-state .mood-mark::before,
+.pig-angry-state .mood-mark::after {
+  width: 5px;
+  height: 24px;
+}
+.pig-angry-state .mood-mark::before {
+  left: 8px;
+  transform: rotate(20deg);
+}
+.pig-angry-state .mood-mark::after {
+  right: 4px;
+  transform: rotate(-20deg);
+}
+
+.pig-sulk {
+  animation: pigSulk 2.7s ease-in-out infinite;
+}
+.pig-sulk .pig-brow-left {
+  transform: rotate(10deg);
+  opacity: 0.8;
+}
+.pig-sulk .pig-brow-right {
+  transform: rotate(-10deg);
+  opacity: 0.8;
+}
 
 .mood-tabs {
   display: grid;
@@ -1089,23 +1448,77 @@ footer {
   line-height: 1.6;
 }
 
-@keyframes pigBreathe {
+@keyframes pigBodyBreathe {
   0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-6px) scale(1.015); }
+  50% { transform: translateY(-4px) scale(1.012); }
 }
 
-@keyframes pigCelebrate {
-  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
-  35% { transform: translateY(-10px) rotate(-2deg) scale(1.02); }
-  70% { transform: translateY(-4px) rotate(2deg) scale(1.01); }
+@keyframes pigShadow {
+  0%, 100% { transform: scaleX(1); opacity: 0.9; }
+  50% { transform: scaleX(0.86); opacity: 0.65; }
 }
 
-@keyframes pigShake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-3px); }
-  40% { transform: translateX(3px); }
-  60% { transform: translateX(-2px); }
-  80% { transform: translateX(2px); }
+@keyframes leftEar {
+  0%, 100% { transform: rotate(-30deg); }
+  50% { transform: rotate(-37deg); }
+}
+
+@keyframes rightEar {
+  0%, 100% { transform: scaleX(-1) rotate(-25deg); }
+  50% { transform: scaleX(-1) rotate(-33deg); }
+}
+
+@keyframes pigBlink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+
+@keyframes tailWiggle {
+  0%, 100% { transform: rotate(35deg) scale(1); }
+  50% { transform: rotate(52deg) scale(1.05); }
+}
+
+@keyframes strawSip {
+  0%, 100% { transform: rotate(-18deg) translateY(0); }
+  50% { transform: rotate(-11deg) translateY(-5px); }
+}
+
+@keyframes sipLeftArm {
+  0%, 100% { transform: rotate(28deg); }
+  50% { transform: rotate(19deg) translateY(2px); }
+}
+
+@keyframes sipRightArm {
+  0%, 100% { transform: rotate(-26deg); }
+  50% { transform: rotate(-18deg) translateY(2px); }
+}
+
+@keyframes pigHop {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  35% { transform: translateY(-13px) rotate(-1.5deg); }
+  70% { transform: translateY(-4px) rotate(1.2deg); }
+}
+
+@keyframes armWaveRight {
+  0%, 100% { transform: rotate(-132deg) translateY(-4px); }
+  50% { transform: rotate(-104deg) translateY(-10px); }
+}
+
+@keyframes sparkle {
+  0%, 100% { transform: scale(0.78) rotate(0deg); opacity: 0.35; }
+  50% { transform: scale(1.16) rotate(18deg); opacity: 1; }
+}
+
+@keyframes pigGrumble {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  25% { transform: translateX(-2px) rotate(-0.8deg); }
+  50% { transform: translateX(2px) rotate(0.8deg); }
+  75% { transform: translateX(-1px) rotate(-0.5deg); }
+}
+
+@keyframes pigSulk {
+  0%, 100% { transform: translateY(2px) rotate(0deg); }
+  50% { transform: translateY(7px) rotate(-1deg); }
 }
 
 @media (max-width: 1180px) {
@@ -1158,8 +1571,8 @@ footer {
     font-size: 42px;
   }
 
-  .pig-stage img {
-    width: min(230px, 90%);
+  .pig-character {
+    width: min(230px, 94%);
   }
 
   .tab,

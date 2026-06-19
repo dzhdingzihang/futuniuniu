@@ -30,7 +30,7 @@ const els = {
   soldProfit: document.querySelector("#soldProfit"),
   soldProfitBreakdown: document.querySelector("#soldProfitBreakdown"),
   pigMoodCard: document.querySelector("#pigMoodCard"),
-  pigMoodImage: document.querySelector("#pigMoodImage"),
+  pigCharacter: document.querySelector("#pigCharacter"),
   pigMoodTitle: document.querySelector("#pigMoodTitle"),
   pigMoodSubtitle: document.querySelector("#pigMoodSubtitle"),
   moodTabs: document.querySelectorAll(".mood-tabs span"),
@@ -756,8 +756,7 @@ function marketBreakdownCny(rows, status) {
 function renderPigMood(todayCny) {
   const mood = pigMoodFor(todayCny);
   els.pigMoodCard.className = `pig-mood-card ${mood.className}`;
-  els.pigMoodImage.src = mood.image;
-  els.pigMoodImage.alt = mood.title;
+  els.pigCharacter.className = `pig-character ${mood.characterClass}`;
   els.pigMoodTitle.textContent = mood.title;
   els.pigMoodSubtitle.textContent = mood.subtitle;
   els.moodTabs.forEach((tab) => tab.classList.toggle("active", tab.textContent === mood.tab));
@@ -767,7 +766,7 @@ function pigMoodFor(todayCny) {
   if (!Number.isFinite(todayCny) || Math.abs(todayCny) < 100) {
     return {
       className: "mood-neutral",
-      image: "assets/pig-tea.png",
+      characterClass: "pig-sipping",
       title: "喝奶茶观察中",
       subtitle: "今天波动不大，猪猪先稳住节奏，不乱动。",
       tab: "开心",
@@ -776,7 +775,7 @@ function pigMoodFor(todayCny) {
   if (todayCny >= 5000) {
     return {
       className: "mood-party",
-      image: "assets/pig-happy.png",
+      characterClass: "pig-celebrate",
       title: "开心到举手",
       subtitle: `今日浮盈 ${signed(todayCny, "CNY")}，可以高兴，但先别追高。`,
       tab: "高兴",
@@ -785,7 +784,7 @@ function pigMoodFor(todayCny) {
   if (todayCny > 0) {
     return {
       className: "mood-happy",
-      image: "assets/pig-tea.png",
+      characterClass: "pig-sipping",
       title: "开心喝奶茶",
       subtitle: `今日盈亏 ${signed(todayCny, "CNY")}，猪猪慢慢吸一口甜的。`,
       tab: "开心",
@@ -794,7 +793,7 @@ function pigMoodFor(todayCny) {
   if (todayCny <= -5000) {
     return {
       className: "mood-angry",
-      image: "assets/pig-angry.png",
+      characterClass: "pig-angry-state",
       title: "生气但不乱卖",
       subtitle: `今日回撤 ${signed(todayCny, "CNY")}，先看仓位和止损线。`,
       tab: "生气",
@@ -802,7 +801,7 @@ function pigMoodFor(todayCny) {
   }
   return {
     className: "mood-sad",
-    image: "assets/pig-angry.png",
+    characterClass: "pig-sulk",
     title: "有点不爽",
     subtitle: `今日回撤 ${signed(todayCny, "CNY")}，猪猪抱臂等反弹确认。`,
     tab: "不爽",
