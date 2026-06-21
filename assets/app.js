@@ -784,45 +784,45 @@ function pigMoodFor(todayCny) {
   if (!Number.isFinite(todayCny) || Math.abs(todayCny) < 100) {
     return {
       className: "mood-neutral",
-      characterClass: "pig-sipping",
-      title: "喝奶茶观察中",
-      subtitle: "今天波动不大，猪猪先稳住节奏，不乱动。",
-      tab: "开心",
+      characterClass: "pig-waiting",
+      title: "等待信号中",
+      subtitle: "今天波动不大，猪猪先站好等价格给方向。",
+      tab: "等待",
     };
   }
   if (todayCny >= 5000) {
     return {
       className: "mood-party",
-      characterClass: "pig-celebrate",
-      title: "开心到举手",
+      characterClass: "pig-jumping",
+      title: "开心到跳起来",
       subtitle: `今日浮盈 ${signed(todayCny, "CNY")}，可以高兴，但先别追高。`,
-      tab: "高兴",
+      tab: "跳跃",
     };
   }
   if (todayCny > 0) {
     return {
       className: "mood-happy",
-      characterClass: "pig-sipping",
-      title: "开心喝奶茶",
-      subtitle: `今日盈亏 ${signed(todayCny, "CNY")}，猪猪慢慢吸一口甜的。`,
-      tab: "开心",
+      characterClass: "pig-waving",
+      title: "盈利挥挥手",
+      subtitle: `今日盈亏 ${signed(todayCny, "CNY")}，猪猪挥手庆祝，但继续看节奏。`,
+      tab: "挥手",
     };
   }
   if (todayCny <= -5000) {
     return {
       className: "mood-angry",
-      characterClass: "pig-angry-state",
-      title: "生气但不乱卖",
-      subtitle: `今日回撤 ${signed(todayCny, "CNY")}，先看仓位和止损线。`,
-      tab: "生气",
+      characterClass: "pig-failed",
+      title: "失败了先冷静",
+      subtitle: `今日回撤 ${signed(todayCny, "CNY")}，猪猪先认错复核仓位和止损线。`,
+      tab: "失败",
     };
   }
   return {
     className: "mood-sad",
-    characterClass: "pig-sulk",
-    title: "有点不爽",
-    subtitle: `今日回撤 ${signed(todayCny, "CNY")}，猪猪抱臂等反弹确认。`,
-    tab: "不爽",
+    characterClass: "pig-review",
+    title: "抱臂复盘中",
+    subtitle: `今日回撤 ${signed(todayCny, "CNY")}，猪猪抱臂复盘，等反弹确认。`,
+    tab: "复盘",
   };
 }
 
