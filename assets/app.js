@@ -33,7 +33,7 @@ const els = {
   pigCharacter: document.querySelector("#pigCharacter"),
   pigMoodTitle: document.querySelector("#pigMoodTitle"),
   pigMoodSubtitle: document.querySelector("#pigMoodSubtitle"),
-  moodTabs: document.querySelectorAll(".mood-tabs span"),
+  moodTabs: document.querySelectorAll(".mood-tabs button"),
   totalCost: document.querySelector("#totalCost"),
   totalCostBreakdown: document.querySelector("#totalCostBreakdown"),
   cashCost: document.querySelector("#cashCost"),
@@ -94,6 +94,8 @@ let currentMarket = "港股";
 let currentWatchMarket = "A股";
 let currentPositionStatus = "holding";
 let tableSort = { key: "pnl", dir: "asc" };
+let currentPigAction = "waiting";
+let pigActionOverride = "";
 let latestRows = [];
 let latestHistories = {};
 let latestIntraday = {};
@@ -771,59 +773,69 @@ function marketBreakdownCny(rows, status) {
   }).join("");
 }
 
+const pigActions = {
+  waiting: { label: "等待", className: "pig-waiting", title: "等待信号中", subtitle: "今天波动不大，猪猪先站好等价格给方向。", mood: "mood-neutral" },
+  idle: { label: "待机", className: "pig-idle", title: "乖乖待机", subtitle: "没有新的交易信号，猪猪保持观察姿态。", mood: "mood-neutral" },
+  waving: { label: "挥手", className: "pig-waving", title: "盈利挥挥手", subtitle: "赚到了先挥手庆祝，但继续看节奏。", mood: "mood-happy" },
+  jumping: { label: "跳跃", className: "pig-jumping", title: "开心到跳起来", subtitle: "浮盈明显扩大，可以高兴，但先别追高。", mood: "mood-party" },
+  failed: { label: "失败", className: "pig-failed", title: "失败了先冷静", subtitle: "回撤比较大，猪猪先认错复核仓位和止损线。", mood: "mood-angry" },
+  review: { label: "复盘", className: "pig-review", title: "抱臂复盘中", subtitle: "有点不爽，先复盘，等反弹确认。", mood: "mood-sad" },
+  angry: { label: "生气", className: "pig-angry", title: "生气但不乱卖", subtitle: "行情不给面子，先控仓位，不做情绪单。", mood: "mood-angry" },
+  runRight: { label: "右跑", className: "pig-run-right", title: "向右冲刺", subtitle: "行情转强，猪猪进入进攻观察模式。", mood: "mood-happy" },
+  runLeft: { label: "左跑", className: "pig-run-left", title: "向左撤退", subtitle: "风险抬头，猪猪先撤一步等确认。", mood: "mood-sad" },
+};
+
 function renderPigMood(todayCny) {
+  if (pigActionOverride) {
+    applyPigAction(pigActionOverride);
+    return;
+  }
   const mood = pigMoodFor(todayCny);
-  els.pigMoodCard.className = `pig-mood-card ${mood.className}`;
-  els.pigCharacter.className = `pig-character ${mood.characterClass}`;
-  els.pigMoodTitle.textContent = mood.title;
-  els.pigMoodSubtitle.textContent = mood.subtitle;
-  els.moodTabs.forEach((tab) => tab.classList.toggle("active", tab.textContent === mood.tab));
+  currentPigAction = mood.action;
+  applyPigAction(mood.action, mood.subtitle);
+}
+
+function applyPigAction(actionKey, subtitleOverride = "") {
+  const action = pigActions[actionKey] || pigActions.waiting;
+  currentPigAction = actionKey;
+  els.pigMoodCard.className = `pig-mood-card ${action.mood}`;
+  els.pigCharacter.className = `pig-character ${action.className}`;
+  els.pigMoodTitle.textContent = action.title;
+  els.pigMoodSubtitle.textContent = subtitleOverride || action.subtitle;
+  els.moodTabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.pigAction === actionKey));
+}
+
+function previewPigAction(actionKey) {
+  pigActionOverride = actionKey;
+  applyPigAction(actionKey);
+}
+
+function moodResult(action, subtitle) {
+  const config = pigActions[action] || pigActions.waiting;
+  return {
+    action,
+    className: config.mood,
+    characterClass: config.className,
+    title: config.title,
+    subtitle,
+    tab: config.label,
+  };
 }
 
 function pigMoodFor(todayCny) {
   if (!Number.isFinite(todayCny) || Math.abs(todayCny) < 100) {
-    return {
-      className: "mood-neutral",
-      characterClass: "pig-waiting",
-      title: "等待信号中",
-      subtitle: "今天波动不大，猪猪先站好等价格给方向。",
-      tab: "等待",
-    };
+    return moodResult("waiting", "今天波动不大，猪猪先站好等价格给方向。");
   }
   if (todayCny >= 5000) {
-    return {
-      className: "mood-party",
-      characterClass: "pig-jumping",
-      title: "开心到跳起来",
-      subtitle: `今日浮盈 ${signed(todayCny, "CNY")}，可以高兴，但先别追高。`,
-      tab: "跳跃",
-    };
+    return moodResult("jumping", `今日浮盈 ${signed(todayCny, "CNY")}，可以高兴，但先别追高。`);
   }
   if (todayCny > 0) {
-    return {
-      className: "mood-happy",
-      characterClass: "pig-waving",
-      title: "盈利挥挥手",
-      subtitle: `今日盈亏 ${signed(todayCny, "CNY")}，猪猪挥手庆祝，但继续看节奏。`,
-      tab: "挥手",
-    };
+    return moodResult("waving", `今日盈亏 ${signed(todayCny, "CNY")}，猪猪挥手庆祝，但继续看节奏。`);
   }
   if (todayCny <= -5000) {
-    return {
-      className: "mood-angry",
-      characterClass: "pig-failed",
-      title: "失败了先冷静",
-      subtitle: `今日回撤 ${signed(todayCny, "CNY")}，猪猪先认错复核仓位和止损线。`,
-      tab: "失败",
-    };
+    return moodResult("failed", `今日回撤 ${signed(todayCny, "CNY")}，猪猪先认错复核仓位和止损线。`);
   }
-  return {
-    className: "mood-sad",
-    characterClass: "pig-review",
-    title: "抱臂复盘中",
-    subtitle: `今日回撤 ${signed(todayCny, "CNY")}，猪猪抱臂复盘，等反弹确认。`,
-    tab: "复盘",
-  };
+  return moodResult("review", `今日回撤 ${signed(todayCny, "CNY")}，猪猪抱臂复盘，等反弹确认。`);
 }
 
 function renderMarketOverview(rows, histories, intraday, rates) {
@@ -1326,6 +1338,9 @@ els.exportHoldingsButton.addEventListener("click", exportHoldings);
 els.resetLinkedHoldingsButton.addEventListener("click", resetLinkedHoldings);
 els.tradeCode.addEventListener("blur", autofillTradeFields);
 els.tradeMarket.addEventListener("change", syncTradeMarketDefaults);
+els.moodTabs.forEach((tab) => {
+  tab.addEventListener("click", () => previewPigAction(tab.dataset.pigAction));
+});
 els.tradesBody.addEventListener("click", (event) => {
   const editId = event.target.dataset.tradeEdit;
   const deleteId = event.target.dataset.tradeDelete;

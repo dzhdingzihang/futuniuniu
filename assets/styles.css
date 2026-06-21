@@ -330,6 +330,7 @@ h1 {
   min-height: 214px;
   place-items: center;
   margin: 0 0 10px;
+  overflow: visible;
 }
 
 .pig-character {
@@ -721,9 +722,9 @@ h1 {
 
 .pig-character {
   --pig-frame-y: 0;
-  --pig-scale: 2.42;
-  width: min(280px, 95%);
-  height: 274px;
+  --pig-scale: 2.14;
+  width: min(288px, 98%);
+  height: 252px;
   aspect-ratio: auto;
   background: none;
   animation: none !important;
@@ -766,6 +767,21 @@ h1 {
   animation: pigSprite6 1.25s steps(6) infinite;
 }
 
+.pig-idle::before {
+  --pig-frame-y: 0;
+  animation: pigSprite6 1.45s steps(6) infinite;
+}
+
+.pig-run-right::before {
+  --pig-frame-y: -104px;
+  animation: pigSprite8 0.72s steps(8) infinite;
+}
+
+.pig-run-left::before {
+  --pig-frame-y: -208px;
+  animation: pigSprite8 0.72s steps(8) infinite;
+}
+
 .pig-waving::before {
   --pig-frame-y: -312px;
   animation: pigSprite4 0.95s steps(4) infinite;
@@ -786,6 +802,7 @@ h1 {
   animation: pigSprite6 1.3s steps(6) infinite;
 }
 
+.pig-angry::before,
 .pig-running::before {
   --pig-frame-y: -728px;
   animation: pigSprite6 0.75s steps(6) infinite;
@@ -793,26 +810,33 @@ h1 {
 
 .mood-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
 }
 
-.mood-tabs span {
+.mood-tabs button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
+  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--muted);
   background: #ffffff;
+  cursor: pointer;
+  font: inherit;
   font-size: 12px;
   font-weight: 900;
 }
 
-.mood-tabs span.active {
+.mood-tabs button.active {
   border-color: rgba(36, 120, 255, 0.28);
   background: #eef5ff;
+  color: var(--blue);
+}
+
+.mood-tabs button:hover {
+  border-color: rgba(36, 120, 255, 0.25);
   color: var(--blue);
 }
 
