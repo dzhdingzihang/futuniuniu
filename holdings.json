@@ -12,7 +12,7 @@
   { "market": "美股", "code": "NOK", "name": "诺基亚", "status": "holding", "cost": 15, "qty": 320, "currency": "USD", "sina": "gb_nok" },
   { "market": "美股", "code": "LITX", "name": "2倍做多LITE", "status": "holding", "cost": 42, "qty": 10, "currency": "USD", "sina": "gb_litx" },
   { "market": "美股", "code": "LITX", "name": "2倍做多LITE", "status": "sold", "cost": 42, "sellPrice": 35.5, "sellDate": "2026-06-17", "qty": 60, "currency": "USD", "sina": "gb_litx" },
-  { "market": "美股", "code": "GLW", "name": "康宁", "status": "holding", "cost": 179, "qty": 34, "currency": "USD", "sina": "gb_glw" },
+  { "market": "美股", "code": "GLW", "name": "康宁", "status": "holding", "cost": 180, "qty": 20, "currency": "USD", "sina": "gb_glw" },
   { "market": "美股", "code": "DRAM", "name": "DRAM", "status": "holding", "cost": 57, "qty": 80, "currency": "USD", "sina": "gb_dram" },
   { "market": "美股", "code": "DRAM", "name": "DRAM", "status": "sold", "cost": 57, "sellPrice": 70, "sellDate": "2026-06-17", "qty": 20, "currency": "USD", "sina": "gb_dram" },
   { "market": "美股", "code": "ASTX", "name": "2倍做多ASTS", "status": "holding", "cost": 41, "qty": 40, "currency": "USD", "sina": "gb_astx" },
