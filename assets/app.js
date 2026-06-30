@@ -3,10 +3,14 @@ const summaryMarketOrder = ["港股", "美股", "A股"];
 const tradesStorageKey = "piggy-trades-v1";
 const holdingsStorageKey = "piggy-linked-holdings-v1";
 const roundTripFeeUsd = 30;
+const holdingsPollMs = 60 * 1000;
 
 let holdings = [];
 let baseHoldings = [];
 let trades = [];
+let remoteHoldingsSignature = "";
+let refreshInFlight = false;
+let refreshTimer = 0;
 
 const watchCandidates = [
   { market: "美股", code: "NVDA", name: "英伟达", currency: "USD", sina: "gb_nvda", theme: "AI GPU", baseHeat: 94, targetPct: 0.09, reason: "AI芯片仍是全球科技股定价锚，算力资本开支主线明确。" },
@@ -147,10 +151,38 @@ async function getJson(url, fallback) {
   }
 }
 
+function cacheBusted(url) {
+  const joiner = url.includes("?") ? "&" : "?";
+  return `${url}${joiner}_=${Date.now()}`;
+}
+
+function hasLinkedTrades() {
+  return trades.some((trade) => trade.affectsHoldings);
+}
+
+function holdingsSignature(items) {
+  return JSON.stringify(normalizeHoldings(items).map((item) => ({
+    market: item.market,
+    code: item.code,
+    name: item.name,
+    cost: item.cost,
+    qty: item.qty,
+    currency: item.currency,
+    sina: item.sina,
+    status: item.status,
+    sellPrice: Number.isFinite(item.sellPrice) ? item.sellPrice : null,
+    sellDate: item.sellDate,
+  })));
+}
+
 async function loadHoldings() {
+  return syncHoldingsFromRemote({ initial: true });
+}
+
+async function syncHoldingsFromRemote({ initial = false } = {}) {
   let data;
   try {
-    data = await getJson("holdings.json");
+    data = await getJson(cacheBusted("holdings.json"));
   } catch (error) {
     throw new Error(`持仓数据表读取失败：${error.message}`);
   }
@@ -158,12 +190,22 @@ async function loadHoldings() {
   if (!Array.isArray(data) || !data.length) {
     throw new Error("持仓数据表为空或格式不正确");
   }
-  baseHoldings = normalizeHoldings(data);
-  const localHoldings = readLocalHoldings();
-  holdings = localHoldings ? normalizeHoldings(localHoldings) : [...baseHoldings];
+  const normalized = normalizeHoldings(data);
+  const nextSignature = holdingsSignature(normalized);
+  const changed = initial || nextSignature !== remoteHoldingsSignature;
+  baseHoldings = normalized;
+  remoteHoldingsSignature = nextSignature;
+
+  if (hasLinkedTrades()) {
+    rebuildLinkedHoldings();
+  } else {
+    clearLocalHoldings();
+  }
+
   if (!holdings.length) {
     throw new Error("持仓数据表没有可用股票，请检查 market/code/cost/qty/currency/sina");
   }
+  return changed;
 }
 
 function normalizeHoldings(items) {
@@ -1284,10 +1326,13 @@ function inferSina(market, code) {
   return raw.toLowerCase();
 }
 
-async function refresh() {
+async function refresh({ reloadHoldings = true } = {}) {
+  if (refreshInFlight) return;
+  refreshInFlight = true;
   els.refresh.disabled = true;
-  els.status.textContent = "正在连接实时行情...";
+  els.status.textContent = reloadHoldings ? "正在同步持仓并连接实时行情..." : "正在连接实时行情...";
   try {
+    const holdingsChanged = reloadHoldings ? await syncHoldingsFromRemote() : false;
     const [quotes, rates] = await Promise.all([fetchQuotes(), fetchRates()]);
     const rows = buildRows(quotes, {}, rates);
     latestRows = rows;
@@ -1316,11 +1361,15 @@ async function refresh() {
     renderTable(rowsWithHistory);
     renderWatchlist(quotes, histories);
     const missing = rows.filter((row) => !Number.isFinite(row.price)).length;
-    els.status.textContent = missing ? `已刷新，${missing} 只股票暂未取到实时价。` : "已刷新：实时价格、30日K线、当日波动均已更新。";
+    const prefix = holdingsChanged ? "持仓已同步，" : "";
+    els.status.textContent = missing
+      ? `${prefix}已刷新，${missing} 只股票暂未取到实时价。持仓每 ${holdingsPollMs / 1000} 秒自动检查。`
+      : `${prefix}已刷新：实时价格、30日K线、当日波动均已更新。持仓每 ${holdingsPollMs / 1000} 秒自动检查。`;
   } catch (error) {
     els.status.textContent = `刷新失败：${error.message}`;
   } finally {
     els.refresh.disabled = false;
+    refreshInFlight = false;
   }
 }
 
@@ -1387,11 +1436,13 @@ els.sortButtons.forEach((button) => {
 if (location.protocol === "file:") {
   renderFileMode();
 } else {
-  Promise.all([loadHoldings(), loadTrades()])
+  loadTrades()
+    .then(() => loadHoldings())
     .then(() => {
-      if (trades.some((trade) => trade.affectsHoldings)) rebuildLinkedHoldings();
       resetTradeForm();
-      refresh();
+      refresh({ reloadHoldings: false });
+      window.clearInterval(refreshTimer);
+      refreshTimer = window.setInterval(() => refresh(), holdingsPollMs);
     })
     .catch((error) => {
       els.refresh.disabled = true;
