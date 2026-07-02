@@ -1,5 +1,5 @@
 [
-  { "market": "港股", "code": "07709", "name": "2倍做多海力士", "status": "holding", "cost": 146, "qty": 300, "currency": "HKD", "sina": "hk07709" },
+  { "market": "港股", "code": "07709", "name": "2倍做多海力士", "status": "holding", "cost": 146, "qty": 600, "currency": "HKD", "sina": "hk07709" },
   { "market": "港股", "code": "02208", "name": "金风科技", "status": "holding", "cost": 17.5, "qty": 1600, "currency": "HKD", "sina": "hk02208" },
   { "market": "港股", "code": "01810", "name": "小米集团-W", "status": "holding", "cost": 35.5, "qty": 1400, "currency": "HKD", "sina": "hk01810" },
   { "market": "港股", "code": "01772", "name": "赣锋锂业", "status": "holding", "cost": 67.5, "qty": 200, "currency": "HKD", "sina": "hk01772" },
@@ -21,7 +21,7 @@
   { "market": "美股", "code": "COHX", "name": "2倍做多COHR", "status": "sold", "cost": 58, "sellPrice": 59, "sellDate": "2026-06-17", "qty": 10, "currency": "USD", "sina": "gb_cohx" },
   { "market": "美股", "code": "DKNX", "name": "2倍做多DKNG", "status": "sold", "cost": 22, "sellPrice": 22, "sellDate": "2026-06-17", "qty": 10, "currency": "USD", "sina": "gb_dknx" },
   { "market": "A股", "code": "601179", "name": "中国西电", "status": "holding", "cost": 16.5, "qty": 500, "currency": "CNY", "sina": "sh601179" },
-  { "market": "A股", "code": "601138", "name": "工业富联", "status": "holding", "cost": 56.5, "qty": 100, "currency": "CNY", "sina": "sh601138" },
+  { "market": "A股", "code": "601138", "name": "工业富联", "status": "holding", "cost": 64, "qty": 300, "currency": "CNY", "sina": "sh601138" },
   { "market": "A股", "code": "600869", "name": "远东股份", "status": "holding", "cost": 23, "qty": 100, "currency": "CNY", "sina": "sh600869" },
   { "market": "A股", "code": "300820", "name": "英杰电气", "status": "holding", "cost": 59.5, "qty": 100, "currency": "CNY", "sina": "sz300820" },
   { "market": "A股", "code": "300067", "name": "安诺其", "status": "holding", "cost": 8.5, "qty": 800, "currency": "CNY", "sina": "sz300067" },
@@ -29,6 +29,7 @@
   { "market": "A股", "code": "300053", "name": "航宇微", "status": "sold", "cost": 21.5, "sellPrice": 16.38, "sellDate": "2026-06-17", "qty": 800, "currency": "CNY", "sina": "sz300053" },
   { "market": "A股", "code": "002639", "name": "雪人集团", "status": "holding", "cost": 22.5, "qty": 100, "currency": "CNY", "sina": "sz002639" },
   { "market": "A股", "code": "002639", "name": "雪人集团", "status": "sold", "cost": 22.5, "sellPrice": 14.2, "sellDate": "2026-06-17", "qty": 500, "currency": "CNY", "sina": "sz002639" },
+  { "market": "A股", "code": "002384", "name": "东山精密", "status": "holding", "cost": 260, "qty": 200, "currency": "CNY", "sina": "sz002384" },
   { "market": "A股", "code": "002217", "name": "合力泰", "status": "holding", "cost": 4, "qty": 100, "currency": "CNY", "sina": "sz002217" },
   { "market": "A股", "code": "002217", "name": "合力泰", "status": "sold", "cost": 4, "sellPrice": 2.5, "sellDate": "2026-06-17","qty": 2900, "currency": "CNY", "sina": "sz002217" },
   { "market": "A股", "code": "001896", "name": "豫能控股", "status": "holding", "cost": 15.5, "qty": 200, "currency": "CNY", "sina": "sz001896" },
