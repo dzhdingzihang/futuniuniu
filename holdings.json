@@ -1,5 +1,5 @@
 [
-  { "market": "港股", "code": "07709", "name": "2倍做多海力士", "status": "holding", "cost": 146, "qty": 600, "currency": "HKD", "sina": "hk07709" },
+  { "market": "港股", "code": "07709", "name": "2倍做多海力士", "status": "holding", "cost": 130, "qty": 900, "currency": "HKD", "sina": "hk07709" },
   { "market": "港股", "code": "02208", "name": "金风科技", "status": "holding", "cost": 17.5, "qty": 1600, "currency": "HKD", "sina": "hk02208" },
   { "market": "港股", "code": "01810", "name": "小米集团-W", "status": "holding", "cost": 35.5, "qty": 1400, "currency": "HKD", "sina": "hk01810" },
   { "market": "港股", "code": "01772", "name": "赣锋锂业", "status": "holding", "cost": 67.5, "qty": 200, "currency": "HKD", "sina": "hk01772" },
