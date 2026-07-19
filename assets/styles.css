@@ -337,15 +337,14 @@ tr:last-child td { border-bottom: 0; }
 .action-chip { display: inline-flex; min-height: 27px; align-items: center; padding: 0 9px; border: 1px solid #d9e5ff; border-radius: 6px; background: var(--blue-soft); color: var(--blue); font-size: 12px; font-weight: 900; }.action-chip.stop { border-color: #ffd4af; background: #fff5e9; color: #d66b09; }.action-chip.add { border-color: #bfd5ff; background: #f1f6ff; color: #1d67dc; }.action-chip.take { border-color: #bde9d2; background: #ecfaf3; color: #07965c; }.action-chip.hold, .action-chip.good { border-color: #d9ebe0; background: #f4fbf7; color: #16875b; }.action-chip.warn { background: var(--orange-soft); color: #d95e00; }
 
 .priority-card { margin-bottom: 16px; overflow: hidden; }
-.priority-card .table-heading { align-items: center; justify-content: space-between; padding-bottom: 11px; }.priority-card table { min-width: 980px; }
+.priority-card .table-heading { align-items: center; justify-content: space-between; padding-bottom: 11px; }.priority-card table { min-width: 1280px; }
 .action-rule-note { display: inline-flex; align-items: center; white-space: nowrap; }
 .analysis-copy { max-width: 285px; overflow: hidden; color: #4b556b; text-overflow: ellipsis; white-space: nowrap; }
 .execution-price { color: #263653; font-family: "DM Mono", ui-monospace, monospace; font-size: 12px; font-weight: 800; }.execution-price.stop { color: #d66b09; }.execution-price.add { color: #1d67dc; }.execution-price.take { color: #07965c; }
+.trend-chip { display: inline-flex; min-height: 27px; align-items: center; padding: 0 9px; border: 1px solid; border-radius: 6px; font-size: 12px; font-weight: 900; }.trend-chip.up { border-color: #ffd2ca; background: #fff2ef; color: #d94c3b; }.trend-chip.down { border-color: #cde9d9; background: #eef9f3; color: #16875b; }.trend-note { display: block; margin-top: 4px; color: #6b7488; font-size: 10px; }
 .action-table-heading { align-items: center; justify-content: space-between; gap: 18px; }
-.action-sort-controls { display: flex; gap: 7px; }
-.action-sort-controls button { min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--muted); font-size: 12px; font-weight: 800; white-space: nowrap; }
-.action-sort-controls button:hover { border-color: var(--blue); color: var(--blue); }.action-sort-controls button.active { border-color: #97bbff; background: var(--blue-soft); color: var(--blue); box-shadow: inset 0 0 0 1px rgba(33,105,243,.05); }
-.holding-action-table { min-width: 1430px; }
+.table-sort-button { display: inline-flex; align-items: center; gap: 5px; margin: -7px -8px; padding: 7px 8px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; font-size: inherit; font-weight: inherit; white-space: nowrap; }.table-sort-button:hover, .table-sort-button:focus-visible { color: var(--blue); background: var(--blue-soft); outline: none; }.table-sort-button.active { color: var(--blue); }.sort-arrow { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; opacity: .45; transition: transform .18s ease, opacity .18s ease; }.table-sort-button.active .sort-arrow { opacity: 1; }.sort-arrow.desc { transform: rotate(180deg); }
+.holding-action-table { min-width: 1510px; }
 .holding-action-table td { vertical-align: middle; }
 .table-money b { display: block; color: var(--ink); font-family: "DM Mono", ui-monospace, monospace; font-size: 12px; font-weight: 800; }.table-money small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
 .holding-action-table td .number-cell + small { display: block; margin-top: 3px; color: currentColor; font-size: 10px; }
