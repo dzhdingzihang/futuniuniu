@@ -3,7 +3,11 @@ const MARKET_ORDER = ["港股", "A股", "美股"];
 const TRADE_KEY = "piggy-trades-v1";
 const HOLDING_KEY = "piggy-linked-holdings-v1";
 const WATCH_KEY = "piggy-watchlist-v1";
+const MARKET_CACHE_KEY = "piggy-market-cache-v1";
 const FEE_USD = 30;
+// Legacy records store the buy price in native currency, but not historical FX.
+// Keep invested cost fixed so a live FX refresh cannot change what was paid.
+const COST_REFERENCE_RATES = { CNY: 1, HKD: 0.92, USD: 7.22 };
 
 const candidates = [
   { market: "美股", code: "NVDA", name: "英伟达", currency: "USD", sina: "gb_nvda", theme: "AI GPU", heat: 94, target: "等待回撤", reason: "AI 算力资本开支仍是全球科技股定价主线，关注业绩兑现与估值消化。" },
@@ -31,7 +35,9 @@ const state = {
   histories: {},
   rates: { CNY: 1, HKD: 0.92, USD: 7.22 },
   saved: readStorage(WATCH_KEY, []),
-  updatedAt: ""
+  updatedAt: "",
+  isRefreshing: false,
+  isHistoryLoading: false
 };
 
 function readStorage(key, fallback) {
@@ -106,11 +112,36 @@ function dualMoney(nativeValue, currency, cnyValue, toneClass) {
   return "<b class=\"" + toneName + "\">" + nativeMoney(nativeValue, currency) + "</b><small>≈ " + money(cnyValue, 0) + "</small>";
 }
 
-function getJson(url, fallback) {
-  return fetch(url, { cache: "no-store" }).then(function (response) {
+function getJson(url, fallback, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(function () { controller.abort(); }, timeoutMs || 6000);
+  return fetch(url, { cache: "no-store", signal: controller.signal }).then(function (response) {
     if (!response.ok) throw new Error(response.status + " " + response.statusText);
     return response.json();
-  }).catch(function () { return fallback; });
+  }).catch(function () { return fallback; }).finally(function () { window.clearTimeout(timeout); });
+}
+
+function fixedPurchaseCost(item) {
+  const recordedCost = Number(item.purchaseCostCny ?? item.costCny);
+  if (Number.isFinite(recordedCost) && recordedCost > 0) return recordedCost;
+  return Number(item.cost) * Number(item.qty) * (COST_REFERENCE_RATES[item.currency] || 1);
+}
+
+function readMarketCache() {
+  const cache = readStorage(MARKET_CACHE_KEY, null);
+  if (!cache || typeof cache !== "object") return false;
+  if (cache.quotes && typeof cache.quotes === "object") state.quotes = new Map(Object.entries(cache.quotes));
+  if (cache.histories && typeof cache.histories === "object") state.histories = cache.histories;
+  if (cache.rates && typeof cache.rates === "object") state.rates = Object.assign({}, state.rates, cache.rates);
+  if (cache.updatedAt) state.updatedAt = String(cache.updatedAt);
+  return true;
+}
+
+function saveMarketCache() {
+  writeStorage(MARKET_CACHE_KEY, {
+    quotes: Object.fromEntries(state.quotes), histories: state.histories,
+    rates: state.rates, updatedAt: state.updatedAt
+  });
 }
 
 function normalizeHolding(item) {
@@ -123,6 +154,7 @@ function normalizeHolding(item) {
     cost: Number(item.cost),
     qty: Number(item.qty),
     currency: String(item.currency || "").toUpperCase(),
+    purchaseCostCny: Number(item.purchaseCostCny ?? item.costCny),
     sina: String(item.sina || "").toLowerCase(),
     status: status,
     sellPrice: Number(item.sellPrice ?? item.soldPrice ?? item.exitPrice),
@@ -175,6 +207,7 @@ function rebuildRows() {
       history: history,
       price: price,
       costCny: costValue * fx,
+      purchaseCostCny: fixedPurchaseCost(item),
       valueCny: valueCny,
       pnlCny: pnlCny,
       pnlRate: pnlRate,
@@ -207,7 +240,7 @@ function filteredRows(status) {
 function summary() {
   const openRows = state.rows.filter(function (row) { return row.status !== "sold"; });
   const soldRows = state.rows.filter(function (row) { return row.status === "sold"; });
-  const cost = sum(state.rows, "costCny");
+  const cost = sum(state.rows, "purchaseCostCny");
   const holdingCost = sum(openRows, "costCny");
   const soldCost = sum(soldRows, "costCny");
   const value = sum(openRows, "valueCny");
@@ -230,7 +263,7 @@ function marketSummary(market) {
   const open = all.filter(function (row) { return row.status !== "sold"; });
   const currency = currencyForMarket(market);
   const fx = state.rates[currency] || 1;
-  const costCny = sum(all, "costCny");
+  const costCny = sum(all, "purchaseCostCny");
   const valueCny = sum(open, "valueCny");
   const pnlCny = sum(all, "pnlCny");
   const todayCny = sum(open, "todayPnlCny");
@@ -242,7 +275,7 @@ function marketSummary(market) {
     value: valueCny,
     today: todayCny,
     pnl: pnlCny,
-    costNative: costCny / fx,
+    costNative: all.reduce(function (total, row) { return total + row.cost * row.qty; }, 0),
     valueNative: valueCny / fx,
     todayNative: todayCny / fx,
     pnlNative: pnlCny / fx,
@@ -258,15 +291,18 @@ function marketTabs(active, attribute) {
 
 function topNav() {
   const items = [["overview", "总览"], ["actions", "持仓行动"], ["radar", "机会雷达"], ["trades", "交易记录"], ["review", "复盘"]];
+  const updateStatus = state.isRefreshing
+    ? "<span class=\"market-refresh-status\"><img src=\"assets/pig-logo.png\" alt=\"\"/>小猪正在核算行情</span>"
+    : "<span class=\"updated\">更新于 " + escapeHtml(state.updatedAt || "待更新") + "</span>";
   return "<header class=\"site-header\"><a class=\"brand\" href=\"#overview\"><img src=\"assets/pig-logo.png\" alt=\"猪猪投资存钱罐\"/><span><strong>猪猪投资存钱罐</strong><small>长期主义 · 让复利为你工作</small></span></a><nav class=\"global-nav\" aria-label=\"主导航\">" +
     items.map(function (item) { return "<button class=\"nav-link " + (state.tab === item[0] ? "active" : "") + "\" type=\"button\" data-tab=\"" + item[0] + "\">" + item[1] + "</button>"; }).join("") +
-    "</nav><div class=\"header-tools\"><span class=\"updated\">更新于 " + escapeHtml(state.updatedAt || "--") + "</span><a class=\"secondary-button\" href=\"https://github.com/dzhdingzihang/futuniuniu/edit/main/holdings.json\" target=\"_blank\" rel=\"noopener\">修改持仓</a><button class=\"icon-button\" type=\"button\" data-refresh=\"1\">刷新</button></div></header>";
+    "</nav><div class=\"header-tools\">" + updateStatus + "<a class=\"secondary-button\" href=\"https://github.com/dzhdingzihang/futuniuniu/edit/main/holdings.json\" target=\"_blank\" rel=\"noopener\">修改持仓</a><button class=\"icon-button\" type=\"button\" data-refresh=\"1\">刷新</button></div></header>";
 }
 
 function overviewPage() {
   const data = summary();
   return "<main class=\"page-shell\"><h1 class=\"page-title\">资产盈亏总览 · 全部市场</h1><section class=\"overview-top\"><div class=\"card asset-summary\">" +
-    metric("投入成本（人民币）", money(data.cost, 0), "持仓与已卖出记录", "neutral") +
+    metric("投入成本（人民币）", money(data.cost, 0), "全部买入成交额 · 固定汇率折算", "neutral") +
     metric("持仓市值（人民币）", money(data.value, 0), "仅含当前持仓", "neutral") +
     metric("累计盈亏", signed(data.totalPnl, 0), pct(data.totalRate), tone(data.totalPnl)) +
     metric("今日盈亏", signed(data.today, 0), pct(data.todayRate), tone(data.today)) +
@@ -523,16 +559,23 @@ function applyTrade(trade) {
   if (!trade.affectsHoldings) return;
   const current = state.holdings.find(function (item) { return item.status !== "sold" && item.sina === trade.sina; });
   if (trade.action === "buy") {
+    const tradePurchaseCost = trade.price * trade.qty * (COST_REFERENCE_RATES[trade.currency] || 1);
     if (current) {
+      const priorPurchaseCost = fixedPurchaseCost(current);
       const totalQty = current.qty + trade.qty;
       current.cost = (current.cost * current.qty + trade.price * trade.qty) / totalQty;
       current.qty = totalQty;
+      current.purchaseCostCny = priorPurchaseCost + tradePurchaseCost;
     } else {
-      state.holdings.push({ market: trade.market, code: trade.code, name: trade.name || trade.code, cost: trade.price, qty: trade.qty, currency: trade.currency, sina: trade.sina, status: "holding", sellPrice: NaN, sellDate: "" });
+      state.holdings.push({ market: trade.market, code: trade.code, name: trade.name || trade.code, cost: trade.price, qty: trade.qty, currency: trade.currency, purchaseCostCny: tradePurchaseCost, sina: trade.sina, status: "holding", sellPrice: NaN, sellDate: "" });
     }
   } else if (current) {
     current.qty = Math.max(0, current.qty - trade.qty);
-    if (!current.qty) state.holdings = state.holdings.filter(function (item) { return item !== current; });
+    if (!current.qty) {
+      current.status = "sold";
+      current.sellPrice = trade.price;
+      current.sellDate = trade.date;
+    }
   }
   writeStorage(HOLDING_KEY, state.holdings);
 }
@@ -565,7 +608,11 @@ function exportJson(kind) {
 function eventHandlers() {
   window.addEventListener("hashchange", function () {
     const tab = location.hash.slice(1);
-    if (["overview", "actions", "radar", "trades", "review"].includes(tab)) { state.tab = tab; render(); }
+    if (["overview", "actions", "radar", "trades", "review"].includes(tab)) {
+      state.tab = tab;
+      render();
+      if (tab === "radar" && candidates.some(function (item) { return !state.quotes.has(item.sina); })) refreshData(true);
+    }
   });
   document.addEventListener("click", function (event) {
     const tab = event.target.closest("[data-tab]");
@@ -604,19 +651,32 @@ function eventHandlers() {
   window.addEventListener("resize", function () { requestAnimationFrame(drawCharts); });
 }
 
-async function refreshData() {
-  document.querySelector("#app").innerHTML = topNav() + "<main class=\"loading-screen\">正在刷新实时行情…</main>";
-  const symbols = Array.from(new Set(state.holdings.concat(candidates).map(function (item) { return item.sina; }).filter(Boolean))).join(",");
+async function refreshData(includeCandidates) {
+  state.isRefreshing = true;
+  render();
+  const holdingSymbols = Array.from(new Set(activeHoldings().map(function (item) { return item.sina; }).filter(Boolean))).join(",");
+  const symbols = includeCandidates
+    ? Array.from(new Set(activeHoldings().concat(candidates).map(function (item) { return item.sina; }).filter(Boolean))).join(",")
+    : holdingSymbols;
+  const currentQuotes = { quotes: Object.fromEntries(state.quotes) };
+  const currentRates = { rates: { USD_CNY: state.rates.USD, HKD_CNY: state.rates.HKD } };
   const result = await Promise.all([
-    getJson("/api/quotes?symbols=" + encodeURIComponent(symbols), { quotes: {} }),
-    getJson("/api/history?symbols=" + encodeURIComponent(symbols) + "&days=30", { histories: {} }),
-    getJson("/api/rates", { rates: { USD_CNY: 7.22, HKD_CNY: 0.92 } })
+    getJson("/api/quotes?symbols=" + encodeURIComponent(symbols), currentQuotes, 9000),
+    getJson("/api/rates", currentRates, 3500)
   ]);
-  state.quotes = new Map(Object.entries(result[0].quotes || {}));
-  state.histories = result[1].histories || {};
-  state.rates = { CNY: 1, USD: Number(result[2].rates && result[2].rates.USD_CNY) || 7.22, HKD: Number(result[2].rates && result[2].rates.HKD_CNY) || 0.92 };
+  if (Object.keys(result[0].quotes || {}).length) state.quotes = new Map(Object.entries(result[0].quotes));
+  state.rates = { CNY: 1, USD: Number(result[1].rates && result[1].rates.USD_CNY) || state.rates.USD || 7.22, HKD: Number(result[1].rates && result[1].rates.HKD_CNY) || state.rates.HKD || 0.92 };
   state.updatedAt = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
   rebuildRows();
+  state.isRefreshing = false;
+  state.isHistoryLoading = true;
+  saveMarketCache();
+  render();
+  const historyResult = await getJson("/api/history?symbols=" + encodeURIComponent(holdingSymbols) + "&days=30", { histories: state.histories }, 12000);
+  if (Object.keys(historyResult.histories || {}).length) state.histories = historyResult.histories;
+  state.isHistoryLoading = false;
+  rebuildRows();
+  saveMarketCache();
   render();
 }
 
@@ -627,8 +687,11 @@ async function start() {
   state.holdings = Array.isArray(linked) && linked.length ? linked.map(normalizeHolding).filter(isValidHolding) : state.baseHoldings.slice();
   const localTrades = readStorage(TRADE_KEY, null);
   state.trades = (Array.isArray(localTrades) ? localTrades : (Array.isArray(result[1]) ? result[1] : [])).map(normalizeTrade);
+  readMarketCache();
+  rebuildRows();
   eventHandlers();
-  await refreshData();
+  render();
+  refreshData();
 }
 
 start().catch(function (error) {
