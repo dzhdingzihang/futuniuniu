@@ -4,10 +4,18 @@ const TRADE_KEY = "piggy-trades-v1";
 const HOLDING_KEY = "piggy-linked-holdings-v1";
 const WATCH_KEY = "piggy-watchlist-v1";
 const MARKET_CACHE_KEY = "piggy-market-cache-v1";
-const FEE_USD = 30;
 // Legacy records store the buy price in native currency, but not historical FX.
 // Keep invested cost fixed so a live FX refresh cannot change what was paid.
 const COST_REFERENCE_RATES = { CNY: 1, HKD: 0.92, USD: 7.22 };
+
+const METRIC_HELP = {
+  netInvested: "累计买入金额减去累计卖出金额，按固定参考汇率折算为人民币。",
+  marketValue: "当前未卖出持仓按最新报价和实时汇率折算的市值。",
+  totalPnl: "当前持仓市值减去净投入。盈利为正，亏损为负；不包含未录入的手续费。",
+  todayPnl: "当前未卖出持仓的今日价格变化乘以数量，再按实时汇率折算；不包含当天未录入的已实现盈亏。",
+  holdingCount: "当前状态为持有中的证券数量，不包含已卖出记录。",
+  chart: "按当前净投入与现有持仓的历史市值估算，蓝线为盈亏平衡线。"
+};
 
 const candidates = [
   { market: "美股", code: "NVDA", name: "英伟达", currency: "USD", sina: "gb_nvda", theme: "AI GPU", heat: 94, target: "等待回撤", reason: "AI 算力资本开支仍是全球科技股定价主线，关注业绩兑现与估值消化。" },
@@ -127,6 +135,13 @@ function fixedPurchaseCost(item) {
   return Number(item.cost) * Number(item.qty) * (COST_REFERENCE_RATES[item.currency] || 1);
 }
 
+function fixedSaleProceeds(item) {
+  const recordedProceeds = Number(item.sellProceedsCny ?? item.saleProceedsCny);
+  if (Number.isFinite(recordedProceeds) && recordedProceeds >= 0) return recordedProceeds;
+  if (item.status !== "sold" || !Number.isFinite(Number(item.sellPrice))) return 0;
+  return Number(item.sellPrice) * Number(item.qty) * (COST_REFERENCE_RATES[item.currency] || 1);
+}
+
 function readMarketCache() {
   const cache = readStorage(MARKET_CACHE_KEY, null);
   if (!cache || typeof cache !== "object") return false;
@@ -155,6 +170,7 @@ function normalizeHolding(item) {
     qty: Number(item.qty),
     currency: String(item.currency || "").toUpperCase(),
     purchaseCostCny: Number(item.purchaseCostCny ?? item.costCny),
+    sellProceedsCny: Number(item.sellProceedsCny ?? item.saleProceedsCny),
     sina: String(item.sina || "").toLowerCase(),
     status: status,
     sellPrice: Number(item.sellPrice ?? item.soldPrice ?? item.exitPrice),
@@ -196,18 +212,20 @@ function rebuildRows() {
     const fx = state.rates[item.currency] || 1;
     const costValue = item.cost * item.qty;
     const exitValue = price * item.qty;
-    const fee = FEE_USD * (state.rates.USD || 7.22);
-    const pnlCny = (exitValue - costValue) * fx - fee;
     const valueCny = item.status === "sold" ? 0 : exitValue * fx;
+    const purchaseCostCny = fixedPurchaseCost(item);
+    const saleProceedsCny = fixedSaleProceeds(item);
+    const pnlCny = item.status === "sold" ? saleProceedsCny - purchaseCostCny : valueCny - purchaseCostCny;
     const todayPnlCny = item.status === "sold" ? 0 : (Number(quote && quote.change) || 0) * item.qty * fx;
     const changePct = Number(quote && quote.changePct);
-    const pnlRate = costValue ? (exitValue - costValue) / costValue * 100 : 0;
+    const pnlRate = purchaseCostCny ? pnlCny / purchaseCostCny * 100 : 0;
     const row = Object.assign({}, item, {
       quote: quote,
       history: history,
       price: price,
       costCny: costValue * fx,
-      purchaseCostCny: fixedPurchaseCost(item),
+      purchaseCostCny: purchaseCostCny,
+      saleProceedsCny: saleProceedsCny,
       valueCny: valueCny,
       pnlCny: pnlCny,
       pnlRate: pnlRate,
@@ -240,17 +258,17 @@ function filteredRows(status) {
 function summary() {
   const openRows = state.rows.filter(function (row) { return row.status !== "sold"; });
   const soldRows = state.rows.filter(function (row) { return row.status === "sold"; });
-  const cost = sum(state.rows, "purchaseCostCny");
-  const holdingCost = sum(openRows, "costCny");
-  const soldCost = sum(soldRows, "costCny");
+  const grossBuys = sum(state.rows, "purchaseCostCny");
+  const saleProceeds = sum(soldRows, "saleProceedsCny");
+  const netInvested = grossBuys - saleProceeds;
   const value = sum(openRows, "valueCny");
   const openPnl = sum(openRows, "pnlCny");
   const soldPnl = sum(soldRows, "pnlCny");
-  const totalPnl = openPnl + soldPnl;
+  const totalPnl = value - netInvested;
   const today = sum(openRows, "todayPnlCny");
   return {
-    openRows: openRows, soldRows: soldRows, cost: cost, holdingCost: holdingCost, soldCost: soldCost, value: value, openPnl: openPnl, soldPnl: soldPnl,
-    totalPnl: totalPnl, totalRate: cost ? totalPnl / cost * 100 : 0, today: today, todayRate: value ? today / value * 100 : 0
+    openRows: openRows, soldRows: soldRows, grossBuys: grossBuys, saleProceeds: saleProceeds, netInvested: netInvested, value: value, openPnl: openPnl, soldPnl: soldPnl,
+    totalPnl: totalPnl, totalRate: netInvested ? totalPnl / netInvested * 100 : 0, today: today, todayRate: value ? today / value * 100 : 0
   };
 }
 
@@ -263,22 +281,32 @@ function marketSummary(market) {
   const open = all.filter(function (row) { return row.status !== "sold"; });
   const currency = currencyForMarket(market);
   const fx = state.rates[currency] || 1;
-  const costCny = sum(all, "purchaseCostCny");
+  const grossBuys = sum(all, "purchaseCostCny");
+  const saleProceeds = sum(all, "saleProceedsCny");
+  const netInvested = grossBuys - saleProceeds;
   const valueCny = sum(open, "valueCny");
-  const pnlCny = sum(all, "pnlCny");
+  const pnlCny = valueCny - netInvested;
   const todayCny = sum(open, "todayPnlCny");
+  const grossBuysNative = all.reduce(function (total, row) { return total + row.cost * row.qty; }, 0);
+  const saleProceedsNative = all.reduce(function (total, row) { return total + (row.status === "sold" && Number.isFinite(row.sellPrice) ? row.sellPrice * row.qty : 0); }, 0);
+  const netInvestedNative = grossBuysNative - saleProceedsNative;
+  const valueNative = valueCny / fx;
   return {
     market: market,
     open: open,
     currency: currency,
-    cost: costCny,
+    grossBuys: grossBuys,
+    saleProceeds: saleProceeds,
+    netInvested: netInvested,
     value: valueCny,
     today: todayCny,
     pnl: pnlCny,
-    costNative: all.reduce(function (total, row) { return total + row.cost * row.qty; }, 0),
-    valueNative: valueCny / fx,
+    grossBuysNative: grossBuysNative,
+    saleProceedsNative: saleProceedsNative,
+    netInvestedNative: netInvestedNative,
+    valueNative: valueNative,
     todayNative: todayCny / fx,
-    pnlNative: pnlCny / fx,
+    pnlNative: valueNative - netInvestedNative,
     count: open.length
   };
 }
@@ -302,19 +330,23 @@ function topNav() {
 function overviewPage() {
   const data = summary();
   return "<main class=\"page-shell\"><h1 class=\"page-title\">资产盈亏总览 · 全部市场</h1><section class=\"overview-top\"><div class=\"card asset-summary\">" +
-    metric("投入成本（人民币）", money(data.cost, 0), "全部买入成交额 · 固定汇率折算", "neutral") +
-    metric("持仓市值（人民币）", money(data.value, 0), "仅含当前持仓", "neutral") +
-    metric("累计盈亏", signed(data.totalPnl, 0), pct(data.totalRate), tone(data.totalPnl)) +
-    metric("今日盈亏", signed(data.today, 0), pct(data.todayRate), tone(data.today)) +
+    metric("净投入（人民币）", money(data.netInvested, 0), "累计买入 − 累计卖出", "neutral", METRIC_HELP.netInvested) +
+    metric("持仓市值（人民币）", money(data.value, 0), "仅含当前持仓", "neutral", METRIC_HELP.marketValue) +
+    metric("累计盈亏", signed(data.totalPnl, 0), pct(data.totalRate), tone(data.totalPnl), METRIC_HELP.totalPnl) +
+    metric("今日盈亏", signed(data.today, 0), pct(data.todayRate), tone(data.today), METRIC_HELP.todayPnl) +
     "</div></section>" +
-    "<section class=\"overview-main\"><article class=\"card chart-card\"><div class=\"chart-heading\"><div><h2>" + state.trendDays + "日组合累计盈亏（人民币）</h2><div class=\"chart-legend\"><span class=\"legend-item\"><i class=\"legend-dot\"></i>累计盈亏 <b class=\"" + tone(data.totalPnl) + "\">" + signed(data.totalPnl, 0) + "</b></span><span class=\"legend-item\"><i class=\"legend-dot blue\"></i>盈亏平衡线（¥0）</span></div></div><div class=\"segmented\"><button class=\"" + (state.trendDays === 7 ? "active" : "") + "\" type=\"button\" data-trend-days=\"7\">7天</button><button class=\"" + (state.trendDays === 30 ? "active" : "") + "\" type=\"button\" data-trend-days=\"30\">30天</button></div></div><div class=\"canvas-wrap\"><canvas class=\"line-chart\" data-chart=\"portfolio\"></canvas></div></article>" +
+    "<section class=\"overview-main\"><article class=\"card chart-card\"><div class=\"chart-heading\"><div><h2>" + state.trendDays + "日组合累计盈亏（人民币）" + infoTip(METRIC_HELP.chart) + "</h2><div class=\"chart-legend\"><span class=\"legend-item\"><i class=\"legend-dot\"></i>累计盈亏 <b class=\"" + tone(data.totalPnl) + "\">" + signed(data.totalPnl, 0) + "</b></span><span class=\"legend-item\"><i class=\"legend-dot blue\"></i>盈亏平衡线（¥0）</span></div></div><div class=\"segmented\"><button class=\"" + (state.trendDays === 7 ? "active" : "") + "\" type=\"button\" data-trend-days=\"7\">7天</button><button class=\"" + (state.trendDays === 30 ? "active" : "") + "\" type=\"button\" data-trend-days=\"30\">30天</button></div></div><div class=\"canvas-wrap\"><canvas class=\"line-chart\" data-chart=\"portfolio\"></canvas></div></article>" +
     "<aside class=\"side-stack\"><section class=\"card side-card\"><h3>市场贡献（累计盈亏）</h3>" + contributionRows() + "</section>" + rankCard() + "</aside></section>" +
     "<section class=\"card market-overview\"><h2 class=\"section-title\" style=\"grid-column:1/-1;margin-bottom:18px\">市场概览</h2>" + MARKET_ORDER.map(marketBlock).join("") + "</section></main>";
 }
 
-function metric(label, value, note, valueTone) {
+function infoTip(text) {
+  return "<span class=\"info-tip\" tabindex=\"0\" aria-label=\"查看指标说明\"><span class=\"info-icon\" aria-hidden=\"true\">i</span><span class=\"info-popover\" role=\"tooltip\">" + escapeHtml(text) + "</span></span>";
+}
+
+function metric(label, value, note, valueTone, helpText) {
   const noteClass = valueTone === "positive" ? "positive-bg" : valueTone === "negative" ? "negative-bg" : "neutral-bg";
-  return "<div><span class=\"metric-label\">" + label + "</span><strong class=\"metric-value " + valueTone + "\">" + value + "</strong><span class=\"metric-note " + noteClass + "\">" + note + "</span></div>";
+  return "<div><span class=\"metric-label\">" + label + (helpText ? infoTip(helpText) : "") + "</span><strong class=\"metric-value " + valueTone + "\">" + value + "</strong><span class=\"metric-note " + noteClass + "\">" + note + "</span></div>";
 }
 
 function contributionRows() {
@@ -329,11 +361,15 @@ function contributionRows() {
 function marketBlock(market) {
   const data = marketSummary(market);
   return "<article class=\"market-block\"><div class=\"market-head\">" + marketLabel(market) + "<span>" + market + "</span></div><div class=\"market-kpis market-detail-grid\">" +
-    "<div><span>投入总成本</span>" + dualMoney(data.costNative, data.currency, data.cost) + "</div>" +
-    "<div><span>持仓市值</span>" + dualMoney(data.valueNative, data.currency, data.value) + "</div>" +
-    "<div><span>累计盈亏</span>" + dualMoney(data.pnlNative, data.currency, data.pnl, tone(data.pnl)) + "</div>" +
-    "<div><span>今日盈亏</span>" + dualMoney(data.todayNative, data.currency, data.today, tone(data.today)) + "</div>" +
-    "<div><span>持仓数量</span><b>" + data.count + " 个</b><small>持有中</small></div></div></article>";
+    marketMetric("净投入", dualMoney(data.netInvestedNative, data.currency, data.netInvested), METRIC_HELP.netInvested) +
+    marketMetric("持仓市值", dualMoney(data.valueNative, data.currency, data.value), METRIC_HELP.marketValue) +
+    marketMetric("累计盈亏", dualMoney(data.pnlNative, data.currency, data.pnl, tone(data.pnl)), METRIC_HELP.totalPnl) +
+    marketMetric("今日盈亏", dualMoney(data.todayNative, data.currency, data.today, tone(data.today)), METRIC_HELP.todayPnl) +
+    marketMetric("持仓数量", "<b>" + data.count + " 个</b><small>持有中</small>", METRIC_HELP.holdingCount) + "</div></article>";
+}
+
+function marketMetric(label, value, helpText) {
+  return "<div><span>" + label + infoTip(helpText) + "</span>" + value + "</div>";
 }
 
 function rankCard() {
@@ -356,7 +392,7 @@ function actionsPage() {
 
 function miniMarket(market) {
   const data = marketSummary(market);
-  return "<article class=\"card market-mini\">" + marketLabel(market) + "<div><span>" + market + " 总市值</span><strong>" + money(data.value, 0) + "</strong></div><div><span>今日盈亏</span><p class=\"" + tone(data.today) + "\">" + signed(data.today, 0) + "</p></div><div><span>累计盈亏</span><p class=\"" + tone(data.pnl) + "\">" + signed(data.pnl, 0) + "</p></div></article>";
+  return "<article class=\"card market-mini\">" + marketLabel(market) + "<div><span>" + market + " 总市值" + infoTip(METRIC_HELP.marketValue) + "</span><strong>" + money(data.value, 0) + "</strong></div><div><span>今日盈亏" + infoTip(METRIC_HELP.todayPnl) + "</span><p class=\"" + tone(data.today) + "\">" + signed(data.today, 0) + "</p></div><div><span>累计盈亏" + infoTip(METRIC_HELP.totalPnl) + "</span><p class=\"" + tone(data.pnl) + "\">" + signed(data.pnl, 0) + "</p></div></article>";
 }
 
 function actionTable(rows, isPriority) {
@@ -448,8 +484,8 @@ function pointOnOrBefore(history, date) {
 }
 
 function portfolioSeries(days) {
-  const holdingCost = summary().holdingCost;
-  return portfolioValueSeries(days).map(function (point) { return { date: point.date, value: point.value - holdingCost }; });
+  const netInvested = summary().netInvested;
+  return portfolioValueSeries(days).map(function (point) { return { date: point.date, value: point.value - netInvested }; });
 }
 
 function portfolioValueSeries(days) {
@@ -570,11 +606,24 @@ function applyTrade(trade) {
       state.holdings.push({ market: trade.market, code: trade.code, name: trade.name || trade.code, cost: trade.price, qty: trade.qty, currency: trade.currency, purchaseCostCny: tradePurchaseCost, sina: trade.sina, status: "holding", sellPrice: NaN, sellDate: "" });
     }
   } else if (current) {
-    current.qty = Math.max(0, current.qty - trade.qty);
-    if (!current.qty) {
-      current.status = "sold";
-      current.sellPrice = trade.price;
-      current.sellDate = trade.date;
+    const originalQty = current.qty;
+    const soldQty = Math.min(originalQty, trade.qty);
+    const priorPurchaseCost = fixedPurchaseCost(current);
+    const soldPurchaseCost = priorPurchaseCost * soldQty / originalQty;
+    const soldRecord = Object.assign({}, current, {
+      qty: soldQty,
+      status: "sold",
+      purchaseCostCny: soldPurchaseCost,
+      sellPrice: trade.price,
+      sellDate: trade.date,
+      sellProceedsCny: trade.price * soldQty * (COST_REFERENCE_RATES[trade.currency] || 1)
+    });
+    if (soldQty === originalQty) {
+      Object.assign(current, soldRecord);
+    } else {
+      current.qty = originalQty - soldQty;
+      current.purchaseCostCny = priorPurchaseCost - soldPurchaseCost;
+      state.holdings.push(soldRecord);
     }
   }
   writeStorage(HOLDING_KEY, state.holdings);
