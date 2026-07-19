@@ -21,6 +21,8 @@ const state = {
   market: "全部",
   tradeMarket: "全部",
   watchMarket: "全部",
+  trendDays: 30,
+  rankMode: "profit",
   baseHoldings: [],
   holdings: [],
   trades: [],
@@ -92,6 +94,16 @@ function marketClass(market) {
 
 function marketLabel(market) {
   return "<span class=\"market-badge " + marketClass(market) + "\">" + escapeHtml(market) + "</span>";
+}
+
+function currencyForMarket(market) {
+  return market === "港股" ? "HKD" : market === "美股" ? "USD" : "CNY";
+}
+
+function dualMoney(nativeValue, currency, cnyValue, toneClass) {
+  const toneName = toneClass ? " " + toneClass : "";
+  if (currency === "CNY") return "<b class=\"" + toneName + "\">" + nativeMoney(nativeValue, "CNY") + "</b><small>人民币</small>";
+  return "<b class=\"" + toneName + "\">" + nativeMoney(nativeValue, currency) + "</b><small>≈ " + money(cnyValue, 0) + "</small>";
 }
 
 function getJson(url, fallback) {
@@ -216,12 +228,24 @@ function byMarket(market, items) {
 function marketSummary(market) {
   const all = byMarket(market);
   const open = all.filter(function (row) { return row.status !== "sold"; });
+  const currency = currencyForMarket(market);
+  const fx = state.rates[currency] || 1;
+  const costCny = sum(all, "costCny");
+  const valueCny = sum(open, "valueCny");
+  const pnlCny = sum(all, "pnlCny");
+  const todayCny = sum(open, "todayPnlCny");
   return {
     market: market,
     open: open,
-    value: sum(open, "valueCny"),
-    today: sum(open, "todayPnlCny"),
-    pnl: sum(all, "pnlCny"),
+    currency: currency,
+    cost: costCny,
+    value: valueCny,
+    today: todayCny,
+    pnl: pnlCny,
+    costNative: costCny / fx,
+    valueNative: valueCny / fx,
+    todayNative: todayCny / fx,
+    pnlNative: pnlCny / fx,
     count: open.length
   };
 }
@@ -241,18 +265,14 @@ function topNav() {
 
 function overviewPage() {
   const data = summary();
-  const lossRows = data.openRows.slice().sort(function (a, b) { return a.pnlCny - b.pnlCny; });
-  const topLoss = lossRows[0];
-  const total = data.value || 1;
-  const concentration = data.openRows.slice().sort(function (a, b) { return b.valueCny - a.valueCny; }).slice(0, 5).reduce(function (n, row) { return n + row.valueCny; }, 0) / total * 100;
-  const attention = Math.min(3, data.openRows.filter(function (row) { return row.analysis.action !== "继续持有"; }).length);
   return "<main class=\"page-shell\"><h1 class=\"page-title\">资产盈亏总览 · 全部市场</h1><section class=\"overview-top\"><div class=\"card asset-summary\">" +
+    metric("投入成本（人民币）", money(data.cost, 0), "持仓与已卖出记录", "neutral") +
     metric("持仓市值（人民币）", money(data.value, 0), "仅含当前持仓", "neutral") +
-    metric("今天盈亏", signed(data.today, 0), pct(data.todayRate), tone(data.today)) +
     metric("累计盈亏", signed(data.totalPnl, 0), pct(data.totalRate), tone(data.totalPnl)) +
-    "</div><aside class=\"card decision-callout\"><span>今日优先处理 <b class=\"count-dot\">" + attention + "</b> 项</span><strong>先看持仓信号与风险提醒</strong><p>按盈亏、波动和仓位集中度生成。</p><button class=\"primary-button\" type=\"button\" data-tab=\"actions\">去处理</button></aside></section>" +
-    "<section class=\"overview-main\"><article class=\"card chart-card\"><div class=\"chart-heading\"><div><h2>30日组合累计盈亏（人民币）</h2><div class=\"chart-legend\"><span class=\"legend-item\"><i class=\"legend-dot\"></i>累计盈亏 <b class=\"" + tone(data.totalPnl) + "\">" + signed(data.totalPnl, 0) + "</b></span><span class=\"legend-item\"><i class=\"legend-dot blue\"></i>盈亏平衡线</span></div></div><div class=\"segmented\"><button>7天</button><button class=\"active\">30天</button><button>90天</button></div></div><div class=\"canvas-wrap\"><canvas class=\"line-chart\" data-chart=\"portfolio\"></canvas></div></article>" +
-    "<aside class=\"side-stack\"><section class=\"card side-card\"><h3>市场贡献（累计盈亏）</h3>" + contributionRows() + "</section><section class=\"card side-card\"><h3>最大亏损贡献</h3>" + (topLoss ? "<div class=\"key-risk\">" + marketLabel(topLoss.market) + "<span><strong>" + escapeHtml(topLoss.name) + "</strong><small>" + escapeHtml(topLoss.code) + "</small></span><b class=\"risk-number " + tone(topLoss.pnlCny) + "\">" + signed(topLoss.pnlCny, 0) + "</b></div>" : "<p class=\"section-helper\">暂无持仓</p>") + "</section><section class=\"card side-card\"><h3>集中度风险</h3><div class=\"concentration\"><b class=\"ring-value\">" + concentration.toFixed(0) + "%</b><p>前 5 大持仓占比 <b>" + concentration.toFixed(2) + "%</b><br/><span class=\"section-helper\">" + (concentration > 60 ? "偏高，建议分散配置" : "集中度在可关注范围内") + "</span></p></div></section></aside></section>" +
+    metric("今日盈亏", signed(data.today, 0), pct(data.todayRate), tone(data.today)) +
+    "</div></section>" +
+    "<section class=\"overview-main\"><article class=\"card chart-card\"><div class=\"chart-heading\"><div><h2>" + state.trendDays + "日组合累计盈亏（人民币）</h2><div class=\"chart-legend\"><span class=\"legend-item\"><i class=\"legend-dot\"></i>累计盈亏 <b class=\"" + tone(data.totalPnl) + "\">" + signed(data.totalPnl, 0) + "</b></span><span class=\"legend-item\"><i class=\"legend-dot blue\"></i>盈亏平衡线（¥0）</span></div></div><div class=\"segmented\"><button class=\"" + (state.trendDays === 7 ? "active" : "") + "\" type=\"button\" data-trend-days=\"7\">7天</button><button class=\"" + (state.trendDays === 30 ? "active" : "") + "\" type=\"button\" data-trend-days=\"30\">30天</button></div></div><div class=\"canvas-wrap\"><canvas class=\"line-chart\" data-chart=\"portfolio\"></canvas></div></article>" +
+    "<aside class=\"side-stack\"><section class=\"card side-card\"><h3>市场贡献（累计盈亏）</h3>" + contributionRows() + "</section>" + rankCard() + "</aside></section>" +
     "<section class=\"card market-overview\"><h2 class=\"section-title\" style=\"grid-column:1/-1;margin-bottom:18px\">市场概览</h2>" + MARKET_ORDER.map(marketBlock).join("") + "</section></main>";
 }
 
@@ -272,7 +292,20 @@ function contributionRows() {
 
 function marketBlock(market) {
   const data = marketSummary(market);
-  return "<article class=\"market-block\"><div class=\"market-head\">" + marketLabel(market) + "<span>" + market + "</span></div><div class=\"market-kpis\"><div><span>资产（人民币）</span><b>" + money(data.value, 0) + "</b></div><div><span>今日盈亏</span><b class=\"" + tone(data.today) + "\">" + signed(data.today, 0) + "</b></div><div><span>持仓数量</span><b>" + data.count + "</b></div></div></article>";
+  return "<article class=\"market-block\"><div class=\"market-head\">" + marketLabel(market) + "<span>" + market + "</span></div><div class=\"market-kpis market-detail-grid\">" +
+    "<div><span>投入总成本</span>" + dualMoney(data.costNative, data.currency, data.cost) + "</div>" +
+    "<div><span>持仓市值</span>" + dualMoney(data.valueNative, data.currency, data.value) + "</div>" +
+    "<div><span>累计盈亏</span>" + dualMoney(data.pnlNative, data.currency, data.pnl, tone(data.pnl)) + "</div>" +
+    "<div><span>今日盈亏</span>" + dualMoney(data.todayNative, data.currency, data.today, tone(data.today)) + "</div>" +
+    "<div><span>持仓数量</span><b>" + data.count + " 个</b><small>持有中</small></div></div></article>";
+}
+
+function rankCard() {
+  const rows = state.rows.slice().sort(function (a, b) { return state.rankMode === "profit" ? b.pnlCny - a.pnlCny : a.pnlCny - b.pnlCny; }).slice(0, 5);
+  return "<section class=\"card side-card leaderboard-card\"><div class=\"leaderboard-heading\"><h3>盈亏排行榜</h3><div class=\"segmented leaderboard-tabs\"><button class=\"" + (state.rankMode === "profit" ? "active" : "") + "\" type=\"button\" data-rank-mode=\"profit\">盈利 Top 5</button><button class=\"" + (state.rankMode === "loss" ? "active" : "") + "\" type=\"button\" data-rank-mode=\"loss\">亏损 Top 5</button></div></div>" +
+    (rows.length ? "<div class=\"rank-list\">" + rows.map(function (row, index) {
+      return "<div class=\"rank-row\"><b class=\"rank-number\">" + (index + 1) + "</b><div>" + marketLabel(row.market) + "<strong>" + escapeHtml(row.name) + "</strong><small>" + escapeHtml(row.code) + marketSuffix(row) + "</small></div><b class=\"risk-number " + tone(row.pnlCny) + "\">" + signed(row.pnlCny, 0) + "<small>" + pct(row.pnlRate) + "</small></b></div>";
+    }).join("") + "</div>" : "<p class=\"section-helper\">暂无可用盈亏数据。</p>") + "</section>";
 }
 
 function actionsPage() {
@@ -369,32 +402,41 @@ function reviewPage() {
   return "<main class=\"page-shell\"><div class=\"filter-bar\"><h1 class=\"page-title\" style=\"margin:0\">投资复盘 · " + new Date().getFullYear() + "年" + (new Date().getMonth() + 1) + "月</h1><div class=\"segmented\"><button>本周</button><button class=\"active\">本月</button><button>本季度</button></div></div><section class=\"review-grid\"><article class=\"card review-card\"><h2>① 本期组合表现如何</h2><div class=\"review-stat\"><strong class=\"" + tone(data.totalPnl) + "\">" + pct(data.totalRate) + "</strong><span>组合累计收益率</span></div><div class=\"review-canvas\"><canvas class=\"line-chart\" data-chart=\"review\"></canvas></div></article><article class=\"card review-card\"><h2>② 收益主要来自哪里</h2>" + MARKET_ORDER.map(function (market) { const item = marketSummary(market); const pctValue = Math.min(100, Math.abs(item.pnl) / Math.max(1, Math.max.apply(null, MARKET_ORDER.map(function (m) { return Math.abs(marketSummary(m).pnl); }))) * 100); return "<div class=\"bar-contribution\"><span>" + market + "</span><div class=\"bar-track\"><div class=\"bar-fill " + (item.pnl < 0 ? "negative" : "") + "\" style=\"width:" + pctValue.toFixed(0) + "%\"></div></div><b class=\"" + tone(item.pnl) + "\">" + signed(item.pnl, 0) + "</b></div>"; }).join("") + "</article><article class=\"card review-card\"><h2>③ 哪些决策需要复核</h2><div class=\"review-highlight\"><span>最大回撤（30日估算）</span><strong class=\"negative\">" + pct(-maxDrawdown) + "</strong></div><div class=\"review-highlight\"><span>前五大持仓集中度</span><strong>" + topFiveConcentration().toFixed(1) + "%</strong></div><p class=\"section-helper\">复核亏损扩大和高集中度的仓位，更新后续跟踪指标。</p></article></section><section class=\"review-bottom\"><article class=\"card timeline-card\"><h2>本期关键交易</h2><div class=\"table-scroll\"><table class=\"timeline-table\"><thead><tr><th>时间</th><th>事件 / 操作</th><th>交易备注</th><th>复盘结论</th></tr></thead><tbody>" + (latestTrades.length ? latestTrades.map(function (trade) { return "<tr><td>" + escapeHtml(trade.date) + "</td><td><b>" + (trade.action === "buy" ? "买入 " : "卖出 ") + escapeHtml(trade.name) + "</b><br/><span class=\"stock-code\">" + escapeHtml(trade.code) + " · " + trade.qty + " 股</span></td><td>" + escapeHtml(trade.note || "未填写") + "</td><td><span class=\"action-chip\">" + (trade.action === "buy" ? "等待验证" : "复核收益") + "</span></td></tr>"; }).join("") : "<tr><td colspan=\"4\"><div class=\"empty\">暂无交易记录。</div></td></tr>") + "</tbody></table></div></article><aside class=\"card next-card\"><h2>下期关注事项</h2>" + actions.map(function (row, index) { return "<div class=\"next-item\"><b class=\"order-num\">" + (index + 1) + "</b><div><strong>" + escapeHtml(row.name) + " <span class=\"stock-code\">" + escapeHtml(row.code) + "</span></strong><p>" + escapeHtml(row.analysis.text) + "</p></div><button class=\"text-link\" type=\"button\" data-tab=\"actions\">前往</button></div>"; }).join("") + "</aside></section></main>";
 }
 
-function portfolioSeries() {
-  const holdingCost = summary().holdingCost;
-  return portfolioValueSeries().map(function (value) { return value - holdingCost; });
+function pointOnOrBefore(history, date) {
+  let found = null;
+  for (let index = 0; index < history.length; index += 1) {
+    if (history[index].date <= date) found = history[index];
+    if (history[index].date > date) break;
+  }
+  return found;
 }
 
-function portfolioValueSeries() {
+function portfolioSeries(days) {
+  const holdingCost = summary().holdingCost;
+  return portfolioValueSeries(days).map(function (point) { return { date: point.date, value: point.value - holdingCost }; });
+}
+
+function portfolioValueSeries(days) {
   const rows = activeHoldings();
-  const dayCount = Math.max.apply(null, rows.map(function (row) { return (state.histories[row.sina] || []).length; }).concat([30]));
-  const values = [];
-  for (let i = 0; i < dayCount; i += 1) {
+  const dates = Array.from(new Set(rows.flatMap(function (row) {
+    return (state.histories[row.sina] || []).map(function (point) { return point.date; });
+  }))).sort().slice(-(days || 30));
+  if (!dates.length) return [{ date: "—", value: sum(rows, "valueCny") }];
+  return dates.map(function (date) {
     let value = 0;
     rows.forEach(function (row) {
       const history = state.histories[row.sina] || [];
-      const offset = Math.max(0, history.length - dayCount + i);
-      const point = history[offset];
+      const point = pointOnOrBefore(history, date);
       const price = point && Number(point.close) > 0 ? Number(point.close) : row.cost;
       value += price * row.qty * (state.rates[row.currency] || 1);
     });
-    values.push(value);
-  }
-  return values;
+    return { date: date, value: value };
+  });
 }
 
-function calculateDrawdown(values) {
-  let peak = values[0] || 0, max = 0;
-  values.forEach(function (value) { peak = Math.max(peak, value); if (peak) max = Math.max(max, (peak - value) / peak * 100); });
+function calculateDrawdown(points) {
+  let peak = points[0] ? points[0].value : 0, max = 0;
+  points.forEach(function (point) { peak = Math.max(peak, point.value); if (peak) max = Math.max(max, (peak - point.value) / peak * 100); });
   return max;
 }
 
@@ -418,35 +460,63 @@ function drawCharts() {
     const ctx = canvas.getContext("2d");
     ctx.scale(scale, scale);
     const width = rect.width, height = rect.height, padding = 26;
-    const series = portfolioSeries();
+    const points = portfolioSeries(state.trendDays);
+    const series = points.map(function (point) { return point.value; });
     const baseline = series.map(function () { return 0; });
     const all = series.concat(baseline);
     let min = Math.min.apply(null, all), max = Math.max.apply(null, all);
-    if (min === max) { min *= 0.97; max *= 1.03; }
+    const range = Math.max(1, max - min);
+    min = Math.min(0, min - range * 0.1);
+    max = Math.max(0, max + range * 0.1);
     ctx.clearRect(0, 0, width, height);
     ctx.strokeStyle = "#e9eef6";
     ctx.lineWidth = 1;
-    for (let i = 0; i < 4; i += 1) {
-      const y = padding + (height - padding * 2) / 3 * i;
-      ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(width - padding, y); ctx.stroke();
+    const left = 72, right = 22, top = 20, bottom = 30, gridCount = 4;
+    const chartHeight = height - top - bottom;
+    const chartWidth = width - left - right;
+    ctx.font = "11px Noto Sans SC, sans-serif";
+    ctx.fillStyle = "#8993a8";
+    ctx.textAlign = "right";
+    for (let i = 0; i <= gridCount; i += 1) {
+      const value = max - (max - min) * i / gridCount;
+      const y = top + chartHeight * i / gridCount;
+      ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(width - right, y); ctx.stroke();
+      ctx.fillText(formatAxisMoney(value), left - 8, y + 4);
     }
+    ctx.textAlign = "center";
+    const labels = [0, Math.floor((points.length - 1) / 2), points.length - 1].filter(function (value, index, list) { return list.indexOf(value) === index; });
+    labels.forEach(function (index) {
+      const x = left + chartWidth * index / Math.max(1, points.length - 1);
+      ctx.fillText(formatChartDate(points[index].date), x, height - 8);
+    });
     function line(values, color, fill) {
       ctx.beginPath();
       values.forEach(function (value, index) {
-        const x = padding + (width - padding * 2) * index / Math.max(1, values.length - 1);
-        const y = height - padding - (value - min) / (max - min) * (height - padding * 2);
+        const x = left + chartWidth * index / Math.max(1, values.length - 1);
+        const y = top + (max - value) / (max - min) * chartHeight;
         index ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       });
       ctx.strokeStyle = color; ctx.lineWidth = 2.4; ctx.stroke();
       if (fill) {
-        const finalX = width - padding;
-        ctx.lineTo(finalX, height - padding); ctx.lineTo(padding, height - padding); ctx.closePath();
+        const zeroY = top + (max - 0) / (max - min) * chartHeight;
+        const finalX = width - right;
+        ctx.lineTo(finalX, zeroY); ctx.lineTo(left, zeroY); ctx.closePath();
         ctx.fillStyle = "rgba(255,75,75,.08)"; ctx.fill();
       }
     }
     line(baseline, "#2169f3", false);
     line(series, "#ff4b4b", true);
   });
+}
+
+function formatAxisMoney(value) {
+  const abs = Math.abs(value);
+  const formatted = abs >= 10000 ? (abs / 10000).toFixed(abs >= 100000 ? 0 : 1) + "万" : Math.round(abs).toLocaleString("zh-CN");
+  return (value > 0 ? "+" : value < 0 ? "-" : "") + "¥" + formatted;
+}
+
+function formatChartDate(date) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date.slice(5) : date;
 }
 
 function applyTrade(trade) {
@@ -506,6 +576,10 @@ function eventHandlers() {
     if (watchMarket) { state.watchMarket = watchMarket.dataset.watchMarket; render(); return; }
     const tradeMarket = event.target.closest("[data-trade-market]");
     if (tradeMarket) { state.tradeMarket = tradeMarket.dataset.tradeMarket; render(); return; }
+    const trendDays = event.target.closest("[data-trend-days]");
+    if (trendDays) { state.trendDays = Number(trendDays.dataset.trendDays) || 30; render(); return; }
+    const rankMode = event.target.closest("[data-rank-mode]");
+    if (rankMode) { state.rankMode = rankMode.dataset.rankMode === "loss" ? "loss" : "profit"; render(); return; }
     const refresh = event.target.closest("[data-refresh]");
     if (refresh) { refreshData(); return; }
     const add = event.target.closest("[data-add-watch]");
