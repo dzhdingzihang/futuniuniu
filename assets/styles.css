@@ -236,8 +236,8 @@ button { cursor: pointer; }
 .info-tip { position: relative; display: inline-flex; margin-left: 5px; vertical-align: 1px; outline: none; }
 .info-icon { display: inline-grid; width: 15px; height: 15px; place-items: center; border: 1px solid #aeb8c9; border-radius: 50%; color: #7f8ba0; font-family: Georgia, serif; font-size: 10px; font-style: italic; font-weight: 700; line-height: 1; }
 .info-tip:hover .info-icon, .info-tip:focus-visible .info-icon { border-color: var(--blue); color: var(--blue); }
-.info-popover { position: absolute; z-index: 30; bottom: calc(100% + 8px); left: -8px; width: 244px; padding: 10px 11px; border: 1px solid #dfe6f1; border-radius: 9px; background: #15213d; box-shadow: 0 10px 24px rgba(21, 33, 61, .18); color: #fff; font-size: 12px; font-style: normal; font-weight: 600; line-height: 1.55; opacity: 0; pointer-events: none; transform: translateY(3px); transition: opacity .16s ease, transform .16s ease; visibility: hidden; }
-.info-tip:hover .info-popover, .info-tip:focus-visible .info-popover { opacity: 1; transform: translateY(0); visibility: visible; }
+.info-popover { position: absolute; z-index: 30; bottom: calc(100% + 8px); left: -8px; display: none !important; width: 244px; padding: 10px 11px; border: 1px solid #dfe6f1; border-radius: 9px; background: #15213d; box-shadow: 0 10px 24px rgba(21, 33, 61, .18); color: #fff; font-size: 12px; font-style: normal; font-weight: 600; line-height: 1.55; pointer-events: none; }
+.info-tip:hover .info-popover, .info-tip:focus .info-popover, .info-tip:focus-visible .info-popover { display: block !important; }
 
 .positive { color: var(--red); }
 .negative { color: var(--green); }
