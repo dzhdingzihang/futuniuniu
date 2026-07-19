@@ -14,7 +14,8 @@ const METRIC_HELP = {
   totalPnl: "当前持仓市值减去净投入。盈利为正，亏损为负；不包含未录入的手续费。",
   todayPnl: "当前未卖出持仓的今日价格变化乘以数量，再按实时汇率折算；不包含当天未录入的已实现盈亏。",
   holdingCount: "当前状态为持有中的证券数量，不包含已卖出记录。",
-  chart: "按当前净投入与现有持仓的历史市值估算，蓝线为盈亏平衡线。"
+  chart: "按当前净投入与现有持仓的历史市值估算，蓝线为盈亏平衡线。",
+  actionPrice: "执行价位由当前价、成本价、持仓盈亏和日内波动自动推导；用于明确下一步的风控或分批操作参考。"
 };
 
 const candidates = [
@@ -35,6 +36,7 @@ const state = {
   watchMarket: "全部",
   trendDays: 30,
   rankMode: "profit",
+  actionSort: "today",
   baseHoldings: [],
   holdings: [],
   trades: [],
@@ -82,6 +84,11 @@ function nativeMoney(value, currency) {
 function signed(value, digits) {
   if (!Number.isFinite(Number(value))) return "--";
   return (value > 0 ? "+" : "") + money(value, digits);
+}
+
+function signedNative(value, currency) {
+  if (!Number.isFinite(Number(value))) return "--";
+  return (value > 0 ? "+" : "") + nativeMoney(value, currency);
 }
 
 function pct(value) {
@@ -241,12 +248,27 @@ function rebuildRows() {
 }
 
 function analysisFor(row) {
-  if (row.status === "sold") return { action: "已完成", cls: "good", text: "已卖出记录已进入已实现盈亏。" };
-  if (row.pnlRate <= -15) return { action: "复核逻辑", cls: "warn", text: "亏损较深，先核实最初买入逻辑与仓位上限，避免机械补仓。" };
-  if (row.pnlRate >= 20) return { action: "分批止盈", cls: "good", text: "已有较厚浮盈，设置回撤线并分批兑现，保护盈利。" };
-  if (row.changePct <= -3) return { action: "继续观察", cls: "warn", text: "当日波动放大，等待价格稳定和催化确认后再决策。" };
-  if (row.changePct >= 3) return { action: "避免追高", cls: "warn", text: "短线涨幅偏快，优先观察量价持续性，避免情绪化加仓。" };
-  return { action: "继续持有", cls: "good", text: "仓位与走势暂未出现需立即调整的信号，跟踪下一条基本面催化。" };
+  if (row.status === "sold") return { action: "已完成", cls: "good", text: "已卖出记录已进入已实现盈亏。", priority: 5 };
+  const stopPrice = Math.min(row.price * 0.96, row.cost * 0.90);
+  const addPrice = row.price * 0.98;
+  const takeProfitPrice = row.price * 0.93;
+  if (row.pnlRate <= -15) return {
+    action: "止损", cls: "stop", price: stopPrice, trigger: "跌破", priority: 0,
+    text: "跌破 " + nativeMoney(stopPrice, row.currency) + " 立即止损，停止补仓。"
+  };
+  if (row.pnlRate >= 20) return {
+    action: "止盈", cls: "take", price: takeProfitPrice, trigger: "跌破", priority: 1,
+    text: "跌破 " + nativeMoney(takeProfitPrice, row.currency) + " 分批止盈，先锁定部分利润。"
+  };
+  if (row.pnlRate <= -5 && row.changePct <= -2) return {
+    action: "补仓", cls: "add", price: addPrice, trigger: "回踩", priority: 2,
+    text: "回踩 " + nativeMoney(addPrice, row.currency) + " 附近补仓，单次不超过现有仓位的 25%。"
+  };
+  if (row.changePct <= -5) return {
+    action: "止损", cls: "stop", price: stopPrice, trigger: "跌破", priority: 3,
+    text: "若跌破 " + nativeMoney(stopPrice, row.currency) + " 则止损，避免继续扩大亏损。"
+  };
+  return { action: "持有", cls: "hold", priority: 4, text: "继续持有；未触发补仓、止损或止盈的规则价位。" };
 }
 
 function filteredRows(status) {
@@ -381,24 +403,77 @@ function rankCard() {
 }
 
 function actionsPage() {
-  const rows = filteredRows("holding").slice().sort(function (a, b) {
-    const priority = { "复核逻辑": 0, "分批止盈": 1, "避免追高": 2, "继续观察": 3, "继续持有": 4 };
-    return priority[a.analysis.action] - priority[b.analysis.action] || a.pnlCny - b.pnlCny;
-  });
-  const priorityRows = rows.filter(function (row) { return row.analysis.action !== "继续持有"; }).slice(0, 4);
-  return "<main class=\"page-shell\"><h1 class=\"page-title\">持仓行动</h1><div class=\"filter-bar\">" + marketTabs(state.market, "market") + "<span class=\"section-helper\">以人民币折算资产和盈亏；个股价格保留原币种。</span></div><section class=\"market-mini-grid\">" + MARKET_ORDER.map(miniMarket).join("") + "</section>" +
-    "<section class=\"card priority-card\"><div class=\"table-heading\"><h2>优先处理</h2><p>基于持仓盈亏、日内波动、仓位占比和规则分析</p></div>" + actionTable(priorityRows, true) + "</section><section class=\"card table-card\"><div class=\"table-heading\"><h2>全部持仓</h2><p>" + rows.length + " 个持仓标的 · 按风险优先级排序</p></div>" + actionTable(rows, false) + "</section></main>";
+  const filtered = filteredRows("holding");
+  const priorityRows = filtered.slice().sort(function (a, b) {
+    return a.analysis.priority - b.analysis.priority || b.holdingPct - a.holdingPct || a.pnlCny - b.pnlCny;
+  }).filter(function (row) { return row.analysis.action !== "持有"; }).slice(0, 4);
+  const rows = sortActionRows(filtered);
+  return "<main class=\"page-shell action-page\"><h1 class=\"page-title\">持仓行动</h1><section class=\"card action-market-overview\">" + MARKET_ORDER.map(actionMarketBlock).join("") + "</section>" +
+    "<div class=\"filter-bar action-filter-bar\">" + marketTabs(state.market, "market") + "<span class=\"section-helper\">人民币为主读数；港股、美股同时保留原币种金额。</span></div>" +
+    "<section class=\"card priority-card\"><div class=\"table-heading\"><div><h2>优先处理</h2><p>只展示需要执行补仓、止损或止盈的持仓；每项均给出明确价位。</p></div><span class=\"section-helper action-rule-note\">规则价位" + infoTip(METRIC_HELP.actionPrice) + "</span></div>" + priorityActionTable(priorityRows) + "</section>" +
+    "<section class=\"card table-card action-table-card\"><div class=\"table-heading action-table-heading\"><div><h2>全部持仓</h2><p>" + rows.length + " 个持仓标的 · " + actionSortLabel(state.actionSort) + "降序</p></div>" + actionSortControls() + "</div>" + holdingActionTable(rows) + "</section></main>";
 }
 
-function miniMarket(market) {
+function actionMarketBlock(market) {
   const data = marketSummary(market);
-  return "<article class=\"card market-mini\">" + marketLabel(market) + "<div><span>" + market + " 总市值" + infoTip(METRIC_HELP.marketValue) + "</span><strong>" + money(data.value, 0) + "</strong></div><div><span>今日盈亏" + infoTip(METRIC_HELP.todayPnl) + "</span><p class=\"" + tone(data.today) + "\">" + signed(data.today, 0) + "</p></div><div><span>累计盈亏" + infoTip(METRIC_HELP.totalPnl) + "</span><p class=\"" + tone(data.pnl) + "\">" + signed(data.pnl, 0) + "</p></div></article>";
+  return "<article class=\"action-market-block\"><div class=\"action-market-head\">" + marketLabel(market) + "<strong>" + market + "</strong></div><div class=\"action-market-stats\">" +
+    actionCountMetric(data) +
+    actionMoneyMetric("总市值", data.valueNative, data.currency, data.value, false, METRIC_HELP.marketValue) +
+    actionMoneyMetric("今日盈亏", data.todayNative, data.currency, data.today, true, METRIC_HELP.todayPnl) +
+    actionMoneyMetric("累计盈亏", data.pnlNative, data.currency, data.pnl, true, METRIC_HELP.totalPnl) +
+    "</div></article>";
 }
 
-function actionTable(rows, isPriority) {
+function actionCountMetric(data) {
+  return "<div class=\"action-count-metric\"><span>总持仓" + infoTip(METRIC_HELP.holdingCount) + "</span><b>" + data.count + " 个</b><small>持有中</small></div>";
+}
+
+function actionMoneyMetric(label, nativeValue, currency, cnyValue, isPnl, helpText) {
+  const valueTone = isPnl ? " " + tone(cnyValue) : "";
+  const cny = isPnl ? signed(cnyValue, 0) : money(cnyValue, 0);
+  const native = isPnl ? signedNative(nativeValue, currency) : nativeMoney(nativeValue, currency);
+  return "<div><span>" + label + infoTip(helpText) + "</span><b class=\"" + valueTone + "\">" + cny + "</b><small>" + (currency === "CNY" ? "人民币" : native) + "</small></div>";
+}
+
+function actionSortControls() {
+  const options = [["today", "今日盈亏"], ["pnl", "持仓累计盈亏"], ["weight", "持仓占比"]];
+  return "<div class=\"action-sort-controls\" aria-label=\"持仓排序\">" + options.map(function (option) {
+    return "<button type=\"button\" class=\"" + (state.actionSort === option[0] ? "active" : "") + "\" data-action-sort=\"" + option[0] + "\">" + option[1] + "</button>";
+  }).join("") + "</div>";
+}
+
+function actionSortLabel(sort) {
+  return sort === "pnl" ? "持仓累计盈亏" : sort === "weight" ? "持仓占比" : "今日盈亏";
+}
+
+function sortActionRows(rows) {
+  return rows.slice().sort(function (a, b) {
+    if (state.actionSort === "pnl") return b.pnlCny - a.pnlCny;
+    if (state.actionSort === "weight") return b.holdingPct - a.holdingPct;
+    return b.todayPnlCny - a.todayPnlCny;
+  });
+}
+
+function stockCell(row) {
+  return "<span class=\"stock-name\">" + escapeHtml(row.name) + "</span><span class=\"stock-code\">" + escapeHtml(row.code) + marketSuffix(row) + "</span>";
+}
+
+function tableDualMoney(nativeValue, currency, cnyValue, valueTone) {
+  const className = valueTone ? " " + valueTone : "";
+  return "<div class=\"table-money\"><b class=\"" + className + "\">" + money(cnyValue, 0) + "</b><small>" + (currency === "CNY" ? "人民币" : nativeMoney(nativeValue, currency)) + "</small></div>";
+}
+
+function priorityActionTable(rows) {
+  if (!rows.length) return "<div class=\"empty\">当前筛选条件下，暂无触发补仓、止损或止盈规则的持仓。</div>";
+  return "<div class=\"table-scroll\"><table class=\"priority-action-table\"><thead><tr><th>股票</th><th>市场</th><th>当前价</th><th>持仓累计盈亏</th><th>行动</th><th>执行价位</th><th>执行规则</th></tr></thead><tbody>" + rows.map(function (row) {
+    return "<tr><td>" + stockCell(row) + "</td><td>" + marketLabel(row.market) + "</td><td class=\"number-cell\">" + nativeMoney(row.price, row.currency) + "</td><td class=\"number-cell " + tone(row.pnlCny) + "\">" + signed(row.pnlCny, 0) + " (" + pct(row.pnlRate) + ")</td><td><span class=\"action-chip " + row.analysis.cls + "\">" + row.analysis.action + "</span></td><td class=\"execution-price " + row.analysis.cls + "\">" + row.analysis.trigger + " " + nativeMoney(row.analysis.price, row.currency) + "</td><td class=\"analysis-copy\">" + escapeHtml(row.analysis.text) + "</td></tr>";
+  }).join("") + "</tbody></table></div>";
+}
+
+function holdingActionTable(rows) {
   if (!rows.length) return "<div class=\"empty\">当前筛选条件下没有需要展示的持仓。</div>";
-  return "<div class=\"table-scroll\"><table><thead><tr><th>股票</th><th>市场</th><th>当前价</th><th>今日涨跌</th><th>持仓盈亏</th><th>持仓占比</th><th>最近分析</th><th>建议行动</th></tr></thead><tbody>" + rows.map(function (row) {
-    return "<tr><td><span class=\"stock-name\">" + escapeHtml(row.name) + "</span><span class=\"stock-code\">" + escapeHtml(row.code) + marketSuffix(row) + "</span></td><td>" + marketLabel(row.market) + "</td><td class=\"number-cell\">" + nativeMoney(row.price, row.currency) + "</td><td class=\"number-cell " + tone(row.changePct) + "\">" + pct(row.changePct) + "</td><td class=\"number-cell " + tone(row.pnlCny) + "\">" + signed(row.pnlCny, 0) + " (" + pct(row.pnlRate) + ")</td><td>" + row.holdingPct.toFixed(2) + "%</td><td class=\"analysis-copy\" title=\"" + escapeHtml(row.analysis.text) + "\">" + escapeHtml(row.analysis.text) + "</td><td><span class=\"action-chip " + row.analysis.cls + "\">" + row.analysis.action + "</span></td></tr>";
+  return "<div class=\"table-scroll\"><table class=\"holding-action-table\"><thead><tr><th>股票</th><th>市场</th><th>当前价</th><th>市值</th><th>持仓数量</th><th>成本总价</th><th>今日盈亏</th><th>持仓累计盈亏</th><th>持仓占比</th><th>操作建议</th></tr></thead><tbody>" + rows.map(function (row) {
+    return "<tr><td>" + stockCell(row) + "</td><td>" + marketLabel(row.market) + "</td><td class=\"number-cell\">" + nativeMoney(row.price, row.currency) + "</td><td>" + tableDualMoney(row.price * row.qty, row.currency, row.valueCny) + "</td><td class=\"number-cell\">" + row.qty.toLocaleString("zh-CN") + "</td><td>" + tableDualMoney(row.cost * row.qty, row.currency, row.purchaseCostCny) + "</td><td class=\"number-cell " + tone(row.todayPnlCny) + "\">" + signed(row.todayPnlCny, 0) + "</td><td class=\"number-cell " + tone(row.pnlCny) + "\">" + signed(row.pnlCny, 0) + "<small>" + pct(row.pnlRate) + "</small></td><td class=\"number-cell\">" + row.holdingPct.toFixed(2) + "%</td><td><span class=\"action-chip " + row.analysis.cls + "\">" + row.analysis.action + "</span><span class=\"action-brief\">" + escapeHtml(row.analysis.text) + "</span></td></tr>";
   }).join("") + "</tbody></table></div>";
 }
 
@@ -676,6 +751,12 @@ function eventHandlers() {
     if (trendDays) { state.trendDays = Number(trendDays.dataset.trendDays) || 30; render(); return; }
     const rankMode = event.target.closest("[data-rank-mode]");
     if (rankMode) { state.rankMode = rankMode.dataset.rankMode === "loss" ? "loss" : "profit"; render(); return; }
+    const actionSort = event.target.closest("[data-action-sort]");
+    if (actionSort) {
+      state.actionSort = ["today", "pnl", "weight"].includes(actionSort.dataset.actionSort) ? actionSort.dataset.actionSort : "today";
+      render();
+      return;
+    }
     const refresh = event.target.closest("[data-refresh]");
     if (refresh) { refreshData(); return; }
     const add = event.target.closest("[data-add-watch]");
