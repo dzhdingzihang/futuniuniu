@@ -195,14 +195,16 @@ function filteredRows(status) {
 function summary() {
   const openRows = state.rows.filter(function (row) { return row.status !== "sold"; });
   const soldRows = state.rows.filter(function (row) { return row.status === "sold"; });
-  const cost = sum(openRows, "costCny");
+  const cost = sum(state.rows, "costCny");
+  const holdingCost = sum(openRows, "costCny");
+  const soldCost = sum(soldRows, "costCny");
   const value = sum(openRows, "valueCny");
   const openPnl = sum(openRows, "pnlCny");
   const soldPnl = sum(soldRows, "pnlCny");
   const totalPnl = openPnl + soldPnl;
   const today = sum(openRows, "todayPnlCny");
   return {
-    openRows: openRows, soldRows: soldRows, cost: cost, value: value, openPnl: openPnl, soldPnl: soldPnl,
+    openRows: openRows, soldRows: soldRows, cost: cost, holdingCost: holdingCost, soldCost: soldCost, value: value, openPnl: openPnl, soldPnl: soldPnl,
     totalPnl: totalPnl, totalRate: cost ? totalPnl / cost * 100 : 0, today: today, todayRate: value ? today / value * 100 : 0
   };
 }
@@ -243,13 +245,13 @@ function overviewPage() {
   const topLoss = lossRows[0];
   const total = data.value || 1;
   const concentration = data.openRows.slice().sort(function (a, b) { return b.valueCny - a.valueCny; }).slice(0, 5).reduce(function (n, row) { return n + row.valueCny; }, 0) / total * 100;
-  const attention = data.openRows.filter(function (row) { return row.analysis.action !== "继续持有"; }).length;
+  const attention = Math.min(3, data.openRows.filter(function (row) { return row.analysis.action !== "继续持有"; }).length);
   return "<main class=\"page-shell\"><h1 class=\"page-title\">资产盈亏总览 · 全部市场</h1><section class=\"overview-top\"><div class=\"card asset-summary\">" +
-    metric("总资产（人民币）", money(data.value, 0), "含现金及持仓资产", "neutral") +
+    metric("持仓市值（人民币）", money(data.value, 0), "仅含当前持仓", "neutral") +
     metric("今天盈亏", signed(data.today, 0), pct(data.todayRate), tone(data.today)) +
     metric("累计盈亏", signed(data.totalPnl, 0), pct(data.totalRate), tone(data.totalPnl)) +
     "</div><aside class=\"card decision-callout\"><span>今日优先处理 <b class=\"count-dot\">" + attention + "</b> 项</span><strong>先看持仓信号与风险提醒</strong><p>按盈亏、波动和仓位集中度生成。</p><button class=\"primary-button\" type=\"button\" data-tab=\"actions\">去处理</button></aside></section>" +
-    "<section class=\"overview-main\"><article class=\"card chart-card\"><div class=\"chart-heading\"><div><h2>30日组合累计盈亏（人民币）</h2><div class=\"chart-legend\"><span class=\"legend-item\"><i class=\"legend-dot\"></i>累计盈亏 <b class=\"" + tone(data.totalPnl) + "\">" + signed(data.totalPnl, 0) + "</b></span><span class=\"legend-item\"><i class=\"legend-dot blue\"></i>持仓成本线</span></div></div><div class=\"segmented\"><button>7天</button><button class=\"active\">30天</button><button>90天</button></div></div><div class=\"canvas-wrap\"><canvas class=\"line-chart\" data-chart=\"portfolio\"></canvas></div></article>" +
+    "<section class=\"overview-main\"><article class=\"card chart-card\"><div class=\"chart-heading\"><div><h2>30日组合累计盈亏（人民币）</h2><div class=\"chart-legend\"><span class=\"legend-item\"><i class=\"legend-dot\"></i>累计盈亏 <b class=\"" + tone(data.totalPnl) + "\">" + signed(data.totalPnl, 0) + "</b></span><span class=\"legend-item\"><i class=\"legend-dot blue\"></i>盈亏平衡线</span></div></div><div class=\"segmented\"><button>7天</button><button class=\"active\">30天</button><button>90天</button></div></div><div class=\"canvas-wrap\"><canvas class=\"line-chart\" data-chart=\"portfolio\"></canvas></div></article>" +
     "<aside class=\"side-stack\"><section class=\"card side-card\"><h3>市场贡献（累计盈亏）</h3>" + contributionRows() + "</section><section class=\"card side-card\"><h3>最大亏损贡献</h3>" + (topLoss ? "<div class=\"key-risk\">" + marketLabel(topLoss.market) + "<span><strong>" + escapeHtml(topLoss.name) + "</strong><small>" + escapeHtml(topLoss.code) + "</small></span><b class=\"risk-number " + tone(topLoss.pnlCny) + "\">" + signed(topLoss.pnlCny, 0) + "</b></div>" : "<p class=\"section-helper\">暂无持仓</p>") + "</section><section class=\"card side-card\"><h3>集中度风险</h3><div class=\"concentration\"><b class=\"ring-value\">" + concentration.toFixed(0) + "%</b><p>前 5 大持仓占比 <b>" + concentration.toFixed(2) + "%</b><br/><span class=\"section-helper\">" + (concentration > 60 ? "偏高，建议分散配置" : "集中度在可关注范围内") + "</span></p></div></section></aside></section>" +
     "<section class=\"card market-overview\"><h2 class=\"section-title\" style=\"grid-column:1/-1;margin-bottom:18px\">市场概览</h2>" + MARKET_ORDER.map(marketBlock).join("") + "</section></main>";
 }
@@ -360,7 +362,7 @@ function tradeForm() {
 
 function reviewPage() {
   const data = summary();
-  const series = portfolioSeries();
+  const series = portfolioValueSeries();
   const maxDrawdown = calculateDrawdown(series);
   const actions = state.rows.filter(function (row) { return row.status === "holding"; }).slice().sort(function (a, b) { return a.pnlCny - b.pnlCny; }).slice(0, 3);
   const latestTrades = state.trades.slice().sort(function (a, b) { return b.date.localeCompare(a.date); }).slice(0, 6);
@@ -368,6 +370,11 @@ function reviewPage() {
 }
 
 function portfolioSeries() {
+  const holdingCost = summary().holdingCost;
+  return portfolioValueSeries().map(function (value) { return value - holdingCost; });
+}
+
+function portfolioValueSeries() {
   const rows = activeHoldings();
   const dayCount = Math.max.apply(null, rows.map(function (row) { return (state.histories[row.sina] || []).length; }).concat([30]));
   const values = [];
@@ -412,8 +419,8 @@ function drawCharts() {
     ctx.scale(scale, scale);
     const width = rect.width, height = rect.height, padding = 26;
     const series = portfolioSeries();
-    const costs = series.map(function () { return summary().cost; });
-    const all = series.concat(costs);
+    const baseline = series.map(function () { return 0; });
+    const all = series.concat(baseline);
     let min = Math.min.apply(null, all), max = Math.max.apply(null, all);
     if (min === max) { min *= 0.97; max *= 1.03; }
     ctx.clearRect(0, 0, width, height);
@@ -437,7 +444,7 @@ function drawCharts() {
         ctx.fillStyle = "rgba(255,75,75,.08)"; ctx.fill();
       }
     }
-    line(costs, "#2169f3", false);
+    line(baseline, "#2169f3", false);
     line(series, "#ff4b4b", true);
   });
 }
