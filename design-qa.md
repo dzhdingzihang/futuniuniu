@@ -74,7 +74,7 @@
 - [P2] “全部持仓”的排序控件脱离表格，且仅能按三个字段排序，字段顺序也不符合最新决策顺序。
   - Fix: 移除右侧三枚排序按钮；表格调整为总成本总价、持仓数量、市值、当前价、今日盈亏、持仓累计盈亏、持仓占比、操作建议，并为总成本总价、市值、当前价、今日盈亏、持仓累计盈亏提供表头内联升降序箭头。
 - Interaction verification: 本地 1440px 下，连续点击“总成本总价”会从降序切为升序（首行由 ¥107,640 变为 ¥400）；“当前价”同样可切换。优先处理表有 9 列、全部持仓表有 10 列，旧右侧排序按钮为 0 个。390 × 844 下页面无文档级横向溢出，宽表保留局部横向滚动。
-- Visual verification: `/tmp/futuniuni-actions-sorting-desktop.png`、`/tmp/futuniuni-actions-sorting-mobile.png`；控制台检查待生产部署后复核。
+- Visual verification: `/tmp/futuniuni-actions-sorting-desktop.png`、`/tmp/futuniuni-actions-sorting-mobile.png`、`/tmp/futuniuni-actions-production-sorting.png`；生产站 `https://alixjd.com/?deploy=59383bd#actions` 已复核，控制台无 error/warn。
 
 ## Follow-up polish
 
