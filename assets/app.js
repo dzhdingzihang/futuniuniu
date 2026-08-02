@@ -344,7 +344,7 @@ function marketTabs(active, attribute) {
 }
 
 function topNav() {
-  const items = [["overview", "总览"], ["actions", "持仓行动"], ["radar", "机会雷达"], ["trades", "交易记录"], ["review", "复盘"]];
+  const items = [["overview", "总览"], ["actions", "持仓行动"], ["radar", "机会雷达"], ["trades", "卖出记录"], ["review", "复盘"]];
   const updateStatus = state.isRefreshing
     ? "<span class=\"market-refresh-status\"><img src=\"assets/pig-logo.png\" alt=\"\"/>小猪正在核算行情</span>"
     : "<span class=\"updated\">更新于 " + escapeHtml(state.updatedAt || "待更新") + "</span>";
@@ -515,15 +515,30 @@ function watchRow(item) {
 }
 
 function tradesPage() {
-  const data = summary();
-  const trades = state.trades.filter(function (trade) { return state.tradeMarket === "全部" || trade.market === state.tradeMarket; }).slice().sort(function (a, b) { return b.date.localeCompare(a.date); });
-  const month = new Date().toISOString().slice(0, 7);
-  const monthTrades = state.trades.filter(function (trade) { return trade.date.startsWith(month); });
-  const buys = monthTrades.filter(function (trade) { return trade.action === "buy"; }).reduce(function (n, t) { return n + t.price * t.qty * (state.rates[t.currency] || 1); }, 0);
-  const sells = monthTrades.filter(function (trade) { return trade.action === "sell"; }).reduce(function (n, t) { return n + t.price * t.qty * (state.rates[t.currency] || 1); }, 0);
-  return "<main class=\"page-shell\"><div class=\"filter-bar\"><h1 class=\"page-title\" style=\"margin:0\">交易记录</h1><button class=\"primary-button\" type=\"button\" data-show-form=\"1\">新增交易记录</button></div><section class=\"trade-kpis\">" +
-    tradeKpi("本月买入", money(buys, 0), "人民币折算") + tradeKpi("本月卖出", money(sells, 0), "人民币折算") + tradeKpi("已实现盈亏", signed(data.soldPnl, 0), "按卖出记录估算", tone(data.soldPnl)) + tradeKpi("交易次数", state.trades.length + " 次", "买卖流水") + "</section>" +
-    "<section class=\"card table-card\"><div class=\"trade-toolbar\">" + marketTabs(state.tradeMarket, "trade-market") + "<div><button class=\"secondary-button\" type=\"button\" data-export=\"trades\">备份 JSON</button></div></div><div class=\"table-scroll\"><table><thead><tr><th>日期</th><th>市场</th><th>股票</th><th>操作</th><th>成交价</th><th>数量</th><th>成交额</th><th>备注</th><th></th></tr></thead><tbody>" + (trades.length ? trades.map(tradeRow).join("") : "<tr><td colspan=\"9\"><div class=\"empty\">没有匹配的交易记录。</div></td></tr>") + "</tbody></table></div></section><section class=\"card trade-form-card\" id=\"trade-form-panel\" hidden><h2>新增交易记录</h2>" + tradeForm() + "</section></main>";
+  const soldRows = state.rows.filter(function (row) { return row.status === "sold" && (state.tradeMarket === "全部" || row.market === state.tradeMarket); }).slice().sort(function (a, b) {
+    return (b.sellDate || "").localeCompare(a.sellDate || "") || b.pnlCny - a.pnlCny;
+  });
+  const purchaseCost = soldRows.reduce(function (total, row) { return total + row.purchaseCostCny; }, 0);
+  const saleProceeds = soldRows.reduce(function (total, row) { return total + row.saleProceedsCny; }, 0);
+  const realizedPnl = soldRows.reduce(function (total, row) { return total + row.pnlCny; }, 0);
+  const wins = soldRows.filter(function (row) { return row.pnlCny > 0; }).length;
+  const winRate = soldRows.length ? wins / soldRows.length * 100 : 0;
+  return "<main class=\"page-shell\"><div class=\"filter-bar\"><div><h1 class=\"page-title\" style=\"margin:0\">卖出记录</h1><p class=\"section-helper\">只统计 <code>holdings.json</code> 中标记为 <code>sold</code> 的持仓批次。</p></div><a class=\"primary-button\" href=\"https://github.com/dzhdingzihang/futuniuniu/edit/main/holdings.json\" target=\"_blank\" rel=\"noopener\">维护卖出记录</a></div><section class=\"trade-kpis\">" +
+    tradeKpi("已卖出批次", soldRows.length + " 笔", "盈利 " + wins + " 笔 · 胜率 " + winRate.toFixed(0) + "%") + tradeKpi("买入成本", money(purchaseCost, 0), "买入价 × 数量，人民币折算") + tradeKpi("卖出金额", money(saleProceeds, 0), "卖出价 × 数量，人民币折算") + tradeKpi("已实现盈亏", signed(realizedPnl, 0), "卖出金额 − 买入成本", tone(realizedPnl)) + "</section>" +
+    "<section class=\"card table-card\"><div class=\"trade-toolbar\">" + soldMarketTabs() + "<span class=\"trade-source\">数据来源：<code>holdings.json</code> 的 <code>sold</code> 记录</span></div><div class=\"table-scroll\"><table class=\"sold-record-table\"><thead><tr><th>卖出日期</th><th>市场</th><th>股票</th><th>买入价</th><th>卖出价</th><th>数量</th><th>买入成本</th><th>卖出金额</th><th>已实现盈亏</th><th>收益率</th></tr></thead><tbody>" + (soldRows.length ? soldRows.map(soldRecordRow).join("") : "<tr><td colspan=\"10\"><div class=\"empty\">没有匹配的卖出记录。</div></td></tr>") + "</tbody></table></div></section></main>";
+}
+
+function soldMarketTabs() {
+  const allSold = state.rows.filter(function (row) { return row.status === "sold"; });
+  return "<div class=\"tab-group\">" + ["全部", "A股", "港股", "美股"].map(function (market) {
+    const count = market === "全部" ? allSold.length : allSold.filter(function (row) { return row.market === market; }).length;
+    return "<button type=\"button\" class=\"" + (state.tradeMarket === market ? "active" : "") + "\" data-trade-market=\"" + market + "\">" + market + " <small>" + count + "</small></button>";
+  }).join("") + "</div>";
+}
+
+function soldRecordRow(row) {
+  const nativePnl = (row.sellPrice - row.cost) * row.qty;
+  return "<tr><td>" + escapeHtml(row.sellDate || "—") + "</td><td>" + marketLabel(row.market) + "</td><td><strong>" + escapeHtml(row.name) + "</strong><span class=\"stock-code\">" + escapeHtml(row.code) + "</span></td><td class=\"number-cell\">" + nativeMoney(row.cost, row.currency) + "</td><td class=\"number-cell\">" + nativeMoney(row.sellPrice, row.currency) + "</td><td>" + row.qty.toLocaleString("zh-CN") + "</td><td class=\"number-cell\">" + money(row.purchaseCostCny, 0) + "</td><td class=\"number-cell\">" + money(row.saleProceedsCny, 0) + "</td><td class=\"number-cell " + tone(row.pnlCny) + "\"><strong>" + signed(row.pnlCny, 0) + "</strong><small>" + signedNative(nativePnl, row.currency) + "</small></td><td class=\"number-cell " + tone(row.pnlRate) + "\"><strong>" + pct(row.pnlRate) + "</strong></td></tr>";
 }
 
 function tradeKpi(label, value, note, toneClass) {
