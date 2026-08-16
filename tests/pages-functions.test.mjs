@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { webcrypto } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
@@ -8,6 +9,36 @@ import { onRequestGet, onRequestPost } from "../functions/api/holdings-sync.js";
 import { onRequest as authMiddleware } from "../functions/_middleware.js";
 
 const holding = { market: "美股", code: "NVDA", name: "英伟达", status: "holding", cost: 200, qty: 3, currency: "USD", sina: "gb_nvda", buyFeeUsd: 20 };
+const authEnv = { BASIC_AUTH_USER: "我的花名", BASIC_AUTH_PASSWORD: "test-password" };
+
+function passwordRequest(url, password) {
+  return new Request(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+}
+
+function requestCookie(setCookie) {
+  return setCookie.split(";", 1)[0];
+}
+
+function base64Url(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+async function signedSessionCookie(user, password, expiresAt) {
+  const payload = base64Url(JSON.stringify({ u: user, exp: expiresAt }));
+  const key = await webcrypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await webcrypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return `piggy_session=${payload}.${base64Url(signature)}`;
+}
 
 test("normalizes security codes for all supported markets", () => {
   assert.deepEqual(normalizeSecurityInput("A股", "SH.601138"), { market: "A股", code: "601138", sina: "sh601138", currency: "CNY" });
@@ -107,38 +138,219 @@ test("refuses writes when site authentication is not configured", async () => {
   assert.equal((await response.json()).ok, false);
 });
 
-test("protects the whole Pages site and accepts a UTF-8 flower-name login", async () => {
-  const env = { BASIC_AUTH_USER: "我的花名", BASIC_AUTH_PASSWORD: "test-password" };
-  let nextCalls = 0;
-  const denied = await authMiddleware({
-    request: new Request("https://example.test/api/security-lookup"),
-    env,
-    next: async () => { nextCalls += 1; return new Response("ok"); },
-  });
-  assert.equal(denied.status, 401);
-  assert.equal(nextCalls, 0);
-  assert.match(denied.headers.get("www-authenticate"), /realm="Piggy Bank"/);
-  assert.match(denied.headers.get("www-authenticate"), /charset="UTF-8"/);
-  assert.deepEqual(await denied.json(), { error: "请输入花名和密码", code: "AUTH_REQUIRED" });
-
-  const authorization = "basic " + Buffer.from("我的花名:test-password", "utf8").toString("base64");
-  const allowed = await authMiddleware({
-    request: new Request("https://example.test/", { headers: { authorization } }),
-    env,
-    next: async () => { nextCalls += 1; return new Response("ok"); },
-  });
-  assert.equal(allowed.status, 200);
-  assert.equal(nextCalls, 1);
-});
-
-test("fails closed when Pages authentication is incomplete", async () => {
-  const response = await authMiddleware({
-    request: new Request("https://example.test/"),
-    env: { BASIC_AUTH_USER: "我的花名" },
+test("renders a self-contained black-gold password-only login page", async () => {
+  const customResponse = await authMiddleware({
+    request: new Request("https://example.test/login?next=%2Fholdings%3Fview%3Dactive"),
+    env: { BASIC_AUTH_USER: "小猪 <管理员>", BASIC_AUTH_PASSWORD: "never-render-this-secret" },
     next: async () => new Response("should not run"),
   });
-  assert.equal(response.status, 503);
+  assert.equal(customResponse.status, 200);
+  assert.equal(customResponse.headers.get("cache-control"), "private, no-store");
+  assert.equal(customResponse.headers.has("www-authenticate"), false);
+  assert.equal(customResponse.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(customResponse.headers.get("referrer-policy"), "no-referrer");
+  assert.match(customResponse.headers.get("content-security-policy"), /default-src 'none'/);
+  assert.match(customResponse.headers.get("content-security-policy"), /style-src 'unsafe-inline'/);
+  assert.match(customResponse.headers.get("content-security-policy"), /script-src 'unsafe-inline'/);
+  assert.match(customResponse.headers.get("content-security-policy"), /connect-src 'self'/);
+  assert.match(customResponse.headers.get("content-security-policy"), /form-action 'self'/);
+  assert.match(customResponse.headers.get("content-security-policy"), /base-uri 'none'/);
+  assert.match(customResponse.headers.get("content-security-policy"), /frame-ancestors 'none'/);
+  const html = await customResponse.text();
+  assert.match(html, /<!doctype html>/i);
+  assert.match(html, /小猪 &lt;管理员&gt;/);
+  assert.match(html, /action="\/api\/login\?next=%2Fholdings%3Fview%3Dactive"/);
+  assert.equal((html.match(/<input\b/gi) || []).length, 1);
+  assert.match(html, /<input[^>]+type="password"/i);
+  assert.match(html, /"Content-Type":"application\/json"/);
+  assert.equal(html.includes("never-render-this-secret"), false);
+  assert.match(html, /#d6a84b/i);
+
+  const defaultResponse = await authMiddleware({
+    request: new Request("https://example.test/login"),
+    env: { BASIC_AUTH_PASSWORD: "test-password" },
+    next: async () => new Response("should not run"),
+  });
+  assert.match(await defaultResponse.text(), /我的花名/);
+});
+
+test("rejects an incorrect password without creating a session", async () => {
+  const response = await authMiddleware({
+    request: passwordRequest("https://example.test/api/login?next=%2Foverview", "wrong-password"),
+    env: authEnv,
+    next: async () => new Response("should not run"),
+  });
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.has("set-cookie"), false);
   assert.equal(response.headers.has("www-authenticate"), false);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(await response.json(), { error: "密码错误", code: "INVALID_PASSWORD" });
+});
+
+test("login accepts only bounded JSON password requests", async () => {
+  const unsupported = await authMiddleware({
+    request: new Request("https://example.test/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "password=test-password",
+    }),
+    env: authEnv,
+    next: async () => new Response("should not run"),
+  });
+  assert.equal(unsupported.status, 415);
+  assert.deepEqual(await unsupported.json(), { error: "仅支持 JSON 登录请求", code: "UNSUPPORTED_MEDIA_TYPE" });
+
+  const oversizedBody = await authMiddleware({
+    request: new Request("https://example.test/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": "5000" },
+      body: JSON.stringify({ password: "test-password" }),
+    }),
+    env: authEnv,
+    next: async () => new Response("should not run"),
+  });
+  assert.equal(oversizedBody.status, 413);
+  assert.deepEqual(await oversizedBody.json(), { error: "登录请求过大", code: "REQUEST_TOO_LARGE" });
+
+  const oversizedPassword = await authMiddleware({
+    request: passwordRequest("https://example.test/api/login", "x".repeat(257)),
+    env: authEnv,
+    next: async () => new Response("should not run"),
+  });
+  assert.equal(oversizedPassword.status, 413);
+  assert.deepEqual(await oversizedPassword.json(), { error: "密码长度超出限制", code: "PASSWORD_TOO_LONG" });
+});
+
+test("creates a seven-day signed session and allows protected content", async () => {
+  const login = await authMiddleware({
+    request: passwordRequest("https://example.test/api/login?next=%2Fholdings%3Fview%3Dactive", "test-password"),
+    env: authEnv,
+    next: async () => new Response("should not run"),
+  });
+  assert.equal(login.status, 200);
+  assert.deepEqual(await login.clone().json(), { ok: true, redirect: "/holdings?view=active" });
+  assert.equal(login.headers.get("cache-control"), "private, no-store");
+  const setCookie = login.headers.get("set-cookie");
+  assert.match(setCookie, /^piggy_session=[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+;/);
+  assert.match(setCookie, /Max-Age=604800/i);
+  assert.match(setCookie, /HttpOnly/i);
+  assert.match(setCookie, /Secure/i);
+  assert.match(setCookie, /SameSite=Strict/i);
+  assert.match(setCookie, /Path=\//i);
+  assert.equal(setCookie.includes("test-password"), false);
+
+  let nextCalls = 0;
+  const allowed = await authMiddleware({
+    request: new Request("https://example.test/assets/app.js", { headers: { cookie: requestCookie(setCookie) } }),
+    env: authEnv,
+    next: async () => { nextCalls += 1; return new Response("protected asset"); },
+  });
+  assert.equal(allowed.status, 200);
+  assert.equal(await allowed.text(), "protected asset");
+  assert.equal(allowed.headers.get("cache-control"), "private, no-store");
+  assert.match(allowed.headers.get("vary"), /Cookie/i);
+  assert.equal(nextCalls, 1);
+
+  const loginPageWhileSignedIn = await authMiddleware({
+    request: new Request("https://example.test/login?next=%2Fmarket%3Fperiod%3D2w", { headers: { cookie: requestCookie(setCookie) } }),
+    env: authEnv,
+    next: async () => new Response("should not run"),
+  });
+  assert.equal(loginPageWhileSignedIn.status, 302);
+  assert.equal(loginPageWhileSignedIn.headers.get("location"), "/market?period=2w");
+});
+
+test("redirects unsigned pages safely while unauthenticated APIs return JSON", async () => {
+  let nextCalls = 0;
+  const page = await authMiddleware({
+    request: new Request("https://example.test/holdings?view=active"),
+    env: authEnv,
+    next: async () => { nextCalls += 1; return new Response("should not run"); },
+  });
+  assert.equal(page.status, 302);
+  assert.equal(page.headers.get("location"), "/login?next=%2Fholdings%3Fview%3Dactive");
+  assert.equal(page.headers.has("www-authenticate"), false);
+
+  const api = await authMiddleware({
+    request: new Request("https://example.test/api/security-lookup"),
+    env: authEnv,
+    next: async () => { nextCalls += 1; return new Response("should not run"); },
+  });
+  assert.equal(api.status, 401);
+  assert.equal(api.headers.has("www-authenticate"), false);
+  assert.deepEqual(await api.json(), { error: "请先登录", code: "AUTH_REQUIRED" });
+  assert.equal(nextCalls, 0);
+
+  const unsafeLogin = await authMiddleware({
+    request: passwordRequest("https://example.test/api/login?next=https%3A%2F%2Fevil.example", "test-password"),
+    env: authEnv,
+    next: async () => new Response("should not run"),
+  });
+  assert.deepEqual(await unsafeLogin.json(), { ok: true, redirect: "/" });
+});
+
+test("rejects tampered and expired session cookies", async () => {
+  const login = await authMiddleware({
+    request: passwordRequest("https://example.test/api/login", "test-password"),
+    env: authEnv,
+    next: async () => new Response("should not run"),
+  });
+  const validCookie = requestCookie(login.headers.get("set-cookie"));
+  const tamperedCookie = validCookie.slice(0, -1) + (validCookie.endsWith("a") ? "b" : "a");
+  const tampered = await authMiddleware({
+    request: new Request("https://example.test/", { headers: { cookie: tamperedCookie } }),
+    env: authEnv,
+    next: async () => new Response("should not run"),
+  });
+  assert.equal(tampered.status, 302);
+
+  const expiredCookie = await signedSessionCookie("我的花名", "test-password", Math.floor(Date.now() / 1000) - 1);
+  const expired = await authMiddleware({
+    request: new Request("https://example.test/api/holdings-sync", { headers: { cookie: expiredCookie } }),
+    env: authEnv,
+    next: async () => new Response("should not run"),
+  });
+  assert.equal(expired.status, 401);
+  assert.deepEqual(await expired.json(), { error: "请先登录", code: "AUTH_REQUIRED" });
+});
+
+test("logs out by clearing the signed session cookie", async () => {
+  const response = await authMiddleware({
+    request: new Request("https://example.test/api/logout", { method: "POST" }),
+    env: authEnv,
+    next: async () => new Response("should not run"),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(await response.clone().json(), { ok: true, redirect: "/login" });
+  const setCookie = response.headers.get("set-cookie");
+  assert.match(setCookie, /^piggy_session=;/);
+  assert.match(setCookie, /Max-Age=0/i);
+  assert.match(setCookie, /HttpOnly/i);
+  assert.match(setCookie, /Secure/i);
+  assert.match(setCookie, /SameSite=Strict/i);
+  assert.match(setCookie, /Path=\//i);
+});
+
+test("fails closed when the Pages password is not configured", async () => {
+  let nextCalls = 0;
+  const page = await authMiddleware({
+    request: new Request("https://example.test/login"),
+    env: { BASIC_AUTH_USER: "我的花名" },
+    next: async () => { nextCalls += 1; return new Response("should not run"); },
+  });
+  assert.equal(page.status, 503);
+  assert.equal(page.headers.has("www-authenticate"), false);
+  assert.equal(await page.text(), "网站登录尚未配置");
+
+  const api = await authMiddleware({
+    request: new Request("https://example.test/api/holdings-sync"),
+    env: {},
+    next: async () => { nextCalls += 1; return new Response("should not run"); },
+  });
+  assert.equal(api.status, 503);
+  assert.deepEqual(await api.json(), { error: "网站登录尚未配置", code: "AUTH_NOT_CONFIGURED" });
+  assert.equal(nextCalls, 0);
 });
 
 test("client adopts local holdings only after GitHub confirms the write", async () => {

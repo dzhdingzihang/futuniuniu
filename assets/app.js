@@ -86,6 +86,7 @@ const state = {
   updatedAt: "",
   isRefreshing: false,
   isHistoryLoading: false,
+  isLoggingOut: false,
   holdingEditorOpen: false,
   holdingDraft: null,
   holdingLookup: { status: "idle", message: "输入股票代码后自动识别名称", security: null },
@@ -517,6 +518,7 @@ function navIcon(name) {
 
 function headerActionIcon(name) {
   if (name === "edit") return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5h4l10.2-10.2a2.15 2.15 0 0 0-3-3L5.5 16.5l-1 3Z"/><path d="m14.7 7.3 3 3M12 19.5h7.5"/></svg>';
+  if (name === "logout") return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 5H5.75v14h4.75M14.5 8l4 4-4 4M8.5 12h10"/></svg>';
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.4 8.1A8 8 0 1 0 20 14"/><path d="M19.5 3.8v4.8h-4.8"/></svg>';
 }
 
@@ -632,7 +634,7 @@ function topNav() {
     : "<span class=\"updated\">更新于 " + escapeHtml(state.updatedAt || "待更新") + "</span>";
   return "<header class=\"site-header\"><a class=\"brand\" href=\"#overview\" aria-label=\"猪猪存钱罐 · 小猪状态：" + escapeHtml(petDefinition.label) + " · 返回总览\"><span class=\"brand-scene\" aria-hidden=\"true\"><span class=\"brand-pig-stage\" data-pet-state=\"" + escapeHtml(brandVisual.petState) + "\" data-pet-label=\"" + escapeHtml(petDefinition.label) + "\"><span class=\"brand-pig-sprite\"></span></span><span class=\"brand-wordmark\"><strong data-text=\"猪猪存钱罐\">猪猪存钱罐</strong></span><span class=\"brand-jar-stage\"><span class=\"jar-coin-bank\">" + storedCoins + "</span><span class=\"brand-coins\"><i></i><i></i><i></i><i></i></span><img class=\"brand-jar\" src=\"assets/glass-savings-jar-v1.png\" alt=\"\"/></span></span></a><nav class=\"global-nav\" aria-label=\"主导航\">" +
     items.map(function (item) { return "<button class=\"nav-link " + (state.tab === item[0] ? "active" : "") + "\" " + (state.tab === item[0] ? "aria-current=\"page\" " : "") + "type=\"button\" data-tab=\"" + item[0] + "\">" + navIcon(item[0]) + "<span class=\"nav-label\">" + item[1] + "</span></button>"; }).join("") +
-    "</nav><div class=\"header-tools\">" + updateStatus + "<div class=\"header-action-group\"><button class=\"header-action-button edit\" type=\"button\" data-open-holding-editor=\"holding\">" + headerActionIcon("edit") + "<span>修改持仓</span></button><button class=\"header-action-button refresh\" type=\"button\" data-refresh=\"1\"" + (state.isRefreshing ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("refresh") + "<span>刷新</span></button></div></div></header>";
+    "</nav><div class=\"header-tools\">" + updateStatus + "<div class=\"header-action-group\"><button class=\"header-action-button edit\" type=\"button\" data-open-holding-editor=\"holding\">" + headerActionIcon("edit") + "<span>修改持仓</span></button><button class=\"header-action-button refresh\" type=\"button\" data-refresh=\"1\"" + (state.isRefreshing ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("refresh") + "<span>刷新</span></button><button class=\"header-action-button logout\" type=\"button\" data-logout aria-label=\"" + (state.isLoggingOut ? "正在退出登录" : "退出登录") + "\"" + (state.isLoggingOut ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("logout") + "<span>" + (state.isLoggingOut ? "退出中" : "退出") + "</span></button></div></div></header>";
 }
 
 function createHoldingDraft(initialStatus) {
@@ -817,6 +819,25 @@ function showToast(message, kind) {
 function toastMarkup() {
   if (!state.toast) return "";
   return "<div class=\"site-toast " + escapeHtml(state.toast.kind) + "\" role=\"status\"><span>" + (state.toast.kind === "success" ? "✓" : "!") + "</span>" + escapeHtml(state.toast.message) + "</div>";
+}
+
+async function logoutUser() {
+  if (state.isLoggingOut) return;
+  state.isLoggingOut = true;
+  render();
+  try {
+    const response = await fetch("/api/logout", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { accept: "application/json" }
+    });
+    const payload = await response.json().catch(function () { return {}; });
+    if (!response.ok) throw new Error(payload.error || "退出失败，请稍后重试");
+    location.assign("/login");
+  } catch (error) {
+    state.isLoggingOut = false;
+    showToast(error.message || "退出失败，请稍后重试", "error");
+  }
 }
 
 function holdingRecordFor(draft, security, status, qty, buyFeeUsd) {
@@ -1374,6 +1395,8 @@ function eventHandlers() {
     }
     const refresh = event.target.closest("[data-refresh]");
     if (refresh) { refreshData(); return; }
+    const logout = event.target.closest("[data-logout]");
+    if (logout) { logoutUser(); return; }
     const add = event.target.closest("[data-add-watch]");
     if (add) {
       const item = candidates.find(function (candidate) { return candidate.sina === add.dataset.addWatch; });

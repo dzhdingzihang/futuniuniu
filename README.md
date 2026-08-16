@@ -2,6 +2,12 @@
 
 个人持仓、盈亏、市场机会和复盘页面，部署在 Cloudflare Pages。
 
+## 登录
+
+打开网站后会先看到“猪猪存钱罐”登录页。页面固定展示配置好的花名，只需要输入密码；密码正确后即可使用全部页面、行情接口和修改持仓功能。
+
+密码只保存在 Cloudflare 加密 Secret 中，不会写入网页或仓库。登录成功后浏览器只保存一个 7 天有效、不可被前端脚本读取的签名会话 Cookie；顶部“退出”按钮可立即清除会话。
+
 ## 修改持仓
 
 网页右上角的“修改持仓”会打开简化表单：
@@ -32,6 +38,8 @@
 
 部署设置和生产环境变量见 [CLOUDFLARE.md](CLOUDFLARE.md)。同步接口由 Pages Functions 提供：
 
+- `POST /api/login`：验证密码并建立安全会话
+- `POST /api/logout`：退出并清除会话
 - `GET /api/security-lookup`：识别股票名称
 - `GET /api/holdings-sync`：只读检查 GitHub 同步配置
 - `POST /api/holdings-sync`：原子更新 `holdings.json`
