@@ -192,7 +192,7 @@ function loginPage(user, next) {
   <main>
     <div class="mark" aria-hidden="true">🐷</div>
     <h1>猪猪存钱罐</h1>
-    <p class="user">当前花名：<strong>${escapeHtml(user)}</strong></p>
+    <p class="user">密码提示：<strong>${escapeHtml(user)}</strong></p>
     <form id="login-form" action="${escapeHtml(action)}" method="post">
       <label for="password">请输入访问密码</label>
       <input id="password" name="password" type="password" maxlength="${MAX_PASSWORD_LENGTH}" autocomplete="current-password" required autofocus>

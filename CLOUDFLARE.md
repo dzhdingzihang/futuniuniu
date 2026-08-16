@@ -11,10 +11,10 @@
 
 建议添加环境变量：
 
-- `BASIC_AUTH_USER`: 登录页展示的花名（支持 UTF-8）
+- `BASIC_AUTH_USER`: 登录页展示的密码提示文字（保留旧变量名，支持 UTF-8）
 - `BASIC_AUTH_PASSWORD`: 登录页验证的密码，只能使用 Encrypt
 
-网站不会再弹出浏览器原生账号密码框。未登录访问页面会跳到 `/login`，登录页固定展示花名并只提供密码输入；验证成功后服务端签发 7 天有效的 `HttpOnly`、`Secure`、`SameSite=Strict` 会话 Cookie。`POST /api/logout` 会立即清除会话。
+网站不会再弹出浏览器原生账号密码框。未登录访问页面会跳到 `/login`，登录页固定展示密码提示并只提供密码输入；验证成功后服务端签发 7 天有效的 `HttpOnly`、`Secure`、`SameSite=Strict` 会话 Cookie。`POST /api/logout` 会立即清除会话。
 
 网页内“保存并同步”会直接更新仓库根目录的 `holdings.json`。Production 环境还需要：
 

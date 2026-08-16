@@ -158,6 +158,7 @@ test("renders a self-contained black-gold password-only login page", async () =>
   assert.match(customResponse.headers.get("content-security-policy"), /frame-ancestors 'none'/);
   const html = await customResponse.text();
   assert.match(html, /<!doctype html>/i);
+  assert.match(html, /密码提示/);
   assert.match(html, /小猪 &lt;管理员&gt;/);
   assert.match(html, /action="\/api\/login\?next=%2Fholdings%3Fview%3Dactive"/);
   assert.equal((html.match(/<input\b/gi) || []).length, 1);
