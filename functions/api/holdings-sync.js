@@ -1,4 +1,4 @@
-import { HoldingsSyncError, readGitHubHoldingsStatus, syncHoldingsToGitHub } from "../lib/github-holdings.js";
+import { HoldingsSyncError, readGitHubHoldings, syncHoldingsToGitHub } from "../lib/github-holdings.js";
 
 function json(payload, status = 200) {
   return Response.json(payload, {
@@ -28,11 +28,11 @@ function errorResponse(error) {
   return json({ ok: false, error: error.message || "GitHub 同步失败" }, status);
 }
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ env, fetcher = fetch }) {
   try {
     requireProtectedWrite(env);
-    const status = await readGitHubHoldingsStatus(configFromEnv(env));
-    return json({ ok: true, githubConfigured: true, currentFileReadable: true, ...status });
+    const current = await readGitHubHoldings(configFromEnv(env), fetcher);
+    return json({ ok: true, githubConfigured: true, currentFileReadable: true, ...current });
   } catch (error) {
     return errorResponse(error);
   }

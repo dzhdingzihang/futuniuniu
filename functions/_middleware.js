@@ -30,10 +30,8 @@ export async function onRequest(context) {
   const { request, env, next } = context;
   const user = String(env.BASIC_AUTH_USER || "");
   const password = String(env.BASIC_AUTH_PASSWORD || "");
-  const allowUnauthenticated = env.ALLOW_UNAUTHENTICATED_LOCAL === "true";
-
-  if (!allowUnauthenticated && (!user || !password)) return authResponse(request, 503, "网站登录尚未配置", false);
-  if (!allowUnauthenticated && !hasValidBasicAuth(request, user, password)) return authResponse(request, 401, "请输入花名和密码", true);
+  if (!user || !password) return authResponse(request, 503, "网站登录尚未配置", false);
+  if (!hasValidBasicAuth(request, user, password)) return authResponse(request, 401, "请输入花名和密码", true);
 
   const response = await next();
   const secured = new Response(response.body, response);

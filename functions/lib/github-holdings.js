@@ -15,6 +15,18 @@ function utf8ToBase64(value) {
   return btoa(binary);
 }
 
+function base64ToUtf8(value) {
+  let binary;
+  try {
+    binary = atob(String(value || "").replace(/\s+/g, ""));
+  } catch {
+    throw new HoldingsSyncError("GitHub holdings.json 内容无法解码", 502);
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new TextDecoder().decode(bytes);
+}
+
 function cleanOptionalNumber(value) {
   if (value === null || value === undefined || value === "") return undefined;
   const number = Number(value);
@@ -180,16 +192,41 @@ function githubFailure(status, action) {
 }
 
 export async function readGitHubHoldingsStatus(config, fetcher = fetch) {
+  const { holdings, document, ...status } = await readGitHubHoldings(config, fetcher);
+  return status;
+}
+
+export async function readGitHubHoldings(config, fetcher = fetch) {
   const values = configValues(config);
   if (!values.token) throw new HoldingsSyncError("GitHub 即时同步尚未配置", 503);
   const endpoint = githubEndpoint(values);
   const current = await githubRequest(endpoint + "?ref=" + encodeURIComponent(values.branch), { headers: githubHeaders(values.token), cf: { cacheTtl: 0 } }, fetcher);
   if (!current.response.ok) throw githubFailure(current.response.status, "读取");
+  if (!current.payload || current.payload.encoding !== "base64" || typeof current.payload.content !== "string") {
+    throw new HoldingsSyncError("GitHub holdings.json 内容无法读取", 502);
+  }
+  let input;
+  try {
+    input = JSON.parse(base64ToUtf8(current.payload.content));
+  } catch (error) {
+    if (error instanceof HoldingsSyncError) throw error;
+    throw new HoldingsSyncError("GitHub holdings.json 不是有效 JSON", 502);
+  }
+  let holdings;
+  try {
+    holdings = sanitizeHoldings(input);
+  } catch (error) {
+    if (error instanceof HoldingsSyncError) throw new HoldingsSyncError("GitHub holdings.json 格式不正确：" + error.message, 502);
+    throw error;
+  }
   return {
     target: values.owner + "/" + values.repo,
     path: values.path,
     branch: values.branch,
     fileSha: current.payload && current.payload.sha ? current.payload.sha : "",
+    fileUrl: current.payload && current.payload.html_url ? current.payload.html_url : "",
+    holdings,
+    document: createHoldingsDocument(holdings),
   };
 }
 

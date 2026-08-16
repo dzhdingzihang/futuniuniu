@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { createHoldingsDocument, sanitizeHoldings, syncHoldingsToGitHub } from "../functions/lib/github-holdings.js";
+import vm from "node:vm";
+import { createHoldingsDocument, readGitHubHoldings, sanitizeHoldings, syncHoldingsToGitHub } from "../functions/lib/github-holdings.js";
 import { normalizeSecurityInput, parseSinaQuote } from "../functions/lib/security-lookup.js";
-import { onRequestPost } from "../functions/api/holdings-sync.js";
+import { onRequestGet, onRequestPost } from "../functions/api/holdings-sync.js";
 import { onRequest as authMiddleware } from "../functions/_middleware.js";
 
 const holding = { market: "美股", code: "NVDA", name: "英伟达", status: "holding", cost: 200, qty: 3, currency: "USD", sina: "gb_nvda", buyFeeUsd: 20 };
@@ -39,6 +40,36 @@ test("writes the readable v2 schema", () => {
   const document = createHoldingsDocument([holding]);
   assert.equal(document.version, 2);
   assert.deepEqual(document.lots, [{ market: "US", code: "NVDA", name: "英伟达", buy: { price: 200, qty: 3 }, fees: { buy: 20 } }]);
+});
+
+test("reads and sanitizes the current GitHub holdings document", async () => {
+  const content = Buffer.from(JSON.stringify(createHoldingsDocument([holding])), "utf8").toString("base64");
+  const calls = [];
+  const result = await readGitHubHoldings({ token: "test-token", owner: "example", repo: "piggy", branch: "main" }, async (url, options) => {
+    calls.push({ url, options });
+    return Response.json({ sha: "current-file-sha", encoding: "base64", content, html_url: "https://example.test/holdings.json" });
+  });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/contents\/holdings\.json\?ref=main$/);
+  assert.equal(calls[0].options.headers.Authorization, "Bearer test-token");
+  assert.deepEqual(result.holdings, [holding]);
+  assert.deepEqual(result.document, createHoldingsDocument([holding]));
+  assert.equal(result.fileSha, "current-file-sha");
+});
+
+test("GET holdings sync returns current holdings without exposing its token", async () => {
+  const secret = "server-only-token";
+  const content = Buffer.from(JSON.stringify([holding]), "utf8").toString("base64");
+  const response = await onRequestGet({
+    env: { BASIC_AUTH_USER: "我的花名", BASIC_AUTH_PASSWORD: "test-password", PIGGY_GITHUB_TOKEN: secret },
+    fetcher: async () => Response.json({ sha: "file-sha", encoding: "base64", content }),
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.deepEqual(payload.holdings, [holding]);
+  assert.deepEqual(payload.document, createHoldingsDocument([holding]));
+  assert.equal(JSON.stringify(payload).includes(secret), false);
 });
 
 test("updates GitHub using the current file SHA", async () => {
@@ -117,4 +148,21 @@ test("client adopts local holdings only after GitHub confirms the write", async 
   assert.ok(syncIndex > 0);
   assert.ok(localIndex > syncIndex);
   assert.match(source, /GitHub 同步失败，本次未保存/);
+});
+
+test("startup prefers GitHub, then static JSON, and uses local holdings only offline", async () => {
+  const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
+  const runnable = source.replace(/\nstart\(\)\.catch\(function \(error\) \{[\s\S]*?\n\}\);\s*$/, "\n");
+  assert.notEqual(runnable, source);
+  const context = vm.createContext({ location: { hash: "" }, localStorage: { getItem: () => null, setItem: () => {} } });
+  new vm.Script(runnable).runInContext(context);
+  const select = vm.runInContext("selectStartupHoldingsDocument", context);
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+
+  assert.deepEqual(plain(select({ ok: true, holdings: [] }, [{ source: "static" }], [{ source: "local" }])), { source: "github", document: [] });
+  assert.deepEqual(plain(select(null, [{ source: "static" }], [{ source: "local" }])), { source: "static", document: [{ source: "static" }] });
+  assert.deepEqual(plain(select(null, null, [{ source: "local" }])), { source: "local", document: [{ source: "local" }] });
+  assert.deepEqual(plain(select(null, null, null)), { source: "empty", document: [] });
+  assert.match(source, /getJson\("\/api\/holdings-sync", null, 8000\)/);
+  assert.match(source, /selectStartupHoldingsDocument\(result\[0\], result\[1\], linked\)/);
 });

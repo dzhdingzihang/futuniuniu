@@ -24,4 +24,6 @@
 
 `BASIC_AUTH_PASSWORD` 和 `PIGGY_GITHUB_TOKEN` 必须作为加密 Secret 保存。不要给 Preview 环境配置正式 GitHub Token，避免预览链接写入正式持仓。
 
+登录后的页面启动时会优先通过 `/api/holdings-sync` 读取 GitHub 当前文件；只有 GitHub 暂时不可用时才回退到部署包内的静态 `holdings.json`，两者都不可用时才使用本机离线缓存。这样网页保存成功后无需等待 Pages 再部署，也不会被旧浏览器缓存反向覆盖。
+
 如果登录变量缺少任何一项，当前版本会直接返回 `503`，不会退回公开访问。登录成功后，页面、静态资源和全部 `/api` 才可操作。

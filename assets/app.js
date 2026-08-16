@@ -224,6 +224,20 @@ function holdingsFromDocument(document) {
   });
 }
 
+function isHoldingsDocument(document) {
+  return Array.isArray(document) || Boolean(document && Number(document.version) === 2 && Array.isArray(document.lots));
+}
+
+function selectStartupHoldingsDocument(syncPayload, staticDocument, localDocument) {
+  if (syncPayload && syncPayload.ok === true) {
+    if (isHoldingsDocument(syncPayload.holdings)) return { source: "github", document: syncPayload.holdings };
+    if (isHoldingsDocument(syncPayload.document)) return { source: "github", document: syncPayload.document };
+  }
+  if (isHoldingsDocument(staticDocument)) return { source: "static", document: staticDocument };
+  if (isHoldingsDocument(localDocument)) return { source: "local", document: localDocument };
+  return { source: "empty", document: [] };
+}
+
 function readableHoldingsDocument(rows) {
   return {
     version: 2,
@@ -1458,12 +1472,20 @@ async function refreshData(includeCandidates) {
 }
 
 async function start() {
-  const result = await Promise.all([getJson("holdings.json", []), getJson("trades.json", [])]);
-  state.baseHoldings = holdingsFromDocument(result[0]);
+  const result = await Promise.all([
+    getJson("/api/holdings-sync", null, 8000),
+    getJson("holdings.json", null),
+    getJson("trades.json", [])
+  ]);
   const linked = readStorage(HOLDING_KEY, null);
-  state.holdings = Array.isArray(linked) || (linked && Number(linked.version) === 2) ? holdingsFromDocument(linked) : state.baseHoldings.slice();
+  const startupHoldings = selectStartupHoldingsDocument(result[0], result[1], linked);
+  state.baseHoldings = holdingsFromDocument(startupHoldings.document);
+  state.holdings = state.baseHoldings.slice();
+  if (startupHoldings.source === "github" || startupHoldings.source === "static") {
+    try { writeStorage(HOLDING_KEY, state.holdings); } catch { /* Cache failure must not replace the authoritative source. */ }
+  }
   const localTrades = readStorage(TRADE_KEY, null);
-  state.trades = (Array.isArray(localTrades) ? localTrades : (Array.isArray(result[1]) ? result[1] : [])).map(normalizeTrade);
+  state.trades = (Array.isArray(localTrades) ? localTrades : (Array.isArray(result[2]) ? result[2] : [])).map(normalizeTrade);
   readMarketCache();
   rebuildRows();
   eventHandlers();
