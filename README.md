@@ -1,55 +1,32 @@
-# 猪猪投资存钱罐 Render 部署版
+# 猪猪存钱罐
 
-这是只包含实时盈亏网站的发布包，不包含本地目录里的其他项目或数据。
+个人持仓、盈亏、市场机会和复盘页面，部署在 Cloudflare Pages。
 
-## Render 设置
+## 修改持仓
 
-- Runtime: Python
-- Build Command: 留空
-- Start Command: `python server.py`
-- Plan: Free
+网页右上角的“修改持仓”会打开简化表单：
 
-建议在 Render 的 Environment 里增加：
+- 选择 A股、港股或美股
+- 输入代码并自动识别名称、币种和行情代码
+- 选择持有中或已卖出
+- 填写买入价格、数量；已卖出时再填写卖出价格、数量
+- 新表单记录自动计入买入 `US$20`、卖出 `US$20` 固定手续费
 
-- `BASIC_AUTH_USER`: 你的登录用户名
-- `BASIC_AUTH_PASSWORD`: 你的登录密码
+点击“保存并同步”后，页面会先等待 GitHub 确认根目录 `holdings.json` 已写入。GitHub 未成功时，表单不会关闭，本机持仓也不会修改。
 
-如果不设置这两个变量，网站会公开访问。
+## Cloudflare Pages
 
-## 修改持仓数据
+部署设置和生产环境变量见 [CLOUDFLARE.md](CLOUDFLARE.md)。同步接口由 Pages Functions 提供：
 
-持仓和已卖出记录都放在 `holdings.json`。同一只股票可以同时有一条 `holding` 持有中记录和多条 `sold` 已卖出记录；网站会把两类记录一起纳入总体收益。
+- `GET /api/security-lookup`：识别股票名称
+- `GET /api/holdings-sync`：只读检查 GitHub 同步配置
+- `POST /api/holdings-sync`：原子更新 `holdings.json`
 
-字段含义：
+GitHub Token 只允许存放在 Cloudflare 的加密 Secret，不能写入前端代码。仓库公开时，`holdings.json` 中的持仓、成本和数量也会公开。
 
-- `market`: 市场，只填 `港股`、`A股`、`美股`
-- `code`: 页面展示的股票代码
-- `name`: 页面展示的股票名称
-- `status`: 状态，`holding` 表示持有中，`sold` 表示已卖出；旧数据不填时默认按 `holding` 处理
-- `cost`: 买入成本价
-- `sellPrice`: 卖出价格，只在 `status` 为 `sold` 时必填
-- `sellDate`: 卖出日期，可选，格式 `YYYY-MM-DD`
-- `qty`: 数量；持有中为当前持仓数量，已卖出为该批卖出数量
-- `currency`: 币种，港股填 `HKD`，A股填 `CNY`，美股填 `USD`
-- `sina`: 行情代码，港股格式如 `hk00763`，A股深市如 `sz002217`，A股沪市如 `sh601138`，美股如 `gb_tsll`
+## 验证
 
-示例：
-
-```json
-{ "market": "港股", "code": "00763", "name": "中兴通讯", "status": "holding", "cost": 30.5, "qty": 800, "currency": "HKD", "sina": "hk00763" }
-{ "market": "美股", "code": "ASTX", "name": "2倍做多ASTS", "status": "sold", "cost": 52, "sellPrice": 47, "sellDate": "2026-06-01", "qty": 10, "currency": "USD", "sina": "gb_astx" }
+```bash
+node --check assets/app.js
+node --test tests/pages-functions.test.mjs
 ```
-
-收益计算规则：
-
-- `holding`: 按 `实时市场价格 * qty - cost * qty` 计算未实现盈亏
-- `sold`: 按 `sellPrice * qty - cost * qty` 计算已实现收益
-- 非人民币资产按页面成本参考汇率折算人民币；如需纳入手续费，请将其计入成本或卖出金额后再填写。
-
-注意：最后一行后面不要加逗号；数字不要加引号。
-
-## 查看和维护卖出记录
-
-`#trades` 页面只读取 `holdings.json` 中 `status: "sold"` 的记录，并展示买入成本、卖出金额、已实现盈亏和收益率。新增或修正一笔卖出记录时，请直接编辑对应的 `holdings.json` 条目。
-
-`trades.json` 作为历史兼容文件保留，不参与当前卖出记录页和持仓盈亏汇总。
