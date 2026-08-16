@@ -14,6 +14,18 @@
 
 点击“保存并同步”后，页面会先等待 GitHub 确认根目录 `holdings.json` 已写入。GitHub 未成功时，表单不会关闭，本机持仓也不会修改。
 
+## 清晰版 holdings.json
+
+`holdings.json` 使用 v2 批次格式。每条通常只维护：
+
+- `market`: `A` / `HK` / `US`
+- `code` 与 `name`
+- `buy`: 买入价格和数量
+- `sell`: 仅卖出记录需要
+- `fees`: 仅新表单记录需要，系统自动写入
+
+持有状态、币种和行情服务代码不再重复填写，由网页自动生成。旧版数组和旧浏览器数据仍可读取；历史 39 条不会被追溯补收手续费。
+
 ## Cloudflare Pages
 
 部署设置和生产环境变量见 [CLOUDFLARE.md](CLOUDFLARE.md)。同步接口由 Pages Functions 提供：

@@ -11,7 +11,7 @@
 
 建议添加环境变量：
 
-- `BASIC_AUTH_USER`: 登录用户名
+- `BASIC_AUTH_USER`: 登录花名（本项目设为 `我的花名`，支持 UTF-8）
 - `BASIC_AUTH_PASSWORD`: 登录密码
 
 网页内“保存并同步”会直接更新仓库根目录的 `holdings.json`。Production 环境还需要：
@@ -24,4 +24,4 @@
 
 `BASIC_AUTH_PASSWORD` 和 `PIGGY_GITHUB_TOKEN` 必须作为加密 Secret 保存。不要给 Preview 环境配置正式 GitHub Token，避免预览链接写入正式持仓。
 
-如果不设置 `BASIC_AUTH_USER` 和 `BASIC_AUTH_PASSWORD`，网站会公开访问，持仓写入接口也会拒绝工作。
+如果登录变量缺少任何一项，当前版本会直接返回 `503`，不会退回公开访问。登录成功后，页面、静态资源和全部 `/api` 才可操作。

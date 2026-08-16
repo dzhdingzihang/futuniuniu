@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { sanitizeHoldings, syncHoldingsToGitHub } from "../functions/lib/github-holdings.js";
+import { createHoldingsDocument, sanitizeHoldings, syncHoldingsToGitHub } from "../functions/lib/github-holdings.js";
 import { normalizeSecurityInput, parseSinaQuote } from "../functions/lib/security-lookup.js";
 import { onRequestPost } from "../functions/api/holdings-sync.js";
+import { onRequest as authMiddleware } from "../functions/_middleware.js";
 
 const holding = { market: "美股", code: "NVDA", name: "英伟达", status: "holding", cost: 200, qty: 3, currency: "USD", sina: "gb_nvda", buyFeeUsd: 20 };
 
@@ -23,6 +24,23 @@ test("sanitizes holdings before synchronization", () => {
   assert.deepEqual(sanitizeHoldings([{ ...holding, ignored: "never-upload" }]), [holding]);
 });
 
+test("reads the simplified v2 document and expands a partial sale", () => {
+  const rows = sanitizeHoldings({
+    version: 2,
+    lots: [{ market: "US", code: "NVDA", name: "英伟达", buy: { price: 200, qty: 10 }, sell: { price: 210, qty: 4, date: "2026-08-16" }, fees: { buy: 20, sell: 20 } }],
+  });
+  assert.deepEqual(rows.map(({ status, qty, buyFeeUsd, sellFeeUsd }) => ({ status, qty, buyFeeUsd, sellFeeUsd })), [
+    { status: "holding", qty: 6, buyFeeUsd: 12, sellFeeUsd: undefined },
+    { status: "sold", qty: 4, buyFeeUsd: 8, sellFeeUsd: 20 },
+  ]);
+});
+
+test("writes the readable v2 schema", () => {
+  const document = createHoldingsDocument([holding]);
+  assert.equal(document.version, 2);
+  assert.deepEqual(document.lots, [{ market: "US", code: "NVDA", name: "英伟达", buy: { price: 200, qty: 3 }, fees: { buy: 20 } }]);
+});
+
 test("updates GitHub using the current file SHA", async () => {
   const calls = [];
   const result = await syncHoldingsToGitHub([holding], { token: "test-token", owner: "example", repo: "piggy" }, async (url, options) => {
@@ -31,12 +49,14 @@ test("updates GitHub using the current file SHA", async () => {
     return Response.json({ commit: { sha: "commit-sha" }, content: { sha: "file-sha", html_url: "https://example.test/holdings.json" } });
   });
   assert.equal(calls.length, 2);
-  assert.equal(JSON.parse(calls[1].options.body).sha, "old-sha");
+  const body = JSON.parse(calls[1].options.body);
+  assert.equal(body.sha, "old-sha");
+  assert.deepEqual(JSON.parse(Buffer.from(body.content, "base64").toString("utf8")), createHoldingsDocument([holding]));
   assert.deepEqual(result, { commitSha: "commit-sha", fileSha: "file-sha", fileUrl: "https://example.test/holdings.json", alreadyCurrent: false });
 });
 
 test("accepts an identical GitHub file without creating another commit", async () => {
-  const content = Buffer.from(JSON.stringify([holding], null, 2) + "\n").toString("base64");
+  const content = Buffer.from(JSON.stringify(createHoldingsDocument([holding]), null, 2) + "\n").toString("base64");
   let calls = 0;
   const result = await syncHoldingsToGitHub([holding], { token: "test-token" }, async () => {
     calls += 1;
@@ -54,6 +74,40 @@ test("refuses writes when site authentication is not configured", async () => {
   });
   assert.equal(response.status, 503);
   assert.equal((await response.json()).ok, false);
+});
+
+test("protects the whole Pages site and accepts a UTF-8 flower-name login", async () => {
+  const env = { BASIC_AUTH_USER: "我的花名", BASIC_AUTH_PASSWORD: "test-password" };
+  let nextCalls = 0;
+  const denied = await authMiddleware({
+    request: new Request("https://example.test/api/security-lookup"),
+    env,
+    next: async () => { nextCalls += 1; return new Response("ok"); },
+  });
+  assert.equal(denied.status, 401);
+  assert.equal(nextCalls, 0);
+  assert.match(denied.headers.get("www-authenticate"), /realm="Piggy Bank"/);
+  assert.match(denied.headers.get("www-authenticate"), /charset="UTF-8"/);
+  assert.deepEqual(await denied.json(), { error: "请输入花名和密码", code: "AUTH_REQUIRED" });
+
+  const authorization = "basic " + Buffer.from("我的花名:test-password", "utf8").toString("base64");
+  const allowed = await authMiddleware({
+    request: new Request("https://example.test/", { headers: { authorization } }),
+    env,
+    next: async () => { nextCalls += 1; return new Response("ok"); },
+  });
+  assert.equal(allowed.status, 200);
+  assert.equal(nextCalls, 1);
+});
+
+test("fails closed when Pages authentication is incomplete", async () => {
+  const response = await authMiddleware({
+    request: new Request("https://example.test/"),
+    env: { BASIC_AUTH_USER: "我的花名" },
+    next: async () => new Response("should not run"),
+  });
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.has("www-authenticate"), false);
 });
 
 test("client adopts local holdings only after GitHub confirms the write", async () => {

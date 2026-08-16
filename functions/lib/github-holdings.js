@@ -21,9 +21,72 @@ function cleanOptionalNumber(value) {
   return Number.isFinite(number) ? number : undefined;
 }
 
+const MARKET_NAMES = { A: "A股", HK: "港股", US: "美股" };
+const MARKET_CODES = { "A股": "A", "港股": "HK", "美股": "US" };
+
+function currencyForMarket(market) {
+  return market === "港股" ? "HKD" : market === "美股" ? "USD" : "CNY";
+}
+
+function quoteCodeForMarket(market, rawCode) {
+  const code = String(rawCode || "").trim().toUpperCase();
+  if (market === "港股") return "hk" + code.padStart(5, "0");
+  if (market === "美股") return "gb_" + code.toLowerCase();
+  if (market === "A股" && /^\d{6}$/.test(code)) return (/^[569]/.test(code) ? "sh" : "sz") + code;
+  return "";
+}
+
+function rowsFromInput(input) {
+  if (Array.isArray(input)) return input;
+  if (!input || Number(input.version) !== 2 || !Array.isArray(input.lots)) throw new HoldingsSyncError("持仓数据格式不正确");
+  return input.lots.flatMap((lot, index) => {
+    if (!lot || typeof lot !== "object") throw new HoldingsSyncError("第 " + (index + 1) + " 条持仓格式不正确");
+    const market = MARKET_NAMES[String(lot.market || "").trim().toUpperCase()] || String(lot.market || "").trim();
+    const code = String(lot.code || "").trim().toUpperCase();
+    const buy = lot.buy && typeof lot.buy === "object" ? lot.buy : {};
+    const sell = lot.sell && typeof lot.sell === "object" ? lot.sell : null;
+    const fees = lot.fees && typeof lot.fees === "object" ? lot.fees : {};
+    const buyQty = Number(buy.qty);
+    const sellQty = sell ? Number(sell.qty ?? buy.qty) : 0;
+    const buyFee = cleanOptionalNumber(fees.buy);
+    const base = {
+      market,
+      code,
+      name: String(lot.name || code).trim(),
+      cost: Number(buy.price),
+      currency: currencyForMarket(market),
+      sina: quoteCodeForMarket(market, code),
+    };
+    if (!sell) return [{ ...base, status: "holding", qty: buyQty, buyFeeUsd: buyFee }];
+    if (!Number.isFinite(sellQty) || sellQty <= 0 || !Number.isFinite(buyQty) || buyQty <= 0 || sellQty > buyQty) {
+      throw new HoldingsSyncError("第 " + (index + 1) + " 条卖出数量不正确");
+    }
+    const ratio = sellQty / buyQty;
+    const records = [{
+      ...base,
+      status: "sold",
+      qty: sellQty,
+      sellPrice: Number(sell.price),
+      sellDate: String(sell.date || ""),
+      buyFeeUsd: buyFee === undefined ? undefined : buyFee * ratio,
+      sellFeeUsd: cleanOptionalNumber(fees.sell),
+    }];
+    if (sellQty < buyQty) {
+      records.unshift({
+        ...base,
+        status: "holding",
+        qty: buyQty - sellQty,
+        buyFeeUsd: buyFee === undefined ? undefined : buyFee * (1 - ratio),
+      });
+    }
+    return records;
+  });
+}
+
 export function sanitizeHoldings(input) {
-  if (!Array.isArray(input) || input.length > 500) throw new HoldingsSyncError("持仓数据格式不正确");
-  return input.map((item, index) => {
+  const rows = rowsFromInput(input);
+  if (rows.length > 500) throw new HoldingsSyncError("持仓数据格式不正确");
+  return rows.map((item, index) => {
     if (!item || typeof item !== "object") throw new HoldingsSyncError("第 " + (index + 1) + " 条持仓格式不正确");
     const market = String(item.market || "").trim();
     const code = String(item.code || "").trim();
@@ -36,14 +99,46 @@ export function sanitizeHoldings(input) {
     if (!['A股', '港股', '美股'].includes(market) || !code || !name || !sina || !['CNY', 'HKD', 'USD'].includes(currency) || !Number.isFinite(cost) || cost <= 0 || !Number.isFinite(qty) || qty <= 0) {
       throw new HoldingsSyncError("第 " + (index + 1) + " 条持仓缺少必填信息");
     }
+    const sellPrice = cleanOptionalNumber(item.sellPrice);
+    const sellDate = String(item.sellDate || "");
+    if (status === "sold" && (sellPrice === undefined || sellPrice <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(sellDate))) {
+      throw new HoldingsSyncError("第 " + (index + 1) + " 条卖出信息不完整");
+    }
+    for (const feeKey of ["buyFeeUsd", "sellFeeUsd"]) {
+      const fee = cleanOptionalNumber(item[feeKey]);
+      if (fee !== undefined && fee < 0) throw new HoldingsSyncError("第 " + (index + 1) + " 条手续费不正确");
+    }
     const output = { market, code, name, status, cost, qty, currency, sina };
     ["purchaseCostCny", "sellProceedsCny", "buyFeeUsd", "sellFeeUsd", "sellPrice"].forEach((key) => {
       const value = cleanOptionalNumber(item[key]);
       if (value !== undefined) output[key] = value;
     });
-    if (status === "sold") output.sellDate = String(item.sellDate || "");
+    if (status === "sold") output.sellDate = sellDate;
     return output;
   });
+}
+
+export function createHoldingsDocument(input) {
+  const rows = sanitizeHoldings(input);
+  return {
+    version: 2,
+    guide: "market 只填 A / HK / US；没有 sell 表示持有中，有 sell 表示已卖出；币种、状态和行情代码由系统生成。",
+    newTradeFeeUsd: { buy: 20, sell: 20 },
+    lots: rows.map((row) => {
+      const lot = {
+        market: MARKET_CODES[row.market],
+        code: row.code,
+        name: row.name,
+        buy: { price: row.cost, qty: row.qty },
+      };
+      if (row.status === "sold") lot.sell = { price: row.sellPrice, qty: row.qty, date: row.sellDate };
+      const fees = {};
+      if (row.buyFeeUsd !== undefined) fees.buy = row.buyFeeUsd;
+      if (row.sellFeeUsd !== undefined) fees.sell = row.sellFeeUsd;
+      if (Object.keys(fees).length) lot.fees = fees;
+      return lot;
+    }),
+  };
 }
 
 function configValues(config) {
@@ -101,8 +196,8 @@ export async function readGitHubHoldingsStatus(config, fetcher = fetch) {
 export async function syncHoldingsToGitHub(holdings, config, fetcher = fetch) {
   const values = configValues(config);
   if (!values.token) throw new HoldingsSyncError("GitHub 即时同步尚未配置", 503);
-  const clean = sanitizeHoldings(holdings);
-  const content = utf8ToBase64(JSON.stringify(clean, null, 2) + "\n");
+  const document = createHoldingsDocument(holdings);
+  const content = utf8ToBase64(JSON.stringify(document, null, 2) + "\n");
   const endpoint = githubEndpoint(values);
   const headers = githubHeaders(values.token);
   const current = await githubRequest(endpoint + "?ref=" + encodeURIComponent(values.branch), { headers, cf: { cacheTtl: 0 } }, fetcher);

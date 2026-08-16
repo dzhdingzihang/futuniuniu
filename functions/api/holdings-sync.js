@@ -42,7 +42,8 @@ export async function onRequestPost({ request, env }) {
   try {
     requireProtectedWrite(env);
     const body = await request.json();
-    const result = await syncHoldingsToGitHub(body && body.holdings, configFromEnv(env));
+    const input = body && Object.prototype.hasOwnProperty.call(body, "holdings") ? body.holdings : body;
+    const result = await syncHoldingsToGitHub(input, configFromEnv(env));
     return json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);
