@@ -1467,6 +1467,7 @@ function eventHandlers() {
 
 async function refreshData(includeCandidates) {
   state.isRefreshing = true;
+  state.isHistoryLoading = true;
   render();
   const holdingSymbols = Array.from(new Set(activeHoldings().map(function (item) { return item.sina; }).filter(Boolean))).join(",");
   const symbols = includeCandidates
@@ -1474,6 +1475,7 @@ async function refreshData(includeCandidates) {
     : holdingSymbols;
   const currentQuotes = { quotes: Object.fromEntries(state.quotes) };
   const currentRates = { rates: { USD_CNY: state.rates.USD, HKD_CNY: state.rates.HKD } };
+  const historyRequest = getJson("/api/history?symbols=" + encodeURIComponent(holdingSymbols) + "&days=30", { histories: state.histories }, 12000);
   const result = await Promise.all([
     getJson("/api/quotes?symbols=" + encodeURIComponent(symbols), currentQuotes, 9000),
     getJson("/api/rates", currentRates, 3500)
@@ -1483,10 +1485,9 @@ async function refreshData(includeCandidates) {
   state.updatedAt = formatUpdatedAt(new Date());
   rebuildRows();
   state.isRefreshing = false;
-  state.isHistoryLoading = true;
   saveMarketCache();
   render();
-  const historyResult = await getJson("/api/history?symbols=" + encodeURIComponent(holdingSymbols) + "&days=30", { histories: state.histories }, 12000);
+  const historyResult = await historyRequest;
   if (Object.keys(historyResult.histories || {}).length) state.histories = historyResult.histories;
   state.isHistoryLoading = false;
   rebuildRows();
@@ -1494,27 +1495,68 @@ async function refreshData(includeCandidates) {
   render();
 }
 
+function adoptStartupDocuments(holdingsDocument, tradesDocument) {
+  state.baseHoldings = holdingsFromDocument(holdingsDocument);
+  state.holdings = state.baseHoldings.slice();
+  state.trades = (Array.isArray(tradesDocument) ? tradesDocument : []).map(normalizeTrade);
+}
+
+function startupStateFingerprint() {
+  return JSON.stringify([state.holdings, state.trades]);
+}
+
 async function start() {
-  const result = await Promise.all([
-    getJson("/api/holdings-sync", null, 8000),
+  const syncRequest = getJson("/api/holdings-sync", null, 8000);
+  const staticRequest = Promise.all([
     getJson("holdings.json", null),
     getJson("trades.json", [])
   ]);
   const linked = readStorage(HOLDING_KEY, null);
-  const startupHoldings = selectStartupHoldingsDocument(result[0], result[1], linked);
-  state.baseHoldings = holdingsFromDocument(startupHoldings.document);
-  state.holdings = state.baseHoldings.slice();
-  if (startupHoldings.source === "github" || startupHoldings.source === "static") {
-    try { writeStorage(HOLDING_KEY, state.holdings); } catch { /* Cache failure must not replace the authoritative source. */ }
-  }
   const localTrades = readStorage(TRADE_KEY, null);
-  state.trades = (Array.isArray(localTrades) ? localTrades : (Array.isArray(result[2]) ? result[2] : [])).map(normalizeTrade);
-  readMarketCache();
-  rebuildRows();
-  eventHandlers();
-  render();
-  startBrandAnimations();
-  refreshData();
+  let currentSource = "empty";
+  let marketRefresh = null;
+  let interactiveSnapshot = "";
+
+  if (isHoldingsDocument(linked)) {
+    adoptStartupDocuments(linked, localTrades);
+    readMarketCache();
+    rebuildRows();
+    eventHandlers();
+    render();
+    startBrandAnimations();
+    currentSource = "local";
+    marketRefresh = refreshData();
+    interactiveSnapshot = startupStateFingerprint();
+  }
+
+  const staticResult = await staticRequest;
+  if (currentSource === "empty") {
+    const initial = selectStartupHoldingsDocument(null, staticResult[0], linked);
+    adoptStartupDocuments(initial.document, Array.isArray(localTrades) ? localTrades : staticResult[1]);
+    readMarketCache();
+    rebuildRows();
+    eventHandlers();
+    render();
+    startBrandAnimations();
+    currentSource = initial.source;
+    marketRefresh = refreshData();
+    interactiveSnapshot = startupStateFingerprint();
+  }
+
+  const syncPayload = await syncRequest;
+  const authoritative = selectStartupHoldingsDocument(syncPayload, staticResult[0], linked);
+  const startupStateUnchanged = interactiveSnapshot === startupStateFingerprint();
+  if (startupStateUnchanged && (authoritative.source === "github" || (authoritative.source === "static" && currentSource === "local"))) {
+    const previousSymbols = activeHoldings().map(function (item) { return item.sina; }).sort().join(",");
+    adoptStartupDocuments(authoritative.document, Array.isArray(localTrades) ? localTrades : staticResult[1]);
+    rebuildRows();
+    try { writeStorage(HOLDING_KEY, state.holdings); } catch { /* Cache failure must not replace the authoritative source. */ }
+    render();
+    const nextSymbols = activeHoldings().map(function (item) { return item.sina; }).sort().join(",");
+    if (previousSymbols !== nextSymbols) {
+      Promise.resolve(marketRefresh).finally(function () { refreshData(); });
+    }
+  }
 }
 
 start().catch(function (error) {

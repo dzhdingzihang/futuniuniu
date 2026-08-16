@@ -363,7 +363,7 @@ test("client adopts local holdings only after GitHub confirms the write", async 
   assert.match(source, /GitHub 同步失败，本次未保存/);
 });
 
-test("startup prefers GitHub, then static JSON, and uses local holdings only offline", async () => {
+test("startup paints local holdings before background authority checks", async () => {
   const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
   const runnable = source.replace(/\nstart\(\)\.catch\(function \(error\) \{[\s\S]*?\n\}\);\s*$/, "\n");
   assert.notEqual(runnable, source);
@@ -377,5 +377,27 @@ test("startup prefers GitHub, then static JSON, and uses local holdings only off
   assert.deepEqual(plain(select(null, null, [{ source: "local" }])), { source: "local", document: [{ source: "local" }] });
   assert.deepEqual(plain(select(null, null, null)), { source: "empty", document: [] });
   assert.match(source, /getJson\("\/api\/holdings-sync", null, 8000\)/);
-  assert.match(source, /selectStartupHoldingsDocument\(result\[0\], result\[1\], linked\)/);
+  const localPaint = source.indexOf("if (isHoldingsDocument(linked))");
+  const staticWait = source.indexOf("const staticResult = await staticRequest");
+  const syncWait = source.indexOf("const syncPayload = await syncRequest");
+  assert.ok(localPaint > 0 && localPaint < staticWait);
+  assert.ok(staticWait > 0 && staticWait < syncWait);
+  assert.match(source, /interactiveSnapshot === startupStateFingerprint\(\)/);
+  assert.match(source, /readMarketCache\(\);\s+rebuildRows\(\);/);
+  assert.match(source, /const historyRequest = getJson\("\/api\/history/);
+  assert.ok(source.indexOf("const historyRequest = getJson") < source.indexOf("const result = await Promise.all"));
+});
+
+test("Pages keeps portfolio data behind Functions while serving only static assets directly", async () => {
+  const routes = JSON.parse(await readFile(new URL("../_routes.json", import.meta.url), "utf8"));
+  assert.deepEqual(routes, { version: 1, include: ["/*"], exclude: ["/assets/*", "/pet/*"] });
+  const headers = await readFile(new URL("../_headers", import.meta.url), "utf8");
+  assert.match(headers, /\/assets\/\*/);
+  assert.match(headers, /\/pet\/\*/);
+  assert.equal((headers.match(/! Cache-Control/g) || []).length, 2);
+  assert.match(headers, /max-age=300/);
+  assert.doesNotMatch(JSON.stringify(routes.exclude), /holdings|trades|api/);
+  const index = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  assert.doesNotMatch(index, /fonts\.googleapis\.com|fonts\.gstatic\.com/);
+  assert.match(index, /<script src="\/assets\/app\.js" defer><\/script>/);
 });

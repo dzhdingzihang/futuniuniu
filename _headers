@@ -1,2 +1,10 @@
 /*
   Cache-Control: no-store
+
+/assets/*
+  ! Cache-Control
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
+
+/pet/*
+  ! Cache-Control
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
