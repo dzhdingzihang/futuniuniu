@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { webcrypto } from "node:crypto";
+import { createHash, webcrypto } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
@@ -399,5 +399,10 @@ test("Pages keeps portfolio data behind Functions while serving only static asse
   assert.doesNotMatch(JSON.stringify(routes.exclude), /holdings|trades|api/);
   const index = await readFile(new URL("../index.html", import.meta.url), "utf8");
   assert.doesNotMatch(index, /fonts\.googleapis\.com|fonts\.gstatic\.com/);
-  assert.match(index, /<script src="\/assets\/app\.js" defer><\/script>/);
+  const appSource = await readFile(new URL("../assets/app.js", import.meta.url));
+  const styleSource = await readFile(new URL("../assets/styles.css", import.meta.url));
+  const appVersion = createHash("sha256").update(appSource).digest("hex").slice(0, 8);
+  const styleVersion = createHash("sha256").update(styleSource).digest("hex").slice(0, 8);
+  assert.match(index, new RegExp("<script src=\\\"/assets/app\\.js\\?v=" + appVersion + "\\\" defer></script>"));
+  assert.match(index, new RegExp("href=\\\"/assets/styles\\.css\\?v=" + styleVersion + "\\\""));
 });
