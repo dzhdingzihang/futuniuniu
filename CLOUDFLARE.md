@@ -26,6 +26,27 @@
 
 `BASIC_AUTH_PASSWORD` 和 `PIGGY_GITHUB_TOKEN` 必须作为加密 Secret 保存，绝不能写入前端、文档或 Git 历史。不要给 Preview 环境配置正式 GitHub Token，避免预览链接写入正式持仓。
 
-登录后的页面启动时会优先通过 `/api/holdings-sync` 读取 GitHub 当前文件；只有 GitHub 暂时不可用时才回退到部署包内的静态 `holdings.json`，两者都不可用时才使用本机离线缓存。这样网页保存成功后无需等待 Pages 再部署，也不会被旧浏览器缓存反向覆盖。
+登录后的页面会先使用本机缓存快速完成首屏；没有本机缓存时使用部署包内的静态 `holdings.json`。随后 `/api/holdings-sync` 在后台读取 GitHub 当前文件并作为权威数据更新页面。这样网页保存成功后无需等待 Pages 再部署，成功读取的 GitHub 数据也不会被旧浏览器缓存反向覆盖。
 
-如果登录变量缺少任何一项，当前版本会直接返回 `503`，不会退回公开访问。登录成功后，页面、静态资源和除登录接口外的全部 `/api` 才可操作。
+如果登录变量缺少任何一项，当前版本会直接返回 `503`，不会退回公开访问。登录成功后，页面、`holdings.json` 和除登录接口外的全部 `/api` 才可操作；`/assets/*` 与 `/pet/*` 是公开的版本化静态资源。
+
+## Pages Functions
+
+- `/api/quotes`：当前/延时报价
+- `/api/history`：日线和市场基准
+- `/api/rates`：最新可用汇率
+- `/api/radar`：机会雷达候选池与研究评分
+- `/api/security-lookup`：股票代码识别
+- `/api/holdings-sync`：GitHub 持仓读取与写入
+- `/api/login`、`/api/logout`：会话登录与退出
+
+建议在 Cloudflare WAF 或 Rate Limiting 中限制 `POST /api/login` 的尝试频率。
+
+## 自动部署
+
+Cloudflare Pages 连接 GitHub 仓库 `dzhdingzihang/futuniuniu` 的 `main` 分支。推送到 `main` 后自动创建部署；部署成功后再检查：
+
+- `https://alixjd.com/login` 返回登录页；
+- 未登录访问受保护 API 返回 `401`；
+- 登录后四个页面和行情 API 正常；
+- 页面加载的 JS/CSS 查询版本与本次提交一致。

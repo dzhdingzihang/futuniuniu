@@ -5,6 +5,7 @@ from urllib.request import Request, urlopen
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import json
 import os
 import re
@@ -20,6 +21,11 @@ EASTMONEY_KLINE_URL = (
 )
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range={range}&interval={interval}"
 YAHOO_QUOTE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1d&interval=1m&includePrePost=true"
+INDEX_ALIASES = {
+    "idx_csi300": {"eastmoney": ["1.000300"], "yahoo": "000300.SS"},
+    "idx_hsi": {"eastmoney": ["100.HSI"], "yahoo": "^HSI"},
+    "idx_sp500": {"eastmoney": ["100.SPX"], "yahoo": "^GSPC"},
+}
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Referer": "https://finance.sina.com.cn/",
@@ -46,8 +52,15 @@ def to_float(parts, index):
         return None
 
 
+def normalized_sina_date(value):
+    match = re.match(r"^(\d{4})[-/](\d{2})[-/](\d{2})", str(value or ""))
+    return "-".join(match.groups()) if match else None
+
+
 def parse_quote(symbol, raw):
     parts = raw.split(",")
+    quote_date = None
+    quote_time = None
     if symbol.startswith(("sh", "sz")):
         price = to_float(parts, 3)
         prev_close = to_float(parts, 2)
@@ -56,6 +69,8 @@ def parse_quote(symbol, raw):
         low = to_float(parts, 5)
         change = price - prev_close if price and prev_close else None
         change_pct = change / prev_close * 100 if change is not None and prev_close else None
+        quote_date = normalized_sina_date(parts[30] if len(parts) > 30 else None)
+        quote_time = (parts[31].strip() if len(parts) > 31 else "") or None
     elif symbol.startswith("hk"):
         price = to_float(parts, 6)
         prev_close = price - to_float(parts, 7) if to_float(parts, 7) is not None and price else None
@@ -64,6 +79,8 @@ def parse_quote(symbol, raw):
         low = to_float(parts, 5)
         change = to_float(parts, 7)
         change_pct = to_float(parts, 8)
+        quote_date = normalized_sina_date(parts[17] if len(parts) > 17 else None)
+        quote_time = (parts[18].strip() if len(parts) > 18 else "") or None
     else:
         price = to_float(parts, 1)
         prev_close = price - to_float(parts, 4) if to_float(parts, 4) is not None and price else None
@@ -72,6 +89,10 @@ def parse_quote(symbol, raw):
         low = None
         change_pct = to_float(parts, 2)
         change = to_float(parts, 4)
+        timestamp = parts[3].strip() if len(parts) > 3 else ""
+        quote_date = normalized_sina_date(timestamp)
+        time_match = re.search(r"\b(\d{2}:\d{2}(?::\d{2})?)\b", timestamp)
+        quote_time = time_match.group(1) if time_match else None
 
     if not price or price <= 0:
         return None
@@ -84,6 +105,8 @@ def parse_quote(symbol, raw):
         "open": open_price,
         "high": high,
         "low": low,
+        "date": quote_date,
+        "time": quote_time,
         "session": "实时/延时",
         "source": "sina",
     }
@@ -118,6 +141,10 @@ def parse_yahoo_quote_payload(payload):
 
     change = price - prev_close if prev_close else None
     ts = meta.get("postMarketTime") or meta.get("preMarketTime") or meta.get("regularMarketTime") or (timestamps[-1] if timestamps else None)
+    try:
+        market_time = datetime.fromtimestamp(ts, ZoneInfo(meta.get("exchangeTimezoneName") or "UTC")) if ts else datetime.now(ZoneInfo("UTC"))
+    except (KeyError, TypeError, ValueError):
+        market_time = datetime.fromtimestamp(ts) if ts else datetime.now()
     return {
         "price": price,
         "change": change,
@@ -126,8 +153,8 @@ def parse_yahoo_quote_payload(payload):
         "open": next((value for value in opens if value and value > 0), price),
         "high": max([value for value in highs if value and value > 0] or [price]),
         "low": min([value for value in lows if value and value > 0] or [price]),
-        "date": datetime.fromtimestamp(ts).strftime("%Y-%m-%d") if ts else datetime.now().strftime("%Y-%m-%d"),
-        "time": datetime.fromtimestamp(ts).strftime("%H:%M") if ts else datetime.now().strftime("%H:%M"),
+        "date": market_time.strftime("%Y-%m-%d"),
+        "time": market_time.strftime("%H:%M"),
         "session": session,
         "source": "yahoo",
     }
@@ -180,6 +207,8 @@ def handle_quotes(symbols):
 
 
 def eastmoney_secids(symbol):
+    if symbol in INDEX_ALIASES:
+        return INDEX_ALIASES[symbol]["eastmoney"]
     if symbol.startswith("sh"):
         return [f"1.{symbol[2:]}"]
     if symbol.startswith("sz"):
@@ -193,6 +222,8 @@ def eastmoney_secids(symbol):
 
 
 def yahoo_symbol(symbol):
+    if symbol in INDEX_ALIASES:
+        return INDEX_ALIASES[symbol]["yahoo"]
     if symbol.startswith("sh"):
         return f"{symbol[2:]}.SS"
     if symbol.startswith("sz"):
@@ -237,7 +268,7 @@ def parse_yahoo_payload(payload):
     return series
 
 
-def fetch_yahoo_history(symbol, days, range_value="2mo", interval="1d"):
+def fetch_yahoo_history(symbol, days, range_value="6mo", interval="1d"):
     mapped = yahoo_symbol(symbol)
     if not mapped:
         return []
@@ -293,9 +324,9 @@ def handle_history(symbols, days):
     safe_symbols = [
         symbol
         for symbol in symbols.split(",")
-        if re.fullmatch(r"(sh|sz|hk|gb_)[A-Za-z0-9_]+", symbol)
+        if symbol in INDEX_ALIASES or re.fullmatch(r"(sh|sz|hk|gb_)[A-Za-z0-9_]+", symbol)
     ]
-    days = max(5, min(days, 60))
+    days = max(5, min(days, 120))
     histories = {}
 
     with ThreadPoolExecutor(max_workers=8) as executor:

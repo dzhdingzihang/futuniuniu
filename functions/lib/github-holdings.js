@@ -35,6 +35,7 @@ function cleanOptionalNumber(value) {
 
 const MARKET_NAMES = { A: "A股", HK: "港股", US: "美股" };
 const MARKET_CODES = { "A股": "A", "港股": "HK", "美股": "US" };
+const DEFAULT_TRADE_FEE_USD = 20;
 
 function currencyForMarket(market) {
   return market === "港股" ? "HKD" : market === "美股" ? "USD" : "CNY";
@@ -51,6 +52,10 @@ function quoteCodeForMarket(market, rawCode) {
 function rowsFromInput(input) {
   if (Array.isArray(input)) return input;
   if (!input || Number(input.version) !== 2 || !Array.isArray(input.lots)) throw new HoldingsSyncError("持仓数据格式不正确");
+  const configuredFees = input.newTradeFeeUsd && typeof input.newTradeFeeUsd === "object" ? input.newTradeFeeUsd : {};
+  const defaultBuyFee = cleanOptionalNumber(configuredFees.buy) ?? DEFAULT_TRADE_FEE_USD;
+  const defaultSellFee = cleanOptionalNumber(configuredFees.sell) ?? DEFAULT_TRADE_FEE_USD;
+  if (defaultBuyFee < 0 || defaultSellFee < 0) throw new HoldingsSyncError("持仓默认手续费不正确");
   return input.lots.flatMap((lot, index) => {
     if (!lot || typeof lot !== "object") throw new HoldingsSyncError("第 " + (index + 1) + " 条持仓格式不正确");
     const market = MARKET_NAMES[String(lot.market || "").trim().toUpperCase()] || String(lot.market || "").trim();
@@ -60,7 +65,11 @@ function rowsFromInput(input) {
     const fees = lot.fees && typeof lot.fees === "object" ? lot.fees : {};
     const buyQty = Number(buy.qty);
     const sellQty = sell ? Number(sell.qty ?? buy.qty) : 0;
-    const buyFee = cleanOptionalNumber(fees.buy);
+    const explicitBuyFee = cleanOptionalNumber(fees.buy);
+    const explicitSellFee = cleanOptionalNumber(fees.sell);
+    const buyFee = explicitBuyFee ?? defaultBuyFee;
+    const sellFee = sell ? explicitSellFee ?? defaultSellFee : undefined;
+    if (buyFee < 0 || (sellFee !== undefined && sellFee < 0)) throw new HoldingsSyncError("第 " + (index + 1) + " 条手续费不正确");
     const base = {
       market,
       code,
@@ -80,15 +89,15 @@ function rowsFromInput(input) {
       qty: sellQty,
       sellPrice: Number(sell.price),
       sellDate: String(sell.date || ""),
-      buyFeeUsd: buyFee === undefined ? undefined : buyFee * ratio,
-      sellFeeUsd: cleanOptionalNumber(fees.sell),
+      buyFeeUsd: buyFee * ratio,
+      sellFeeUsd: sellFee,
     }];
     if (sellQty < buyQty) {
       records.unshift({
         ...base,
         status: "holding",
         qty: buyQty - sellQty,
-        buyFeeUsd: buyFee === undefined ? undefined : buyFee * (1 - ratio),
+        buyFeeUsd: buyFee * (1 - ratio),
       });
     }
     return records;
@@ -135,7 +144,7 @@ export function createHoldingsDocument(input) {
   return {
     version: 2,
     guide: "market 只填 A / HK / US；没有 sell 表示持有中，有 sell 表示已卖出；币种、状态和行情代码由系统生成。",
-    newTradeFeeUsd: { buy: 20, sell: 20 },
+    newTradeFeeUsd: { buy: DEFAULT_TRADE_FEE_USD, sell: DEFAULT_TRADE_FEE_USD },
     lots: rows.map((row) => {
       const lot = {
         market: MARKET_CODES[row.market],

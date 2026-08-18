@@ -1,83 +1,66 @@
-# Design QA
+# Design QA — 持仓明细与行内两周展望
 
-- Source visual truth: /Users/dingzihang/.codex/generated_images/019f7529-2fd7-7f60-b3a2-3ea17add287b/exec-795830f5-ac19-42cf-a105-ac68f10d2207.png
-- Implementation screenshot: /tmp/futuniuniu-overview-qa.png
-- Viewport: 1280 × 720 desktop
-- State: 总览，实时行情已加载
+## Evidence
+
+- Source visual truth: `/Users/dingzihang/Documents/个人小项目/futuniuniu/docs/design/holdings-visual-options/holdings-option-1-expanded-reference.png`
+- Desktop implementation: `/Users/dingzihang/Documents/个人小项目/futuniuniu/docs/design/holdings-detail-desktop-final.png`
+- Desktop side-by-side comparison: `/Users/dingzihang/Documents/个人小项目/futuniuniu/docs/design/holdings-detail-comparison-final.jpg`
+- Mobile 390 top: `/Users/dingzihang/Documents/个人小项目/futuniuniu/docs/design/holdings-detail-mobile-390-final.png`
+- Mobile 390 expanded detail: `/Users/dingzihang/Documents/个人小项目/futuniuniu/docs/design/holdings-detail-mobile-390-expanded-final.png`
+- Mobile 320 filters and cards: `/Users/dingzihang/Documents/个人小项目/futuniuniu/docs/design/holdings-detail-mobile-320-final.png`
+
+The source and desktop implementation are both 1487 × 1058 pixels. The browser viewport was 1487 × 1058 CSS pixels at DPR 1, so the side-by-side comparison required no scaling. Mobile checks used 390 × 844 and 320 × 844 CSS pixels at DPR 1.
+
+State: `#actions`, real portfolio data, overall market, all profit states, holding-weight descending. The desktop evidence expands 东山精密; the mobile evidence expands 2倍做多海力士. Missing same-day quotes are intentionally rendered as `--` rather than copied from a stale cache.
+
+## Findings
+
+No actionable P0, P1, or P2 visual, interaction, data-integrity, or accessibility differences remain.
+
+- Information hierarchy matches the chosen layout: portfolio snapshot, market allocation and concentration, compact filter/sort controls, holdings table/cards, then one in-context two-week analysis.
+- Desktop at 1487 px has zero horizontal overflow, zero clipped table cells, one visible expanded analysis, no duplicate IDs, and no raw `NaN` or `undefined` text.
+- Mobile uses semantic holding cards instead of a horizontally scrolling desktop table. At both 390 and 320 px, `scrollWidth === clientWidth`.
+- At 320 px, market buttons are 55 px wide and profit-state buttons are about 73 px wide; every label is fully visible. The prior fieldset/legend grid collapse is fixed.
+- Numeric columns use tabular figures and Chinese-market red-profit/green-loss semantics with explicit signs and text, not color alone.
+- Two-week output is deliberately honest: 上涨倾向, 下跌倾向, or 无法分析. It shows a rule-model score and a non-target-price volatility band, but no fabricated probability.
+- Current value and cumulative P/L accept only a recent provider-dated quote or a recent daily close. Stale cached prices remain labeled as reference data and do not enter totals.
+- Today P/L requires the quote provider's trading date to match the current date in the relevant market timezone. Missing or non-current data displays `--`.
+- The reference has decorative KPI icons and optimistic demonstration values. The implementation retains the existing product's text-first KPI treatment and real, fail-closed data. This is an intentional content-integrity choice, not a missing state.
 
 ## Comparison history
 
-### Pass 1
+1. P0 — The original holdings page was a 1510 px-wide table, which forced horizontal scrolling on desktop and made today/cumulative P/L unreachable on mobile. Fix: responsive fixed-layout table on desktop and native holding cards on mobile.
+2. P1 — The initial implementation could let stale quote caches, future history dates, incomplete valuation, and missing review data create misleading totals, actions, or `NaN%` CSS. Fix: provider dates, timezone-aware today checks, recent-price gates, fail-closed summary/review/ranking logic, and pending-valuation notices.
+3. P1 — The old simplistic three-day action rule could consume stale intraday change data. Fix: daily change survives only for a valid current-market-day quote; the two-week panel uses dated daily history and explicitly returns 无法分析 when inputs are insufficient.
+4. P1 — At 320 px, `fieldset > legend` special layout behavior collapsed the market and P/L button groups into 38 px. Fix: explicitly place the legend in grid column 1 and the button group in column 2. Final buttons show complete labels with no overflow.
+5. P2 — The first comparison pass expanded a different row than the reference and had stale asset evidence. Fix: the final desktop capture uses the same second-row expanded state and current asset hashes.
+6. Final comparison — passed. The selected visual hierarchy, spacing, table density, expansion placement, borders, radii, blue emphasis, and responsive reading order are preserved.
 
-- [P2] 顶栏“修改持仓”和“刷新”在 1280px 宽度下发生中文换行。
-  - Fix: 将顶栏操作区固定为不换行，并在中等桌面宽度隐藏更新时间文本。
+## Interaction and accessibility checks
 
-### Pass 2
+- Searching `东山` returns only 东山精密 and preserves input focus/caret.
+- Combining A股 + 亏损 produces one correct row in the current dataset; clearing restores all 26 holdings.
+- Clicking 总成本 twice changes `aria-sort` from `descending` to `ascending` and changes the first row.
+- Opening another stock closes the previous stock; only one analysis is visible. Escape closes it and restores focus to the triggering button.
+- Desktop and mobile controls use real buttons, `aria-pressed`, `aria-sort`, `aria-expanded`, labeled regions, and visible focus states.
+- Browser console warnings/errors: zero.
 
-- Fonts and typography: source与实现均使用高对比标题、紧凑导航与人民币主指标；实现使用 Noto Sans SC 保持中文数值可读性。
-- Spacing and layout rhythm: 保持 72px 顶栏、左侧三指标卡 / 右侧行动卡、左大趋势图 / 右侧贡献栏的同一桌面布局。
-- Colors and visual tokens: 白色表面、浅蓝灰页面、蓝色主导航、红绿盈亏语义和细描边均与设计稿一致。
-- Image quality and asset fidelity: 使用项目已有的 pig-logo.png，没有以临时图形替代品牌资产。
-- Copy and content: 顶部导航、总览标题、三项核心资产指标、行动入口、趋势与市场贡献均采用视觉稿的信息层级；数值替换为真实持仓、行情和汇率计算结果。
-- Responsive: 已在 390 × 844 验证；导航可横向滚动，持仓和行情模块单列；表格保留横向滚动以防内容截断。
-- Primary interactions verified: 五个 Tab 均能切换；市场筛选、实时刷新、交易记录、观察池加入和交易 JSON 备份均已接线。
-- Console: 无应用脚本错误。
+## Automated checks
 
-### Pass 3
-
-- [P1] 累计收益率分母只包含当前持仓成本，但累计盈亏包含已卖出记录；首项“总资产”也会让人误以为已纳入现金。
-  - Fix: 累计收益率改为使用全部已投入成本；首项改为“持仓市值（人民币）”，并明确“仅含当前持仓”。
-- [P1] 趋势图绘制的是持仓市值，却标作“组合累计盈亏”。
-  - Fix: 图表改为每日持仓盈亏序列，蓝线改为 0 轴“盈亏平衡线”；最大回撤继续基于组合市值序列计算。
-- Interaction regression: 已复测持仓行动的 A 股筛选、机会雷达加入观察、交易表单展开、复盘切换。
-- Production verification: 已在 https://alixjd.com/ 使用最新持仓、行情和汇率加载总览；无相关控制台 error/warn。
-
-### Pass 4
-
-- 总览顶部改为投入成本、持仓市值、累计盈亏、今日盈亏四项；移除“今日处理事项”。
-- 右侧“最大亏损贡献”替换为“盈亏排行榜”，已验证盈利 Top 5 与亏损 Top 5 切换。
-- 组合趋势图增加日期 X 轴、人民币金额 Y 轴与 ¥0 盈亏平衡线；已验证 7 天和 30 天切换。
-- 市场概况扩展为投入总成本、持仓市值、累计盈亏、今日盈亏、持仓数量五项。港股和美股同时显示原币种与人民币折算；A 股明确标记人民币。
-- 移动端在 390 × 844 视口完整加载后无水平溢出，三个市场明细均存在；无相关 console error/warn。
-
-### Pass 5
-
-- [P1] 投入成本曾使用实时汇率换算，导致用户的历史买入金额会随汇率刷新而变化。
-  - Fix: 投入成本改为全部买入成交额；优先采用每笔可选的 `purchaseCostCny`，旧数据以固定参考汇率折算，港股/美股原币买入额保持准确显示。
-- [P1] 首屏等待全部行情、历史和汇率请求完成后才渲染，外部行情源慢时页面长期停留在空白等待。
-  - Fix: 持仓数据、缓存行情和总览立即渲染；实时行情与 30 日曲线改为后台更新，历史请求仅覆盖当前持仓并被浏览器缓存。刷新中保留页面内容，并以小猪核算动画提示状态。
-- Local verification: 在 `http://127.0.0.1:8788/` 的 `DOMContentLoaded` 后即可读到总览，投入成本为 ¥740,530；手动刷新时总览内容保留、小猪核算状态可见，控制台无 error/warn。
-
-### Pass 6
-
-- [P1] 用户确认成本应为累计买入减累计卖出；旧逻辑仍把已卖出资金留在投入成本，并对每条记录虚拟扣除固定 $30 手续费。
-  - Fix: 净投入统一为买入 − 卖出；累计盈亏统一为当前持仓市值 − 净投入，盈利为正、亏损为负。删除虚拟固定手续费；顶部、市场概况、个股盈亏和趋势图使用同一口径。
-- [P2] 指标缺少计算口径，用户无法判断数字的组成。
-  - Fix: 为顶部四项、趋势图、市场概况和市场小卡增加可键盘聚焦的信息图标；悬停或聚焦后显示公式说明。
-- Local verification: 总览显示净投入 ¥536,438、持仓市值 ¥333,643、累计盈亏 -¥202,795；7 天图表切换正常，15 个市场概览说明图标均存在。390 × 844 下，点击说明图标后浮层完整位于屏幕内，页面无水平溢出，无 console error/warn。
-
-### Pass 7
-
-- [P1] 持仓行动顶部原先仅提供简略市场摘要，无法把三个市场的原币金额与人民币口径作为同一决策入口查看。
-  - Fix: 重构为港股、A 股、美股三栏总览；每栏显示持仓数、总市值、今日盈亏和累计盈亏，人民币金额置于主位，港币/美元原币金额置于下方；市场 Tab 紧接总览。
-- [P1] “优先处理”曾给出泛化复核提示，不能直接执行。
-  - Fix: 将规则输出改为“止损 / 补仓 / 止盈 / 持有”，每项包含触发词、具体原币执行价和一句仓位纪律；按需处理优先级排列。
-- [P2] 全部持仓缺少用户要求的排序和成本信息。
-  - Fix: 增加今日盈亏、持仓累计盈亏、持仓占比三个排序控件；表格补齐市值、持仓数量、成本总价，并在涉及外币的金额中同时展示人民币和原币。
-- Visual comparison: 采用已确认的 ImageGen 概念稿（`exec-7b93b7ff-86c0-4bf1-bbf2-8ca69e471cc1.png`）与 1440px 实现截图对照。三市场横向总览、总览下方 Tab、表格式优先行动、紧凑的蓝白界面、红绿盈亏语义和可横向浏览的完整持仓表均已匹配；实际产品保留现有品牌导航与真实数据列，以保证既有功能不回退。
-- Interaction verification: 已验证持仓占比排序会重排行项目；A 股 Tab 仅保留 11 个 A 股持仓。390 × 844 下页面无文档级横向溢出，完整持仓表保留局部横向滚动；控制台无相关 error/warn。
-
-### Pass 8
-
-- [P1] “优先处理”只有当次行动的规则价，无法同时比较补仓位、止损位与短期方向。
-  - Fix: 增加补仓价格、止损价格和未来 3 个工作日的走势预判列；预判随当前日涨跌给出“预判上涨 / 预判下跌”及偏强弱说明，仍保留原有的明确执行规则。
-- [P2] “全部持仓”的排序控件脱离表格，且仅能按三个字段排序，字段顺序也不符合最新决策顺序。
-  - Fix: 移除右侧三枚排序按钮；表格调整为总成本总价、持仓数量、市值、当前价、今日盈亏、持仓累计盈亏、持仓占比、操作建议，并为总成本总价、市值、当前价、今日盈亏、持仓累计盈亏提供表头内联升降序箭头。
-- Interaction verification: 本地 1440px 下，连续点击“总成本总价”会从降序切为升序（首行由 ¥107,640 变为 ¥400）；“当前价”同样可切换。优先处理表有 9 列、全部持仓表有 10 列，旧右侧排序按钮为 0 个。390 × 844 下页面无文档级横向溢出，宽表保留局部横向滚动。
-- Visual verification: `/tmp/futuniuni-actions-sorting-desktop.png`、`/tmp/futuniuni-actions-sorting-mobile.png`、`/tmp/futuniuni-actions-production-sorting.png`；生产站 `https://alixjd.com/?deploy=59383bd#actions` 已复核，控制台无 error/warn。
-
-## Follow-up polish
-
-- [P3] 如需更接近视觉稿中的装饰图标，可在下一轮补充统一图标资源；当前不影响核心决策和交易工作流。
+- Production Pages suite: 34/34 passed.
+- Local preview/Sites suite: 32/32 passed.
+- `node --check assets/app.js`: passed.
+- `node --check functions/api/quotes.js`: passed.
+- `python3 -m py_compile server.py`: passed.
+- `git diff --check`: passed.
+- Production and preview JS/CSS bytes and cache-busting hashes match.
 
 final result: passed
+
+## 2026-08-17 今日分布与双币值增量验收
+
+- 快照区现为 6 项：新增“今日盈亏分布”，原分布明确为“累计盈亏分布”。缺当日行情单列为“待行情”，不会归入持平。
+- 港股、美股每只股票的今日与累计盈亏均使用两行展示：人民币主值、市场原币副值，并保留收益率；A 股避免重复人民币金额。
+- 1487 px：6 张快照卡、持仓表格及所有双币值单元格均无裁切，表格 `scrollWidth === clientWidth === 1421`。
+- 390 px 与 320 px：两个分布项各自全宽，持仓卡片无水平溢出，页面 `scrollWidth === clientWidth`，无原始 `NaN` 文本。
+- 自动化验证保持通过：Production 34/34，Preview 32/32。

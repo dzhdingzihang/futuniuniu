@@ -115,16 +115,19 @@ async function verifySession(value, user, password) {
   if (!match) return false;
 
   try {
+    const signatureBytes = base64UrlToBytes(match[2]);
+    const payloadBytes = base64UrlToBytes(match[1]);
+    if (bytesToBase64Url(signatureBytes) !== match[2] || bytesToBase64Url(payloadBytes) !== match[1]) return false;
     const key = await importSessionKey(password, ["verify"]);
     const authentic = await crypto.subtle.verify(
       "HMAC",
       key,
-      base64UrlToBytes(match[2]),
+      signatureBytes,
       encoder.encode(match[1]),
     );
     if (!authentic) return false;
 
-    const payload = JSON.parse(decoder.decode(base64UrlToBytes(match[1])));
+    const payload = JSON.parse(decoder.decode(payloadBytes));
     return Boolean(
       payload &&
       payload.u === user &&

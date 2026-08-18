@@ -6,11 +6,18 @@ function toNumber(parts, index) {
   return Number.isFinite(value) ? value : null;
 }
 
-function parseQuote(symbol, raw) {
+function normalizedSinaDate(value) {
+  const match = String(value || "").match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
+}
+
+export function parseQuote(symbol, raw) {
   const parts = raw.split(",");
   let price;
   let change;
   let changePct;
+  let date;
+  let time;
 
   if (symbol.startsWith("sh") || symbol.startsWith("sz")) {
     price = toNumber(parts, 3);
@@ -20,8 +27,10 @@ function parseQuote(symbol, raw) {
     const low = toNumber(parts, 5);
     change = price && prevClose ? price - prevClose : null;
     changePct = change !== null && prevClose ? (change / prevClose) * 100 : null;
+    date = normalizedSinaDate(parts[30]);
+    time = String(parts[31] || "").trim() || null;
     if (!price || price <= 0) return null;
-    return { price, change, changePct, prevClose, open, high, low, session: "实时/延时", source: "sina" };
+    return { price, change, changePct, prevClose, open, high, low, date, time, session: "实时/延时", source: "sina" };
   } else if (symbol.startsWith("hk")) {
     price = toNumber(parts, 6);
     change = toNumber(parts, 7);
@@ -30,15 +39,20 @@ function parseQuote(symbol, raw) {
     const open = toNumber(parts, 2);
     const high = toNumber(parts, 4);
     const low = toNumber(parts, 5);
+    date = normalizedSinaDate(parts[17]);
+    time = String(parts[18] || "").trim() || null;
     if (!price || price <= 0) return null;
-    return { price, change, changePct, prevClose, open, high, low, session: "实时/延时", source: "sina" };
+    return { price, change, changePct, prevClose, open, high, low, date, time, session: "实时/延时", source: "sina" };
   } else {
     price = toNumber(parts, 1);
     changePct = toNumber(parts, 2);
     change = toNumber(parts, 4);
     const prevClose = price && change !== null ? price - change : null;
+    const timestamp = String(parts[3] || "").trim();
+    date = normalizedSinaDate(timestamp);
+    time = timestamp.match(/\b(\d{2}:\d{2}(?::\d{2})?)\b/)?.[1] || null;
     if (!price || price <= 0) return null;
-    return { price, change, changePct, prevClose, session: "实时/延时", source: "sina" };
+    return { price, change, changePct, prevClose, date, time, session: "实时/延时", source: "sina" };
   }
 }
 
@@ -48,6 +62,21 @@ function yahooSymbol(symbol) {
   if (symbol.startsWith("hk")) return `${symbol.slice(2).replace(/^0+/, "").padStart(4, "0")}.HK`;
   if (symbol.startsWith("gb_")) return symbol.slice(3).toUpperCase();
   return null;
+}
+
+function exchangeDateTime(timestamp, timeZone) {
+  const date = new Date(timestamp * 1000);
+  if (!Number.isFinite(date.getTime())) return { date: null, time: null };
+  try {
+    const values = {};
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: timeZone || "UTC", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+    }).formatToParts(date).forEach((part) => { values[part.type] = part.value; });
+    return { date: `${values.year}-${values.month}-${values.day}`, time: `${values.hour}:${values.minute}` };
+  } catch {
+    return { date: date.toISOString().slice(0, 10), time: date.toISOString().slice(11, 16) };
+  }
 }
 
 function parseYahooQuote(payload) {
@@ -65,7 +94,7 @@ function parseYahooQuote(payload) {
   const session = meta.postMarketPrice ? "盘后" : meta.preMarketPrice ? "盘前" : "实时/延时";
   const change = prevClose ? price - prevClose : null;
   const timestamp = meta.postMarketTime || meta.preMarketTime || meta.regularMarketTime || result.timestamp?.at(-1);
-  const stamp = timestamp ? new Date(timestamp * 1000) : new Date();
+  const stamp = exchangeDateTime(timestamp || Date.now() / 1000, meta.exchangeTimezoneName || "UTC");
   return {
     price,
     change,
@@ -74,8 +103,8 @@ function parseYahooQuote(payload) {
     open: opens.find((value) => value && value > 0) || price,
     high: Math.max(...highs.filter((value) => value && value > 0), price),
     low: Math.min(...lows.filter((value) => value && value > 0), price),
-    date: stamp.toISOString().slice(0, 10),
-    time: stamp.toISOString().slice(11, 16),
+    date: stamp.date,
+    time: stamp.time,
     session,
     source: "yahoo",
   };
