@@ -3,17 +3,18 @@
   "guide": "market 只填 A / HK / US；没有 sell 表示持有中，有 sell 表示已卖出；币种、状态和行情代码由系统生成。",
   "newTradeFeeUsd": { "buy": 20, "sell": 20 },
   "lots": [
-    { "market": "HK", "code": "07709", "name": "2倍做多海力士", "buy": { "price": 100, "qty": 1600 } },
+    { "market": "HK", "code": "07709", "name": "2倍做多海力士", "buy": { "price": 120, "qty": 1400 } },
+    { "market": "HK", "code": "07709", "name": "2倍做多海力士", "buy": { "price": 100, "qty": 1400 }, "sell": { "price": 34, "qty": 1400, "date": "2026-08-01" } },
     { "market": "HK", "code": "02208", "name": "金风科技", "buy": { "price": 17.5, "qty": 1600 } },
-    { "market": "HK", "code": "01810", "name": "小米集团-W", "buy": { "price": 35.5, "qty": 1400 } },
-    { "market": "HK", "code": "01772", "name": "赣锋锂业", "buy": { "price": 67.5, "qty": 200 } },
+    { "market": "HK", "code": "01810", "name": "小米集团-W", "buy": { "price": 43.5, "qty": 1400 } },
+    { "market": "HK", "code": "01772", "name": "赣锋锂业", "buy": { "price": 68, "qty": 200 } },
     { "market": "HK", "code": "01024", "name": "快手-W", "buy": { "price": 46.5, "qty": 300 } },
+    { "market": "HK", "code": "01024", "name": "快手-W", "buy": { "price": 260, "qty": 900 }, "sell": { "price": 55.7, "qty": 900, "date": "2025-02-25" } },
     { "market": "HK", "code": "00981", "name": "中芯国际", "buy": { "price": 79, "qty": 500 } },
     { "market": "HK", "code": "00763", "name": "中兴通讯", "buy": { "price": 31, "qty": 400 } },
-    { "market": "HK", "code": "07709", "name": "2倍做多海力士", "buy": { "price": 130, "qty": 800 }, "sell": { "price": 132, "qty": 800, "date": "2026-06-17" } },
-    { "market": "HK", "code": "03308", "name": "中际旭创", "buy": { "price": 990, "qty": 50 }, "sell": { "price": 892, "qty": 50, "date": "2026-07-30" } },
+    { "market": "HK", "code": "03308", "name": "中际旭创", "buy": { "price": 990, "qty": 50 }, "sell": { "price": 880, "qty": 50, "date": "2026-07-30" } },
     { "market": "US", "code": "TSLL", "name": "2倍做多TSLA", "buy": { "price": 12, "qty": 300 } },
-    { "market": "US", "code": "OKLL", "name": "2倍做多OKLO", "buy": { "price": 7.5, "qty": 600 } },
+    { "market": "US", "code": "OKLL", "name": "2倍做多OKLO", "buy": { "price": 9.6, "qty": 600 } },
     { "market": "US", "code": "NOK", "name": "诺基亚", "buy": { "price": 15, "qty": 320 } },
     { "market": "US", "code": "LITX", "name": "2倍做多LITE", "buy": { "price": 42, "qty": 10 } },
     { "market": "US", "code": "LITX", "name": "2倍做多LITE", "buy": { "price": 42, "qty": 60 }, "sell": { "price": 35.5, "qty": 60, "date": "2026-06-17" } },
@@ -41,6 +42,7 @@
     { "market": "A", "code": "002217", "name": "合力泰", "buy": { "price": 4, "qty": 2900 }, "sell": { "price": 2.5, "qty": 2900, "date": "2026-06-17" } },
     { "market": "A", "code": "001896", "name": "豫能控股", "buy": { "price": 15.5, "qty": 200 } },
     { "market": "A", "code": "000630", "name": "铜陵有色", "buy": { "price": 7.2, "qty": 3000 } },
+    { "market": "A", "code": "002463", "name": "沪电科技", "buy": { "price": 126.1, "qty": 100 } },
     { "market": "A", "code": "000988", "name": "华工科技", "buy": { "price": 172, "qty": 100 }, "sell": { "price": 180, "qty": 100, "date": "2026-06-17" } }
   ]
 }
