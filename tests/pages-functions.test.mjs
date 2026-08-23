@@ -999,7 +999,7 @@ test("opportunity radar filters the 600-plus pool, explains its score, and keeps
     const freshnessOrder = filteredRadarRows().map(function (item) { return item.id; });
     state.radarRows = originalRows;
     const expired = candidate("美股", "OLD", "过期结果", 88, "priority", 40, 8e9);
-    expired.fetchedAt = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString();
+    expired.fetchedAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
     const expiredState = radarEffectiveLoadState(expired);
     const expiredMarkup = radarCandidateRow(expired, 1);
     state.radarSort = "trend";
@@ -1037,6 +1037,163 @@ test("opportunity radar filters the 600-plus pool, explains its score, and keeps
   assert.match(source, /RADAR_PAGE_SIZE = 10/);
   assert.match(source, /fetch\("\/api\/radar\?market="/);
   assert.doesNotMatch(source, /const candidates = \[/);
+});
+
+test("radar daily freshness follows the Asia Shanghai calendar day", async () => {
+  const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
+  const runnable = source.replace(/\nstart\(\)\.catch\(function \(error\) \{[\s\S]*?\n\}\);\s*$/, "\n");
+  const context = vm.createContext({ location: { hash: "#radar" }, localStorage: { getItem: () => null, setItem: () => {} } });
+  new vm.Script(runnable).runInContext(context);
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+
+  const result = plain(vm.runInContext(`(() => {
+    const now = Date.now();
+    const todayAtNow = new Date(now).toISOString();
+    let priorDay = now - 60 * 60 * 1000;
+    const todayKey = radarCalendarDateKey(todayAtNow);
+    while (radarCalendarDateKey(priorDay) === todayKey) priorDay -= 60 * 60 * 1000;
+    const previousDay = new Date(priorDay).toISOString();
+    const future = new Date(now + 10 * 60 * 1000).toISOString();
+    return {
+      todayKey,
+      previousKey: radarCalendarDateKey(previousDay),
+      current: radarSnapshotIsDailyCurrent({ fetchedAt: todayAtNow, loadState: "fresh" }),
+      previous: radarSnapshotIsDailyCurrent({ fetchedAt: previousDay, loadState: "fresh" }),
+      future: radarSnapshotIsDailyCurrent({ fetchedAt: future, loadState: "fresh" }),
+      previousState: radarEffectiveLoadState({ fetchedAt: previousDay, loadState: "fresh" })
+    };
+  })()`, context));
+
+  assert.notEqual(result.todayKey, result.previousKey);
+  assert.equal(result.current, true);
+  assert.equal(result.previous, false);
+  assert.equal(result.future, false);
+  assert.equal(result.previousState, "cached");
+});
+
+test("radar cache restores today's valid markets as fresh and prior-day markets as cached", async () => {
+  const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
+  const runnable = source.replace(/\nstart\(\)\.catch\(function \(error\) \{[\s\S]*?\n\}\);\s*$/, "\n");
+  const storage = new Map();
+  const context = vm.createContext({
+    location: { hash: "#radar" },
+    localStorage: {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, value),
+    },
+  });
+  new vm.Script(runnable).runInContext(context);
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+
+  const result = plain(vm.runInContext(`(() => {
+    function snapshot(market, fetchedAt) {
+      const currency = market === "A股" ? "CNY" : market === "港股" ? "HKD" : "USD";
+      const candidates = Array.from({ length: 200 }, function (_, index) {
+        const code = market === "A股" ? String(600000 + index) : market === "港股" ? String(index + 1).padStart(5, "0") : "T" + String(index + 1).padStart(4, "0");
+        return {
+          id: market + ":" + code, market, code, name: market + code, currency,
+          sina: market === "A股" ? "sh" + code : market === "港股" ? "hk" + code : "gb_" + code.toLowerCase(),
+          score: 60, band: "watch", components: { trend: 20, liquidity: 18, risk: 12, quality: 10 },
+          metrics: { price: 100, amount: 1e9 + index, marketCap: 1e11 + index },
+          reasons: ["缓存契约测试"], risks: ["仅供测试"], quoteUpdatedAt: fetchedAt
+        };
+      });
+      return { market, modelVersion: RADAR_MODEL_VERSION, source: "测试行情", fetchedAt, poolSize: 200, rawSize: 500, candidates };
+    }
+    const now = Date.now();
+    const today = new Date(now).toISOString();
+    let prior = now - 60 * 60 * 1000;
+    while (radarCalendarDateKey(prior) === radarCalendarDateKey(now)) prior -= 60 * 60 * 1000;
+    const yesterday = new Date(prior).toISOString();
+    const writeCache = function (fetchedAt) {
+      localStorage.setItem(RADAR_CACHE_KEY, JSON.stringify({ version: 1, markets: Object.fromEntries(RADAR_MARKETS.map(function (market) { return [market, snapshot(market, fetchedAt)]; })) }));
+    };
+    writeCache(today);
+    const todayRead = readRadarCache();
+    const todayStates = RADAR_MARKETS.map(function (market) { return state.radarMarkets[market].loadState; });
+    const todayStatus = state.radarStatus;
+    state.radarMarkets = {}; state.radarRows = []; state.radarStatus = "idle";
+    writeCache(yesterday);
+    const priorRead = readRadarCache();
+    const priorStates = RADAR_MARKETS.map(function (market) { return state.radarMarkets[market].loadState; });
+    return { todayRead, todayStates, todayStatus, priorRead, priorStates };
+  })()`, context));
+
+  assert.deepEqual(result, {
+    todayRead: true,
+    todayStates: ["fresh", "fresh", "fresh"],
+    todayStatus: "success",
+    priorRead: true,
+    priorStates: ["cached", "cached", "cached"],
+  });
+});
+
+test("radar top three is explicit per market, excludes holdings, and explains selection", async () => {
+  const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
+  const runnable = source.replace(/\nstart\(\)\.catch\(function \(error\) \{[\s\S]*?\n\}\);\s*$/, "\n");
+  const context = vm.createContext({ location: { hash: "#radar" }, localStorage: { getItem: () => null, setItem: () => {} } });
+  new vm.Script(runnable).runInContext(context);
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+
+  const result = plain(vm.runInContext(`(() => {
+    function candidate(market, code, score, loadState, reason) {
+      const currency = market === "A股" ? "CNY" : market === "港股" ? "HKD" : "USD";
+      return {
+        id: market + ":" + code, market, code, name: market + code, currency,
+        sina: market === "A股" ? "sh" + code : market === "港股" ? "hk" + code : "gb_" + code.toLowerCase(),
+        score, band: score >= 70 ? "priority" : score >= 55 ? "watch" : "reserve",
+        components: { trend: 30, liquidity: 25, risk: 18, quality: 12 },
+        metrics: { price: score, changePct: 1, return60d: 20, amount: 5e9, marketCap: 2e11, pe: 18, pb: 2 },
+        reasons: [reason, "第二条公开评分依据"], risks: ["仅供研究"], source: "测试行情",
+        quoteUpdatedAt: new Date().toISOString(), fetchedAt: new Date().toISOString(), loadState
+      };
+    }
+    state.holdings = [{ market: "A股", code: "600001", name: "A股600001", status: "holding", qty: 1, cost: 1, currency: "CNY", sina: "sh600001" }];
+    state.rows = [];
+    state.radarRows = [
+      candidate("A股", "600001", 99, "fresh", "当前持仓应被排除"),
+      candidate("A股", "600002", 95, "cached", "缓存高分不抢占今日结果"),
+      candidate("A股", "600003", 91, "fresh", "趋势与流动性领先 & 可复核"),
+      candidate("A股", "600004", 88, "fresh", "短期波动更稳定"),
+      candidate("A股", "600005", 84, "fresh", "市场内综合评分靠前"),
+      candidate("港股", "00001", 92, "fresh", "港股理由一"),
+      candidate("港股", "00002", 89, "fresh", "港股理由二"),
+      candidate("港股", "00003", 86, "fresh", "港股理由三"),
+      candidate("港股", "00004", 80, "fresh", "港股理由四"),
+      candidate("美股", "AAA", 90, "fresh", "美股理由一"),
+      candidate("美股", "BBB", 87, "fresh", "美股理由二"),
+      candidate("美股", "CCC", 83, "fresh", "美股理由三"),
+      candidate("美股", "DDD", 79, "fresh", "美股理由四")
+    ];
+    const now = Date.now();
+    state.radarMarkets = Object.fromEntries(RADAR_MARKETS.map(function (market, index) {
+      return [market, { market, fetchedAt: new Date(now - (2 - index) * 60 * 1000).toISOString(), loadState: "fresh", source: "测试行情" }];
+    }));
+    state.watchMarket = "港股"; state.radarBand = "reserve"; state.radarSort = "change"; state.radarQuery = "不存在";
+    const markup = radarTopThreeSection();
+    return {
+      aShare: radarTopThreeByMarket("A股").map(function (item) { return item.code; }),
+      hk: radarTopThreeByMarket("港股").map(function (item) { return item.code; }),
+      us: radarTopThreeByMarket("美股").map(function (item) { return item.code; }),
+      latest: radarLatestUpdate().iso,
+      expectedLatest: new Date(now).toISOString(),
+      markup
+    };
+  })()`, context));
+
+  assert.deepEqual(result.aShare, ["600003", "600004", "600005"]);
+  assert.deepEqual(result.hk, ["00001", "00002", "00003"]);
+  assert.deepEqual(result.us, ["AAA", "BBB", "CCC"]);
+  assert.equal(result.latest, result.expectedLatest);
+  assert.match(result.markup, /今日三地 Top 3/);
+  assert.match(result.markup, /A股 Top 3/);
+  assert.match(result.markup, /港股 Top 3/);
+  assert.match(result.markup, /美股 Top 3/);
+  assert.match(result.markup, /为什么入选/);
+  assert.match(result.markup, /每日首次进入自动更新/);
+  assert.match(result.markup, /趋势与流动性领先 &amp; 可复核/);
+  assert.match(result.markup, /<time datetime=/);
+  assert.doesNotMatch(result.markup, /当前持仓应被排除/);
 });
 
 test("radar price model accepts 90 valid bars and fails closed for thin malformed or extreme histories", async () => {

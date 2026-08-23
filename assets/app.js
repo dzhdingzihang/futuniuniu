@@ -13,7 +13,7 @@ const RADAR_CACHE_KEY = "piggy-radar-cache-v1";
 const RADAR_MARKETS = ["A股", "港股", "美股"];
 const RADAR_PAGE_SIZE = 10;
 const RADAR_MODEL_VERSION = "radar-v1.1";
-const RADAR_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const RADAR_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
 const RADAR_HISTORY_TTL_MS = 30 * 60 * 1000;
 const RADAR_HISTORY_ERROR_TTL_MS = 5 * 60 * 1000;
 const RADAR_LEVEL_MODEL_VERSION = "radar-levels-v1";
@@ -372,11 +372,32 @@ function isRadarCandidate(item, market) {
 function radarSnapshotAgeMs(payload) {
   const timestamp = Date.parse(payload && payload.fetchedAt || "");
   const age = Date.now() - timestamp;
-  return Number.isFinite(timestamp) && age >= -5 * 60 * 1000 ? Math.max(0, age) : Infinity;
+  return Number.isFinite(timestamp) && age >= -RADAR_FUTURE_TOLERANCE_MS ? Math.max(0, age) : Infinity;
+}
+
+function radarCalendarDateKey(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(date);
+    const values = {};
+    parts.forEach(function (part) { values[part.type] = part.value; });
+    return [values.year, values.month, values.day].join("-");
+  } catch (_) {
+    return [date.getUTCFullYear(), String(date.getUTCMonth() + 1).padStart(2, "0"), String(date.getUTCDate()).padStart(2, "0")].join("-");
+  }
+}
+
+function radarSnapshotIsDailyCurrent(payload) {
+  if (!Number.isFinite(radarSnapshotAgeMs(payload))) return false;
+  const fetchedDay = radarCalendarDateKey(payload && payload.fetchedAt);
+  return Boolean(fetchedDay) && fetchedDay === radarCalendarDateKey(Date.now());
 }
 
 function radarSnapshotIsCurrent(payload) {
-  return radarSnapshotAgeMs(payload) <= RADAR_SNAPSHOT_MAX_AGE_MS;
+  return radarSnapshotIsDailyCurrent(payload);
 }
 
 function radarEffectiveLoadState(payload) {
@@ -413,7 +434,9 @@ function adoptRadarSnapshots(snapshots, source) {
   RADAR_MARKETS.forEach(function (market) {
     const payload = snapshots && snapshots[market];
     if (!isRadarSnapshot(payload, market)) return;
-    next[market] = Object.assign({}, payload, { loadState: source || payload.loadState || "cached" });
+    const loadState = source === "cache" ? (radarSnapshotIsDailyCurrent(payload) ? "fresh" : "cached") : source || payload.loadState || "cached";
+    next[market] = Object.assign({}, payload, { loadState: loadState });
+    if (loadState === "fresh") delete next[market].error;
   });
   state.radarMarkets = next;
   state.radarRows = radarRowsFromSnapshots(next);
@@ -423,8 +446,11 @@ function adoptRadarSnapshots(snapshots, source) {
 function readRadarCache() {
   const cache = readStorage(RADAR_CACHE_KEY, null);
   if (!cache || Number(cache.version) !== 1 || typeof cache !== "object" || !cache.markets || typeof cache.markets !== "object") return false;
-  const count = adoptRadarSnapshots(cache.markets, "cached");
-  if (count) state.radarStatus = count === RADAR_MARKETS.length ? "cached" : "partial";
+  const count = adoptRadarSnapshots(cache.markets, "cache");
+  const currentCount = RADAR_MARKETS.filter(function (market) {
+    return radarEffectiveLoadState(state.radarMarkets[market]) === "fresh";
+  }).length;
+  if (count) state.radarStatus = currentCount === RADAR_MARKETS.length ? "success" : currentCount ? "partial" : count === RADAR_MARKETS.length ? "cached" : "partial";
   return count > 0;
 }
 
@@ -459,21 +485,22 @@ async function fetchRadarMarket(market) {
 
 async function loadRadar(force) {
   if (state.radarStatus === "loading") return;
-  if (!force && RADAR_MARKETS.every(function (market) {
-    return isRadarSnapshot(state.radarMarkets[market], market) && state.radarMarkets[market].loadState === "fresh" && radarSnapshotIsCurrent(state.radarMarkets[market]);
-  })) return;
+  const targetMarkets = force ? RADAR_MARKETS.slice() : RADAR_MARKETS.filter(function (market) {
+    return !isRadarSnapshot(state.radarMarkets[market], market) || state.radarMarkets[market].loadState !== "fresh" || !radarSnapshotIsDailyCurrent(state.radarMarkets[market]);
+  });
+  if (!targetMarkets.length) return;
   const requestId = ++state.radarRequestId;
   state.radarStatus = "loading";
   state.radarError = "";
   render();
-  const results = await Promise.allSettled(RADAR_MARKETS.map(fetchRadarMarket));
+  const results = await Promise.allSettled(targetMarkets.map(fetchRadarMarket));
   if (requestId !== state.radarRequestId) return;
   const failures = [];
   let freshCount = 0;
   results.forEach(function (result, index) {
-    const market = RADAR_MARKETS[index];
+    const market = targetMarkets[index];
     if (result.status === "fulfilled") {
-      state.radarMarkets[market] = Object.assign({}, result.value, { loadState: "fresh" });
+      state.radarMarkets[market] = Object.assign({}, result.value, { loadState: "fresh", error: "" });
       freshCount += 1;
     } else {
       const message = result.reason && result.reason.message ? result.reason.message : market + "扫描失败";
@@ -487,7 +514,10 @@ async function loadRadar(force) {
     }
   });
   state.radarRows = radarRowsFromSnapshots(state.radarMarkets);
-  state.radarStatus = freshCount === RADAR_MARKETS.length ? "success" : freshCount ? "partial" : state.radarRows.length ? "stale" : "error";
+  const currentCount = RADAR_MARKETS.filter(function (market) {
+    return isRadarSnapshot(state.radarMarkets[market], market) && radarEffectiveLoadState(state.radarMarkets[market]) === "fresh";
+  }).length;
+  state.radarStatus = currentCount === RADAR_MARKETS.length ? "success" : currentCount ? "partial" : state.radarRows.length ? "stale" : "error";
   state.radarError = failures.join("；");
   if (freshCount) saveRadarCache();
   render();
@@ -1956,6 +1986,46 @@ function radarRowsBeforeFilters() {
   return state.radarRows.filter(function (item) { return !radarCandidateIsOwned(item, owned); });
 }
 
+function compareRadarTopCandidates(left, right) {
+  const freshness = (radarEffectiveLoadState(left) === "fresh" ? 0 : 1) - (radarEffectiveLoadState(right) === "fresh" ? 0 : 1);
+  if (freshness) return freshness;
+  const leftScore = optionalNumber(left.score), rightScore = optionalNumber(right.score);
+  if (Number.isFinite(leftScore) !== Number.isFinite(rightScore)) return Number.isFinite(leftScore) ? -1 : 1;
+  if (Number.isFinite(leftScore) && leftScore !== rightScore) return rightScore - leftScore;
+  const leftAmount = optionalNumber(left.metrics && left.metrics.amount), rightAmount = optionalNumber(right.metrics && right.metrics.amount);
+  if (Number.isFinite(leftAmount) !== Number.isFinite(rightAmount)) return Number.isFinite(leftAmount) ? -1 : 1;
+  if (Number.isFinite(leftAmount) && leftAmount !== rightAmount) return rightAmount - leftAmount;
+  const leftCap = optionalNumber(left.metrics && left.metrics.marketCap), rightCap = optionalNumber(right.metrics && right.metrics.marketCap);
+  if (Number.isFinite(leftCap) !== Number.isFinite(rightCap)) return Number.isFinite(leftCap) ? -1 : 1;
+  if (Number.isFinite(leftCap) && leftCap !== rightCap) return rightCap - leftCap;
+  return String(left.code || left.id || "").localeCompare(String(right.code || right.id || ""));
+}
+
+function radarTopThreeByMarket(market) {
+  return radarRowsBeforeFilters().filter(function (item) { return item.market === market; }).slice().sort(compareRadarTopCandidates).slice(0, 3);
+}
+
+function radarLatestUpdate() {
+  const entries = RADAR_MARKETS.map(function (market) {
+    const snapshot = state.radarMarkets[market];
+    const timestamp = Date.parse(snapshot && snapshot.fetchedAt || "");
+    return Number.isFinite(timestamp) ? { market: market, snapshot: snapshot, timestamp: timestamp } : null;
+  }).filter(Boolean);
+  const todayEntries = entries.filter(function (entry) {
+    return radarEffectiveLoadState(entry.snapshot) === "fresh" && radarSnapshotIsDailyCurrent(entry.snapshot);
+  });
+  const visibleEntries = todayEntries.length ? todayEntries : entries;
+  const latest = visibleEntries.length ? visibleEntries.reduce(function (best, entry) {
+    return !best || entry.timestamp > best.timestamp ? entry : best;
+  }, null) : null;
+  return {
+    currentCount: todayEntries.length,
+    complete: todayEntries.length === RADAR_MARKETS.length,
+    iso: latest ? new Date(latest.timestamp).toISOString() : "",
+    value: latest ? latest.snapshot.fetchedAt : ""
+  };
+}
+
 function radarBandMatches(item) {
   const score = optionalNumber(item.score);
   if (state.radarBand === "priority") return Number.isFinite(score) && score >= 70;
@@ -2136,7 +2206,22 @@ function radarCompactMoney(value, currency) {
 function radarTimestamp(value) {
   const date = new Date(value || "");
   if (!Number.isFinite(date.getTime())) return "时间待更新";
-  return formatUpdatedAt(date);
+  try {
+    const parts = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+    }).formatToParts(date);
+    const values = {};
+    parts.forEach(function (part) { values[part.type] = part.value; });
+    return values.year + "年" + values.month + "月" + values.day + "日 " + values.hour + ":" + values.minute;
+  } catch (_) {
+    return formatUpdatedAt(date);
+  }
+}
+
+function radarTimeMarkup(value, fallback) {
+  const date = new Date(value || "");
+  if (!Number.isFinite(date.getTime())) return "<span>" + escapeHtml(fallback || "等待今日扫描") + "</span>";
+  return "<time datetime=\"" + escapeHtml(date.toISOString()) + "\">" + escapeHtml(radarTimestamp(value)) + "</time>";
 }
 
 function radarQuoteTimestamp(item) {
@@ -2217,12 +2302,38 @@ function radarMarketStat(market) {
   const pool = usable ? optionalNumber(snapshot.poolSize) : NaN;
   const priority = usable ? snapshot.candidates.filter(function (item) { return optionalNumber(item.score) >= 70; }).length : 0;
   const loadState = radarEffectiveLoadState(snapshot);
-  const expired = Boolean(snapshot && snapshot.loadState === "fresh" && loadState === "cached");
-  const stateText = loadState === "fresh" ? "本次已更新" : loadState === "cached" ? expired ? "缓存 · 超过6小时" : snapshot && snapshot.error ? "缓存 · 更新失败" : "上次缓存" : loadState === "error" ? "本次失败" : "等待扫描";
+  const priorDay = Boolean(snapshot && !radarSnapshotIsDailyCurrent(snapshot));
+  const stateText = loadState === "fresh" ? "今日已更新" : loadState === "cached" ? priorDay ? "缓存 · 非今日" : snapshot && snapshot.error ? "缓存 · 更新失败" : "上次缓存" : loadState === "error" ? "今日更新失败" : "等待扫描";
   const cardClass = loadState === "error" || !snapshot ? "is-error" : loadState === "cached" ? "is-partial" : "";
   const rawSize = usable ? optionalNumber(snapshot.rawSize) : NaN;
-  const note = loadState === "error" ? snapshot.error || "本市场扫描失败" : loadState === "cached" ? "显示 " + radarTimestamp(snapshot.fetchedAt) + " 的缓存；" + (expired ? "已超过6小时，页面会自动刷新。" : snapshot.error ? "本次更新失败。" : "正在获取本次结果。") : "按本市场自身分布评分；候选数量不足200只时不会发布本期排名。";
-  return "<article class=\"radar-market-stat " + cardClass + "\"><header><span>" + marketLabel(market) + "</span><small>" + escapeHtml(stateText) + "</small></header><dl><div><dt>有效候选</dt><dd>" + (Number.isFinite(pool) ? pool : "--") + "<small>只</small></dd></div><div><dt>优先研究</dt><dd>" + (usable ? priority : "--") + "<small>只</small></dd></div><div><dt>原始扫描</dt><dd>" + (Number.isFinite(rawSize) ? rawSize : "--") + "<small>只</small></dd></div></dl><p>" + escapeHtml(note) + "</p><progress max=\"500\" value=\"" + (Number.isFinite(rawSize) ? Math.min(500, rawSize) : 0) + "\">" + (Number.isFinite(rawSize) ? rawSize : 0) + "/500</progress></article>";
+  const note = loadState === "error" ? snapshot.error || "本市场扫描失败" : loadState === "cached" ? priorDay ? "当前是非今日缓存，进入页面后会自动尝试更新。" : snapshot && snapshot.error ? "今日重新扫描失败，页面会稍后重试。" : "正在获取今日结果。" : "按本市场自身分布评分；候选数量不足200只时不会发布本期排名。";
+  const time = snapshot && snapshot.fetchedAt ? "<span class=\"radar-market-time\">机会扫描 " + radarTimeMarkup(snapshot.fetchedAt) + " · 北京时间</span>" : "<span class=\"radar-market-time\">机会扫描时间待更新</span>";
+  return "<article class=\"radar-market-stat " + cardClass + "\"><header><span>" + marketLabel(market) + "</span><small>" + escapeHtml(stateText) + "</small></header><dl><div><dt>有效候选</dt><dd>" + (Number.isFinite(pool) ? pool : "--") + "<small>只</small></dd></div><div><dt>优先研究</dt><dd>" + (usable ? priority : "--") + "<small>只</small></dd></div><div><dt>原始扫描</dt><dd>" + (Number.isFinite(rawSize) ? rawSize : "--") + "<small>只</small></dd></div></dl><p>" + time + "<small>" + escapeHtml(note) + "</small></p><progress max=\"500\" value=\"" + (Number.isFinite(rawSize) ? Math.min(500, rawSize) : 0) + "\">" + (Number.isFinite(rawSize) ? rawSize : 0) + "/500</progress></article>";
+}
+
+function radarTopThreeMarket(market) {
+  const snapshot = state.radarMarkets[market];
+  const loadState = radarEffectiveLoadState(snapshot);
+  const rows = radarTopThreeByMarket(market);
+  const stateText = loadState === "fresh" ? "今日榜单" : loadState === "cached" ? "缓存榜单" : loadState === "error" ? "更新失败" : "等待更新";
+  const cardClass = loadState === "fresh" ? "" : loadState === "cached" ? " is-cached" : " is-error";
+  const time = snapshot && snapshot.fetchedAt ? radarTimeMarkup(snapshot.fetchedAt) : "<span>时间待更新</span>";
+  const list = rows.length ? "<ol class=\"radar-top3-list\">" + rows.map(function (item, index) {
+    const metrics = item.metrics || {};
+    const band = radarBandLabel(item);
+    const score = optionalNumber(item.score);
+    const reasons = Array.isArray(item.reasons) && item.reasons.length ? item.reasons.slice(0, 2) : ["当前没有足够的公开评分依据"];
+    const cached = radarEffectiveLoadState(item) !== "fresh";
+    return "<li class=\"radar-top3-item" + (cached ? " is-cached" : "") + "\"><span class=\"radar-top3-rank\" aria-label=\"第" + (index + 1) + "名\">" + (index + 1) + "</span><div class=\"radar-top3-security\"><strong>" + escapeHtml(item.name) + "</strong><span>" + escapeHtml(item.code) + " · 当前价 " + escapeHtml(nativeMoney(metrics.price, item.currency)) + "</span><small>行情 " + escapeHtml(radarQuoteShortTimestamp(item)) + (cached ? " · 缓存" : "") + "</small></div><div class=\"radar-top3-score\"><span class=\"radar-band " + band.key + "\">" + band.text + "</span><strong>" + (Number.isFinite(score) ? score.toFixed(1) : "--") + "</strong><small>研究分</small></div><div class=\"radar-top3-reasons\"><span>为什么入选</span><ul>" + reasons.map(function (reason) { return "<li>" + escapeHtml(reason) + "</li>"; }).join("") + "</ul></div></li>";
+  }).join("") + "</ol>" : "<div class=\"radar-top3-empty\"><strong>暂无可展示候选</strong><p>" + escapeHtml(snapshot && snapshot.error || (loadState === "error" ? "本市场今日更新失败，请稍后重试。" : "正在等待本市场完成今日扫描。")) + "</p></div>";
+  return "<article class=\"radar-top3-market" + cardClass + "\"><header><div>" + marketLabel(market) + "<h3>" + market + " Top 3</h3></div><div><strong>" + escapeHtml(stateText) + "</strong>" + time + "</div></header>" + list + "</article>";
+}
+
+function radarTopThreeSection() {
+  const update = radarLatestUpdate();
+  const title = update.complete ? "今日三地 Top 3" : "三地市场 Top 3";
+  const status = update.complete ? "三市场今日更新完成" : update.currentCount ? "今日已更新 " + update.currentCount + "/3" : update.value ? "等待今日更新 · 当前显示缓存" : "等待今日首次扫描";
+  return "<section class=\"card radar-top3-section\" aria-labelledby=\"radar-top3-title\"><header class=\"radar-top3-head\"><div><span class=\"radar-eyebrow\">DAILY OPPORTUNITIES</span><h2 id=\"radar-top3-title\">" + title + "</h2><p>每个市场按同市场研究分独立排序，固定显性展示前三名；当前持仓不会进入榜单。</p></div><div class=\"radar-top3-update\"><span>" + escapeHtml(status) + "</span>" + radarTimeMarkup(update.value, "时间待更新") + "<small>北京时间 · 每日首次进入自动更新</small></div></header><div class=\"radar-top3-grid\">" + RADAR_MARKETS.map(radarTopThreeMarket).join("") + "</div><footer>Top 3 代表“先研究谁”，原因来自趋势、流动性、短期波动和估值可比性的透明评分，不代表上涨概率、目标价或买入建议。行情时间可能早于机会扫描时间。</footer></section>";
 }
 
 function radarWatchAside() {
@@ -2245,10 +2356,12 @@ function radarPage() {
   const poolTotal = RADAR_MARKETS.reduce(function (total, market) { return total + (Number(state.radarMarkets[market] && state.radarMarkets[market].poolSize) || 0); }, 0);
   const priorityTotal = radarRowsBeforeFilters().filter(function (item) { return optionalNumber(item.score) >= 70; }).length;
   const freshMarketCount = RADAR_MARKETS.filter(function (market) { return radarEffectiveLoadState(state.radarMarkets[market]) === "fresh"; }).length;
+  const update = radarLatestUpdate();
   let displayStatus = state.radarStatus;
   if (displayStatus !== "loading" && poolTotal && freshMarketCount === 0) displayStatus = state.radarError ? "stale" : "cached";
   else if (displayStatus !== "loading" && poolTotal && freshMarketCount < RADAR_MARKETS.length) displayStatus = "partial";
-  const scanStatus = displayStatus === "loading" ? "正在扫描三地市场，保留上次结果供查看…" : displayStatus === "error" ? "三地市场本次扫描均失败。" + (state.radarError || "请稍后重试。") : displayStatus === "stale" ? "三地市场本次扫描均失败，当前仅展示已明确标记的缓存。" + (state.radarError || "") : displayStatus === "partial" ? "部分市场未完成更新；缓存候选已标记并排在本次结果之后。" + (state.radarError ? " " + state.radarError : "") : displayStatus === "cached" ? "正在展示超过6小时的上次扫描结果，页面会自动尝试刷新。" : "三地市场扫描完成。";
+  const scanStatus = displayStatus === "loading" ? "正在更新三地市场，保留上次结果供查看…" : displayStatus === "error" ? "三地市场今日扫描均失败。" + (state.radarError || "请稍后重试。") : displayStatus === "stale" ? "三地市场今日更新均失败，当前仅展示已明确标记的缓存。" + (state.radarError || "") : displayStatus === "partial" ? "今日部分市场未完成更新；缓存候选已标记，不会冒充今日结果。" + (state.radarError ? " " + state.radarError : "") : displayStatus === "cached" ? "正在展示非今日的上次扫描结果，页面会自动尝试今日更新。" : "三地市场今日扫描完成。";
+  const updateStatus = update.complete ? "三市场今日更新完成" : update.currentCount ? "今日已更新 " + update.currentCount + "/3" : update.value ? "等待今日更新" : "等待首次扫描";
   const marketOptions = ["全部"].concat(RADAR_MARKETS).map(function (market) {
     const count = market === "全部" ? poolTotal : Number(state.radarMarkets[market] && state.radarMarkets[market].poolSize) || 0;
     return "<button type=\"button\" data-radar-market=\"" + market + "\" aria-pressed=\"" + (state.watchMarket === market) + "\">" + market + " <small>" + count + "</small></button>";
@@ -2266,7 +2379,7 @@ function radarPage() {
     : "10日价位已计算 " + readyLevels + "/" + pageRows.length + (unavailableLevels ? " · " + unavailableLevels + "只数据不足" : "");
   const results = pageRows.length ? "<p class=\"radar-level-progress\" role=\"status\" aria-live=\"polite\">" + escapeHtml(levelProgress) + "</p><ol class=\"radar-candidate-list\">" + pageRows.map(function (item, index) { return radarCandidateRow(item, start + index + 1); }).join("") + "</ol>" : "<div class=\"radar-empty\"><strong>没有符合当前条件的候选</strong><p>可以切换到“全部分数”或清除搜索条件。</p><button type=\"button\" class=\"outline-button\" data-radar-clear>清除筛选</button></div>";
   const pagination = "<nav class=\"radar-pagination\" aria-label=\"候选结果分页\"><button type=\"button\" data-radar-page=\"" + (state.radarPage - 1) + "\"" + (state.radarPage <= 1 ? " disabled" : "") + ">上一页</button><span>第 " + state.radarPage + " / " + totalPages + " 页</span><button type=\"button\" data-radar-page=\"" + (state.radarPage + 1) + "\"" + (state.radarPage >= totalPages ? " disabled" : "") + ">下一页</button></nav>";
-  return "<main class=\"page-shell radar-page\"><header class=\"radar-page-heading\"><div><h1 class=\"page-title\">机会雷达</h1><p class=\"page-subtitle\">从三地高流动性股票中筛出值得优先研究的候选；研究分只用于排序，不代表未来上涨概率。</p></div><small>有效基础池 <b>" + (poolTotal || "--") + " 只</b><br/>优先研究 " + priorityTotal + " 只</small></header><section class=\"radar-scan-grid\" aria-busy=\"" + (state.radarStatus === "loading") + "\">" + RADAR_MARKETS.map(radarMarketStat).join("") + "</section><p class=\"radar-scan-status " + (displayStatus === "error" || displayStatus === "stale" ? "error" : "") + "\" role=\"status\" aria-live=\"polite\">" + escapeHtml(scanStatus) + "</p>" + method + "<section class=\"card radar-toolbar\" role=\"search\" aria-label=\"筛选机会候选\"><label class=\"radar-search\"><span>搜索股票</span><input type=\"search\" value=\"" + escapeHtml(state.radarQuery) + "\" placeholder=\"输入名称或代码\" data-radar-search></label><fieldset class=\"radar-filter-group\"><legend>市场</legend><div class=\"radar-filter-options\">" + marketOptions + "</div></fieldset><fieldset class=\"radar-filter-group\"><legend>研究级别</legend><div class=\"radar-filter-options\">" + bandOptions + "</div></fieldset><label class=\"radar-sort\"><span>排序</span><select data-radar-sort><option value=\"score\"" + (state.radarSort === "score" ? " selected" : "") + ">研究优先级</option><option value=\"trend\"" + (state.radarSort === "trend" ? " selected" : "") + ">60日趋势</option><option value=\"liquidity\"" + (state.radarSort === "liquidity" ? " selected" : "") + ">成交活跃度</option><option value=\"risk\"" + (state.radarSort === "risk" ? " selected" : "") + ">短期波动</option><option value=\"change\"" + (state.radarSort === "change" ? " selected" : "") + ">最近交易日涨跌</option></select></label><p class=\"radar-result-status\" role=\"status\">筛选后 " + allRows.length + " 只，当前显示 " + (pageRows.length ? start + 1 : 0) + "–" + (start + pageRows.length) + "。已排除当前持仓中的同代码或同名证券。</p></section><div class=\"radar-content-grid\"><section class=\"card radar-results-card\" aria-labelledby=\"radar-results-title\"><header class=\"radar-results-head\"><div><h2 id=\"radar-results-title\" tabindex=\"-1\">候选股票</h2><p>先看评分依据和反方风险，再决定是否加入观察。</p></div><span>每页 " + RADAR_PAGE_SIZE + " 只</span></header>" + (state.radarStatus === "loading" && !state.radarRows.length ? "<div class=\"radar-loading\"><strong>正在建立600+股票候选池…</strong><p>A股、港股、美股分别扫描，通常需要几秒钟。</p></div>" : results + pagination) + "</section>" + radarWatchAside() + "</div></main>";
+  return "<main class=\"page-shell radar-page\"><header class=\"radar-page-heading\"><div><h1 class=\"page-title\">机会雷达</h1><p class=\"page-subtitle\">从三地高流动性股票中筛出值得优先研究的候选；研究分只用于排序，不代表未来上涨概率。</p></div><div class=\"radar-update-summary\" role=\"status\" aria-live=\"polite\"><span>机会更新时间</span>" + radarTimeMarkup(update.value, "时间待更新") + "<small>" + escapeHtml(updateStatus) + " · 北京时间<br>每日首次进入自动更新 · 有效基础池 <b>" + (poolTotal || "--") + " 只</b> · 优先研究 " + priorityTotal + " 只</small></div></header>" + radarTopThreeSection() + "<section class=\"radar-scan-grid\" aria-busy=\"" + (state.radarStatus === "loading") + "\">" + RADAR_MARKETS.map(radarMarketStat).join("") + "</section><p class=\"radar-scan-status " + (displayStatus === "error" || displayStatus === "stale" ? "error" : "") + "\" role=\"status\" aria-live=\"polite\">" + escapeHtml(scanStatus) + "</p>" + method + "<section class=\"card radar-toolbar\" role=\"search\" aria-label=\"筛选机会候选\"><label class=\"radar-search\"><span>搜索股票</span><input type=\"search\" value=\"" + escapeHtml(state.radarQuery) + "\" placeholder=\"输入名称或代码\" data-radar-search></label><fieldset class=\"radar-filter-group\"><legend>市场</legend><div class=\"radar-filter-options\">" + marketOptions + "</div></fieldset><fieldset class=\"radar-filter-group\"><legend>研究级别</legend><div class=\"radar-filter-options\">" + bandOptions + "</div></fieldset><label class=\"radar-sort\"><span>排序</span><select data-radar-sort><option value=\"score\"" + (state.radarSort === "score" ? " selected" : "") + ">研究优先级</option><option value=\"trend\"" + (state.radarSort === "trend" ? " selected" : "") + ">60日趋势</option><option value=\"liquidity\"" + (state.radarSort === "liquidity" ? " selected" : "") + ">成交活跃度</option><option value=\"risk\"" + (state.radarSort === "risk" ? " selected" : "") + ">短期波动</option><option value=\"change\"" + (state.radarSort === "change" ? " selected" : "") + ">最近交易日涨跌</option></select></label><p class=\"radar-result-status\" role=\"status\">筛选后 " + allRows.length + " 只，当前显示 " + (pageRows.length ? start + 1 : 0) + "–" + (start + pageRows.length) + "。已排除当前持仓中的同代码或同名证券。</p></section><div class=\"radar-content-grid\"><section class=\"card radar-results-card\" aria-labelledby=\"radar-results-title\"><header class=\"radar-results-head\"><div><h2 id=\"radar-results-title\" tabindex=\"-1\">候选股票</h2><p>先看评分依据和反方风险，再决定是否加入观察。</p></div><span>每页 " + RADAR_PAGE_SIZE + " 只</span></header>" + (state.radarStatus === "loading" && !state.radarRows.length ? "<div class=\"radar-loading\"><strong>正在建立600+股票候选池…</strong><p>A股、港股、美股分别扫描，通常需要几秒钟。</p></div>" : results + pagination) + "</section>" + radarWatchAside() + "</div></main>";
 }
 
 function soldDateValue(row) {
