@@ -1,48 +1,646 @@
 {
   "version": 2,
   "guide": "market 只填 A / HK / US；没有 sell 表示持有中，有 sell 表示已卖出；币种、状态和行情代码由系统生成。",
-  "newTradeFeeUsd": { "buy": 20, "sell": 20 },
+  "newTradeFeeUsd": {
+    "buy": 20,
+    "sell": 20
+  },
   "lots": [
-    { "market": "HK", "code": "07709", "name": "2倍做多海力士", "buy": { "price": 120, "qty": 1400 } },
-    { "market": "HK", "code": "07709", "name": "2倍做多海力士", "buy": { "price": 100, "qty": 1400 }, "sell": { "price": 34, "qty": 1400, "date": "2026-08-01" } },
-    { "market": "HK", "code": "02208", "name": "金风科技", "buy": { "price": 17.5, "qty": 1600 } },
-    { "market": "HK", "code": "01810", "name": "小米集团-W", "buy": { "price": 43.5, "qty": 1400 } },
-    { "market": "HK", "code": "01772", "name": "赣锋锂业", "buy": { "price": 68, "qty": 200 } },
-    { "market": "HK", "code": "01024", "name": "快手-W", "buy": { "price": 46.5, "qty": 300 } },
-    { "market": "HK", "code": "01024", "name": "快手-W", "buy": { "price": 260, "qty": 900 }, "sell": { "price": 55.7, "qty": 900, "date": "2025-02-25" } },
-    { "market": "HK", "code": "00981", "name": "中芯国际", "buy": { "price": 79, "qty": 500 } },
-    { "market": "HK", "code": "00763", "name": "中兴通讯", "buy": { "price": 31, "qty": 400 } },
-    { "market": "HK", "code": "03308", "name": "中际旭创", "buy": { "price": 990, "qty": 50 }, "sell": { "price": 880, "qty": 50, "date": "2026-07-30" } },
-    { "market": "US", "code": "TSLL", "name": "2倍做多TSLA", "buy": { "price": 12, "qty": 300 } },
-    { "market": "US", "code": "OKLL", "name": "2倍做多OKLO", "buy": { "price": 9.6, "qty": 600 } },
-    { "market": "US", "code": "NOK", "name": "诺基亚", "buy": { "price": 15, "qty": 320 } },
-    { "market": "US", "code": "LITX", "name": "2倍做多LITE", "buy": { "price": 42, "qty": 10 } },
-    { "market": "US", "code": "LITX", "name": "2倍做多LITE", "buy": { "price": 42, "qty": 60 }, "sell": { "price": 35.5, "qty": 60, "date": "2026-06-17" } },
-    { "market": "US", "code": "GLW", "name": "康宁", "buy": { "price": 180, "qty": 30 } },
-    { "market": "US", "code": "GLW", "name": "康宁", "buy": { "price": 180, "qty": 17 }, "sell": { "price": 208, "qty": 17, "date": "2026-06-22" } },
-    { "market": "US", "code": "DRAM", "name": "DRAM", "buy": { "price": 57, "qty": 100 } },
-    { "market": "US", "code": "DRAM", "name": "DRAM", "buy": { "price": 57, "qty": 20 }, "sell": { "price": 70, "qty": 20, "date": "2026-06-17" } },
-    { "market": "US", "code": "ASTX", "name": "2倍做多ASTS", "buy": { "price": 41, "qty": 40 } },
-    { "market": "US", "code": "ASTX", "name": "2倍做多ASTS", "buy": { "price": 45, "qty": 20 }, "sell": { "price": 32, "qty": 20, "date": "2026-06-10" } },
-    { "market": "US", "code": "COHX", "name": "2倍做多COHR", "buy": { "price": 58, "qty": 10 }, "sell": { "price": 59, "qty": 10, "date": "2026-06-17" } },
-    { "market": "US", "code": "DKNX", "name": "2倍做多DKNG", "buy": { "price": 22, "qty": 10 }, "sell": { "price": 22, "qty": 10, "date": "2026-06-17" } },
-    { "market": "US", "code": "NEBX", "name": "2倍做多NBIS", "buy": { "price": 34, "qty": 70 }, "sell": { "price": 15, "qty": 70, "date": "2026-07-29" } },
-    { "market": "A", "code": "601179", "name": "中国西电", "buy": { "price": 16.5, "qty": 500 } },
-    { "market": "A", "code": "601138", "name": "工业富联", "buy": { "price": 64, "qty": 300 } },
-    { "market": "A", "code": "600869", "name": "远东股份", "buy": { "price": 23, "qty": 100 } },
-    { "market": "A", "code": "600667", "name": "太极实业", "buy": { "price": 25, "qty": 400 } },
-    { "market": "A", "code": "300820", "name": "英杰电气", "buy": { "price": 59.5, "qty": 100 } },
-    { "market": "A", "code": "300067", "name": "安诺其", "buy": { "price": 8.5, "qty": 800 } },
-    { "market": "A", "code": "300053", "name": "航宇微", "buy": { "price": 21.5, "qty": 100 } },
-    { "market": "A", "code": "300053", "name": "航宇微", "buy": { "price": 21.5, "qty": 800 }, "sell": { "price": 16.38, "qty": 800, "date": "2026-06-17" } },
-    { "market": "A", "code": "002639", "name": "雪人集团", "buy": { "price": 22.5, "qty": 100 } },
-    { "market": "A", "code": "002639", "name": "雪人集团", "buy": { "price": 22.5, "qty": 500 }, "sell": { "price": 14.2, "qty": 500, "date": "2026-06-17" } },
-    { "market": "A", "code": "002384", "name": "东山精密", "buy": { "price": 260, "qty": 200 } },
-    { "market": "A", "code": "002217", "name": "合力泰", "buy": { "price": 4, "qty": 100 } },
-    { "market": "A", "code": "002217", "name": "合力泰", "buy": { "price": 4, "qty": 2900 }, "sell": { "price": 2.5, "qty": 2900, "date": "2026-06-17" } },
-    { "market": "A", "code": "001896", "name": "豫能控股", "buy": { "price": 15.5, "qty": 200 } },
-    { "market": "A", "code": "000630", "name": "铜陵有色", "buy": { "price": 7.2, "qty": 3000 } },
-    { "market": "A", "code": "002463", "name": "沪电科技", "buy": { "price": 126.1, "qty": 100 } },
-    { "market": "A", "code": "000988", "name": "华工科技", "buy": { "price": 172, "qty": 100 }, "sell": { "price": 180, "qty": 100, "date": "2026-06-17" } }
+    {
+      "market": "HK",
+      "code": "07709",
+      "name": "2倍做多海力士",
+      "buy": {
+        "price": 120,
+        "qty": 1400
+      },
+      "id": "legacy-hk-07709-undated-1",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "HK",
+      "code": "07709",
+      "name": "2倍做多海力士",
+      "buy": {
+        "price": 100,
+        "qty": 1400
+      },
+      "id": "legacy-hk-07709-undated-2",
+      "sell": {
+        "price": 34,
+        "qty": 1400,
+        "date": "2026-08-01"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "HK",
+      "code": "02208",
+      "name": "金风科技",
+      "buy": {
+        "price": 17.5,
+        "qty": 1600
+      },
+      "id": "legacy-hk-02208-undated-3",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "HK",
+      "code": "01810",
+      "name": "小米集团-W",
+      "buy": {
+        "price": 43.5,
+        "qty": 1400
+      },
+      "id": "legacy-hk-01810-undated-4",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "HK",
+      "code": "01772",
+      "name": "赣锋锂业",
+      "buy": {
+        "price": 68,
+        "qty": 200
+      },
+      "id": "legacy-hk-01772-undated-5",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "HK",
+      "code": "01024",
+      "name": "快手-W",
+      "buy": {
+        "price": 46.5,
+        "qty": 300
+      },
+      "id": "legacy-hk-01024-undated-6",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "HK",
+      "code": "01024",
+      "name": "快手-W",
+      "buy": {
+        "price": 260,
+        "qty": 900
+      },
+      "id": "legacy-hk-01024-undated-7",
+      "sell": {
+        "price": 55.7,
+        "qty": 900,
+        "date": "2025-02-25"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "HK",
+      "code": "00981",
+      "name": "中芯国际",
+      "buy": {
+        "price": 79,
+        "qty": 500
+      },
+      "id": "legacy-hk-00981-undated-8",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "HK",
+      "code": "00763",
+      "name": "中兴通讯",
+      "buy": {
+        "price": 31,
+        "qty": 400
+      },
+      "id": "legacy-hk-00763-undated-9",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "HK",
+      "code": "03308",
+      "name": "中际旭创",
+      "buy": {
+        "price": 990,
+        "qty": 50
+      },
+      "id": "legacy-hk-03308-undated-10",
+      "sell": {
+        "price": 880,
+        "qty": 50,
+        "date": "2026-07-30"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "TSLL",
+      "name": "2倍做多TSLA",
+      "buy": {
+        "price": 12,
+        "qty": 300
+      },
+      "id": "legacy-us-tsll-undated-11",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "OKLL",
+      "name": "2倍做多OKLO",
+      "buy": {
+        "price": 9.6,
+        "qty": 600
+      },
+      "id": "legacy-us-okll-undated-12",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "NOK",
+      "name": "诺基亚",
+      "buy": {
+        "price": 15,
+        "qty": 320
+      },
+      "id": "legacy-us-nok-undated-13",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "LITX",
+      "name": "2倍做多LITE",
+      "buy": {
+        "price": 42,
+        "qty": 10
+      },
+      "id": "legacy-us-litx-undated-14",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "LITX",
+      "name": "2倍做多LITE",
+      "buy": {
+        "price": 42,
+        "qty": 60
+      },
+      "id": "legacy-us-litx-undated-15",
+      "sell": {
+        "price": 35.5,
+        "qty": 60,
+        "date": "2026-06-17"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "GLW",
+      "name": "康宁",
+      "buy": {
+        "price": 180,
+        "qty": 30
+      },
+      "id": "legacy-us-glw-undated-16",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "GLW",
+      "name": "康宁",
+      "buy": {
+        "price": 180,
+        "qty": 17
+      },
+      "id": "legacy-us-glw-undated-17",
+      "sell": {
+        "price": 208,
+        "qty": 17,
+        "date": "2026-06-22"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "DRAM",
+      "name": "DRAM",
+      "buy": {
+        "price": 57,
+        "qty": 100
+      },
+      "id": "legacy-us-dram-undated-18",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "DRAM",
+      "name": "DRAM",
+      "buy": {
+        "price": 57,
+        "qty": 20
+      },
+      "id": "legacy-us-dram-undated-19",
+      "sell": {
+        "price": 70,
+        "qty": 20,
+        "date": "2026-06-17"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "ASTX",
+      "name": "2倍做多ASTS",
+      "buy": {
+        "price": 41,
+        "qty": 40
+      },
+      "id": "legacy-us-astx-undated-20",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "ASTX",
+      "name": "2倍做多ASTS",
+      "buy": {
+        "price": 45,
+        "qty": 20
+      },
+      "id": "legacy-us-astx-undated-21",
+      "sell": {
+        "price": 32,
+        "qty": 20,
+        "date": "2026-06-10"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "COHX",
+      "name": "2倍做多COHR",
+      "buy": {
+        "price": 58,
+        "qty": 10
+      },
+      "id": "legacy-us-cohx-undated-22",
+      "sell": {
+        "price": 59,
+        "qty": 10,
+        "date": "2026-06-17"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "DKNX",
+      "name": "2倍做多DKNG",
+      "buy": {
+        "price": 22,
+        "qty": 10
+      },
+      "id": "legacy-us-dknx-undated-23",
+      "sell": {
+        "price": 22,
+        "qty": 10,
+        "date": "2026-06-17"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "NEBX",
+      "name": "2倍做多NBIS",
+      "buy": {
+        "price": 34,
+        "qty": 70
+      },
+      "id": "legacy-us-nebx-undated-24",
+      "sell": {
+        "price": 15,
+        "qty": 70,
+        "date": "2026-07-29"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "601179",
+      "name": "中国西电",
+      "buy": {
+        "price": 16.5,
+        "qty": 500
+      },
+      "id": "legacy-a-601179-undated-25",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "601138",
+      "name": "工业富联",
+      "buy": {
+        "price": 64,
+        "qty": 300
+      },
+      "id": "legacy-a-601138-undated-26",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "600869",
+      "name": "远东股份",
+      "buy": {
+        "price": 23,
+        "qty": 100
+      },
+      "id": "legacy-a-600869-undated-27",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "600667",
+      "name": "太极实业",
+      "buy": {
+        "price": 25,
+        "qty": 400
+      },
+      "id": "legacy-a-600667-undated-28",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "300820",
+      "name": "英杰电气",
+      "buy": {
+        "price": 59.5,
+        "qty": 100
+      },
+      "id": "legacy-a-300820-undated-29",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "300067",
+      "name": "安诺其",
+      "buy": {
+        "price": 8.5,
+        "qty": 800
+      },
+      "id": "legacy-a-300067-undated-30",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "300053",
+      "name": "航宇微",
+      "buy": {
+        "price": 21.5,
+        "qty": 100
+      },
+      "id": "legacy-a-300053-undated-31",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "300053",
+      "name": "航宇微",
+      "buy": {
+        "price": 21.5,
+        "qty": 800
+      },
+      "id": "legacy-a-300053-undated-32",
+      "sell": {
+        "price": 16.38,
+        "qty": 800,
+        "date": "2026-06-17"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "002639",
+      "name": "雪人集团",
+      "buy": {
+        "price": 22.5,
+        "qty": 100
+      },
+      "id": "legacy-a-002639-undated-33",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "002639",
+      "name": "雪人集团",
+      "buy": {
+        "price": 22.5,
+        "qty": 500
+      },
+      "id": "legacy-a-002639-undated-34",
+      "sell": {
+        "price": 14.2,
+        "qty": 500,
+        "date": "2026-06-17"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "002384",
+      "name": "东山精密",
+      "buy": {
+        "price": 260,
+        "qty": 200
+      },
+      "id": "legacy-a-002384-undated-35",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "002217",
+      "name": "合力泰",
+      "buy": {
+        "price": 4,
+        "qty": 100
+      },
+      "id": "legacy-a-002217-undated-36",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "002217",
+      "name": "合力泰",
+      "buy": {
+        "price": 4,
+        "qty": 2900
+      },
+      "id": "legacy-a-002217-undated-37",
+      "sell": {
+        "price": 2.5,
+        "qty": 2900,
+        "date": "2026-06-17"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "001896",
+      "name": "豫能控股",
+      "buy": {
+        "price": 15.5,
+        "qty": 200
+      },
+      "id": "legacy-a-001896-undated-38",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "000630",
+      "name": "铜陵有色",
+      "buy": {
+        "price": 7.2,
+        "qty": 3000
+      },
+      "id": "legacy-a-000630-undated-39",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "002463",
+      "name": "沪电科技",
+      "buy": {
+        "price": 126.1,
+        "qty": 100
+      },
+      "id": "legacy-a-002463-undated-40",
+      "fees": {
+        "buy": 20
+      }
+    },
+    {
+      "market": "A",
+      "code": "000988",
+      "name": "华工科技",
+      "buy": {
+        "price": 172,
+        "qty": 100
+      },
+      "id": "legacy-a-000988-undated-41",
+      "sell": {
+        "price": 180,
+        "qty": 100,
+        "date": "2026-06-17"
+      },
+      "fees": {
+        "buy": 20,
+        "sell": 20
+      }
+    },
+    {
+      "market": "US",
+      "code": "EYPT",
+      "name": "EyePoint Pharmaceuticals Inc.",
+      "buy": {
+        "price": 4.3,
+        "qty": 100,
+        "date": "2026-08-17",
+        "purchaseCostCny": 3024.3968008602724,
+        "feeCny": 134.4176355937899,
+        "fxAsOf": "2026-08-28",
+        "fxSource": "Frankfurter",
+        "operationId": "op_mtfpo1u6_9c5fef384a4645"
+      },
+      "id": "lot-op_mtfpo1u6_9c5fef384a4645",
+      "fees": {
+        "buy": 20
+      }
+    }
   ]
 }
