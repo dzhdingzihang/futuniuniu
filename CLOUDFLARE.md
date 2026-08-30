@@ -113,13 +113,17 @@ npx wrangler kv key get "radar:latest:v1" --binding RADAR_SNAPSHOTS --remote --c
 
 ## 5. 把同一 KV 绑定给 Pages
 
-在 Cloudflare Dashboard 中打开 Pages 项目的 Settings / Functions / Bindings（界面名称可能随 Dashboard 版本调整），新增 KV namespace binding：
+仓库根目录的 `wrangler.toml` 是 Pages Functions 生产配置的版本化来源；其中
+`env.production.kv_namespaces` 已把 `RADAR_SNAPSHOTS` 指向 Cron Worker 使用的同一 namespace。
+推送生产分支并创建新 Pages deployment 后，这个绑定会与代码一起生效。
+
+如需在 Dashboard 复核，打开 Pages 项目的 Settings / Functions / Bindings（界面名称可能随 Dashboard 版本调整），应看到：
 
 - Variable name: `RADAR_SNAPSHOTS`
 - KV namespace: 选择第 4 步创建、已经由 Cron Worker 写入的**同一个** namespace
-- Environment: 先配置 Production；Preview 如需测试，建议使用独立的测试 KV，不要绑定正式 GitHub Token
+- Environment: Production；Preview 不绑定正式 GitHub Token
 
-绑定变更通常需要一次新 Pages deployment 才能在 Function 中生效。
+不要同时在 Dashboard 和 `wrangler.toml` 维护两套不同的生产绑定；启用 Wrangler 配置后，以仓库文件为准。
 
 ## 6. 零停机上线顺序
 

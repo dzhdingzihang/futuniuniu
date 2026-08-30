@@ -1,0 +1,11 @@
+# Downloaded from the existing Git-integrated Pages project and checked into
+# source control so the production Functions binding is deployed atomically.
+name = "futuniuniu"
+pages_build_output_dir = "/"
+compatibility_date = "2026-08-15"
+
+[env.production]
+
+[[env.production.kv_namespaces]]
+binding = "RADAR_SNAPSHOTS"
+id = "ef5aab4de2784bf59b61c4d0f59d6861"
