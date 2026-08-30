@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/wrangler.json",
+  "name": "futuniuniu-radar-scheduler",
+  "main": "index.js",
+  "compatibility_date": "2026-08-30",
+  "triggers": {
+    "crons": ["10 0 * * *"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "RADAR_SNAPSHOTS"
+    }
+  ]
+}

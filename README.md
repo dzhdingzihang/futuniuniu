@@ -4,7 +4,7 @@
 
 - 线上地址：[https://alixjd.com](https://alixjd.com)
 - 代码仓库：[dzhdingzihang/futuniuniu](https://github.com/dzhdingzihang/futuniuniu)
-- 当前架构：Cloudflare Pages + Pages Functions
+- 当前架构：Cloudflare Pages + Pages Functions + 独立 Cron Worker + Cloudflare KV
 
 > 公开行情可能延迟或缺失。页面中的趋势、研究分和价格区间只用于研究排序与风险提示，不构成投资建议、买卖建议或收益承诺。
 
@@ -24,7 +24,7 @@
 3. 在“总览”确认账户和市场级盈亏。
 4. 在“持仓明细”展开单只股票，查看当前仓位与未来 10 个交易日技术展望。
 5. 在“机会雷达”筛选候选、查看评分依据和风险，再决定是否加入观察。
-6. 使用“修改持仓”录入新持有或卖出批次；只有 GitHub 写入成功后，页面才确认保存。
+6. 使用顶部“记录交易”每次录入一笔买入或卖出流水；只有 GitHub 返回权威文档后，页面才确认保存。
 
 ## 总览
 
@@ -150,19 +150,24 @@
 
 ### 每日更新与三地 Top 3
 
-雷达按**北京时间（Asia/Shanghai）自然日**判断是否需要更新：
+机会雷达的默认数据由独立 Cloudflare Cron Worker 在**每日北京时间 08:10**扫描，不依赖用户是否打开网站。Worker 把三个市场的统一快照写入 Cloudflare KV：
 
-- 每个新自然日第一次进入“机会雷达”时，只更新尚无今日结果的市场；
-- 同一天再次进入会复用当天成功结果，避免重复扫描；
-- 点击页面顶部“刷新”会强制重新扫描三个市场；
-- 单个市场更新失败时保留旧结果并明确标记为缓存，不会冒充今日榜单；
-- 这是访问页面触发的每日更新，网站无人访问时不会在后台自行扫描。
+```text
+KV 绑定：RADAR_SNAPSHOTS
+KV 键：radar:latest:v1
+快照协议：radar-snapshot-v2
+Cron：10 0 * * *（UTC，对应北京时间 08:10）
+```
 
-页面顶部同时展示最近机会扫描时间和每个市场各自的扫描时间。三市场均成功时，“今日更新完成”时间取三地 `fetchedAt` 中最后一个时间；`quoteUpdatedAt` 是行情提供方的行情时间，可能因周末、休市或交易时段而早于机会扫描时间。
+- Pages 中的 `GET /api/radar` 只读取这份统一快照，快速返回三个市场的同一批次状态。
+- 页面顶部“刷新”保留为手动应急入口，依次请求 `GET /api/radar?market=...` 对三个市场实时重扫。
+- 定时扫描中某个市场失败时，该市场继承上一份有效结果并标记 `stale`；其他成功市场正常发布。
+- 三个市场全部失败时不覆盖 KV，避免把一份完全不可用的结果发布给用户。
+- 快照中的 `publishedAt` / `attemptedAt` 描述发布与尝试时间；每个市场仍保留自己的 `fetchedAt` 和 `quoteUpdatedAt`。休市日或交易时段外，行情时间可能早于扫描时间。
 
 每个市场的 Top 3 独立从完整候选池中选出，不受下方搜索、市场筛选、研究级别、分页或排序控件影响。排序顺序是：今日结果优先、研究分降序、成交额降序、总市值降序、代码稳定排序。当前持仓仍按行情代码或标准化名称排除。
 
-Top 3 展示股票名称、代码、当前价格、行情时间、研究分、研究级别和最多两条入选原因。原因直接来自透明评分结果，用于说明“为什么先研究它”，不是新闻结论、上涨概率、目标价或买入建议。
+Top 3 展示股票名称、代码、当前价格、行情时间、研究分、研究级别和最多两条入选原因。Top 3 与当前列表可见项一样会懒加载历史日线，并展示当前价、10 日参考上沿和风控止损参考。原因直接来自透明评分结果，用于说明“为什么先研究它”，不是新闻结论、上涨概率、目标价或买入建议。
 
 ### 研究优先级评分
 
@@ -187,12 +192,12 @@ Top 3 展示股票名称、代码、当前价格、行情时间、研究分、�
 
 ### 当前价、10 日参考上沿和风控止损参考
 
-当前页只显示 10 只候选。系统仅为当前可见股票懒加载 90 根日线，每批最多 5 只，避免一次为 720 只拉取历史数据。
+当前页只显示 10 只候选。系统为当前可见股票与三地 Top 3 的并集懒加载 90 根日线，每批最多 5 只，避免一次为 720 只拉取历史数据。
 
 - 成功历史在当前页面会话缓存 30 分钟；
 - 错误结果缓存 5 分钟，避免重复轰击上游；
 - 最多保留 60 只股票的历史缓存；
-- 雷达快照在同一北京时间自然日内视为今日结果；跨日后首次进入会自动更新，失败时会明确标记缓存。
+- 页面优先显示 KV 中最近一份可用快照；市场继承的旧结果会明确标记 `stale`，不会冒充刚刚扫描的数据。
 
 价位模型至少需要 61 根完整 OHLC，并拒绝以下异常：
 
@@ -256,20 +261,27 @@ band = max(rawBand, -ln(0.97))
 - **收益率**：`已实现盈亏 ÷ 买入成本`。
 - **胜率**：当前筛选结果中，盈利卖出批次数占全部卖出批次数的比例。
 
-## 修改持仓与 holdings.json
+## 记录交易与 holdings.json
 
-顶部“修改持仓”采用简化表单：
+顶部“记录交易”不再要求编辑整份 JSON，每次只录入一笔不可分割的交易流水：
 
-- 选择 A 股、港股或美股；
-- 输入代码，自动识别名称、币种和行情代码；
-- 选择“持有中”或“已卖出”；
-- 输入买入价格和数量；
-- 已卖出时再输入卖出价格、数量和日期；
-- 新交易默认每次买入、每次卖出各计 `US$20` 手续费。
+- 选择“买入 / 加仓”或“卖出 / 减仓”；
+- 选择 A 股、港股或美股，输入代码后自动识别名称、币种和行情代码；
+- 填写成交日期、成交价格和数量；
+- 买入会追加一个新 lot，不会覆盖同一证券之前的买入批次；
+- 卖出只能选择已有持仓，服务器按 `buy.date` 从早到晚使用 FIFO（先进先出）跨 lot 扣减；
+- 每次买入固定计 `US$20` 手续费，每次卖出也只计一次 `US$20`。一笔卖出跨多个 lot 时，卖出手续费按分配数量比例分摊，不会对每个拆分批次重复收取。
 
-保存流程是 GitHub 确认优先：页面先调用 Cloudflare Function 写入 GitHub Contents API；GitHub 返回成功后才更新本地状态并关闭表单。失败时输入会保留，不能显示假成功。
+### 并发、重试与确认
 
-### v2 示例
+浏览器向 `POST /api/holdings-sync` 发送一个系统生成的 `operationId`、当前 `expectedFileSha` 和单笔 `operation`。
+
+- `operationId` 是幂等键。同一笔请求因网络重试多次到达，服务器只会应用一次。
+- `expectedFileSha` 是打开表单时读到的 GitHub 文件版本。若其他页面已更新文件，服务器返回 `409 HOLDINGS_SHA_CONFLICT` 及最新权威文档，前端载入新版后请用户核对并重试，不会静默覆盖。
+- 写入请求 15 秒超时时，结果被视为“不确定”而不是失败。前端立即 `GET /api/holdings-sync` 核对 GitHub 最新文档是否已包含同一 `operationId`；若暂时无法核对，保留表单和原 `operationId` 供安全重试。
+- 只有 GitHub 返回完整的 `document`、`holdings` 与新 `fileSha` 后，页面才替换本地状态并显示成功。
+
+### v2 格式与锁定字段
 
 ```json
 {
@@ -277,28 +289,33 @@ band = max(rawBand, -ln(0.97))
   "newTradeFeeUsd": { "buy": 20, "sell": 20 },
   "lots": [
     {
+      "id": "lot-op_buy_demo",
       "market": "US",
       "code": "DEMO",
       "name": "示例公司",
-      "buy": { "price": 100, "qty": 10 }
-    },
-    {
-      "market": "HK",
-      "code": "01234",
-      "name": "示例港股",
-      "buy": { "price": 50, "qty": 200 },
-      "sell": { "price": 60, "qty": 80, "date": "2026-08-18" },
-      "fees": { "buy": 20, "sell": 20 }
+      "buy": {
+        "price": 100,
+        "qty": 10,
+        "date": "2026-08-01",
+        "operationId": "op_buy_demo",
+        "purchaseCostCny": 7364.4,
+        "feeCny": 144.4,
+        "fxAsOf": "2026-08-01",
+        "fxSource": "Frankfurter"
+      },
+      "fees": { "buy": 20 }
     }
   ]
 }
 ```
 
-- `market` 只填 `A`、`HK`、`US`。
-- 没有 `sell` 表示持有；有 `sell` 表示该数量已卖出。
-- `sell.qty` 不能大于 `buy.qty`；部分卖出会拆成卖出和剩余持有两部分。
-- 文档未显式写 `fees` 时，使用顶层 `newTradeFeeUsd`；若某笔历史交易明确不计费，必须显式写 `fees: { "buy": 0, "sell": 0 }`。
-- 修改同一证券会替换当前“持有中”记录，但保留既有已卖出记录。
+- `market` 只使用 `A`、`HK`、`US`；没有 `sell` 表示仍持有，有 `sell` 表示该拆分数量已卖出。
+- `id` 是 lot 标识，`parentLotId` 在部分卖出时指回原 lot；`buy.operationId` 和 `sell.operationId` 用于追踪交易与幂等重试。
+- `purchaseCostCny` 是含买入手续费的锁定买入成本；`sellProceedsCny` 是扣除卖出手续费后的锁定卖出净额。
+- `feeCny`、`fxAsOf`、`fxSource` 保留交易当时的手续费人民币金额、汇率日期和来源，防止历史成本被今天的汇率重写。
+- 部分卖出会把原 lot 拆为剩余持有和已卖出两部分；锁定的买入成本、买入手续费、卖出净额与卖出手续费都按数量分摊，最后一份吸收浮点尾差。
+- 旧 v1 数组和旧 v2 文档仍可读；第一次通过新流程写入时会转为可读 v2 结构。
+- 旧历史记录若确实不计费，必须显式保留 `fees: { "buy": 0, "sell": 0 }`；不要通过删除字段来表示免费。
 
 ## 统一会计与汇率口径
 
@@ -317,7 +334,7 @@ band = max(rawBand, -ln(0.97))
 参考汇率：USD/CNY = 7.22，HKD/CNY = 0.92
 ```
 
-历史成本使用记录或参考汇率固定，不会因今天汇率变化而重写。当前市值和今日盈亏使用 Frankfurter 返回的最新可用汇率；Frankfurter 不是逐笔实时外汇报价，页面会展示汇率日期、抓取时间、来源和是否使用固定回退值。
+新交易在提交时同时锁定交易币种兑人民币汇率、USD/CNY 手续费汇率、汇率日期和来源。历史成本使用记录或参考汇率固定，不会因今天汇率变化而重写。当前市值和今日盈亏使用 Frankfurter 返回的最新可用汇率；Frankfurter 不是逐笔实时外汇报价，页面会展示汇率日期、抓取时间、来源和是否使用固定回退值。
 
 ## 数据新鲜度与失败原则
 
@@ -335,7 +352,8 @@ band = max(rawBand, -ln(0.97))
 | `GET /api/quotes` | 当前/延时报价 | 新浪为主，Yahoo 回退 |
 | `GET /api/history` | 日线、基准、两周模型 | 美股 Yahoo 优先；其他东方财富优先；Yahoo、腾讯回退 |
 | `GET /api/rates` | USD/CNY、HKD/CNY | Frankfurter，失败时固定参考值 |
-| `GET /api/radar` | 三市场候选池与评分 | 东方财富行情中心 |
+| `GET /api/radar` | 读取 KV 中的三市场统一快照 | Cloudflare KV |
+| `GET /api/radar?market=...` | 手动单市场实时扫描与评分 | 东方财富行情中心 |
 | `GET /api/security-lookup` | 代码识别名称 | 新浪，部分场景 Yahoo 回退 |
 | `GET/POST /api/holdings-sync` | 读取/写入持仓 | GitHub Contents API |
 | `POST /api/login` | 密码登录与会话 | Cloudflare Pages Function |
@@ -351,18 +369,20 @@ band = max(rawBand, -ln(0.97))
 - 顶部“退出”会调用 `POST /api/logout` 并清除会话。
 - 页面、`holdings.json` 和 API 受登录中间件保护；`/assets/*` 与 `/pet/*` 静态资源不经过登录中间件。
 - 启动时先使用本地缓存快速首屏，再用静态 `holdings.json` 兜底，并在后台以 GitHub 当前文件覆盖为权威数据；本地旧缓存不能反向覆盖成功读取的远端。
+- 记录交易弹窗会根据 GitHub 仓库元数据显示公开仓库隐私提醒，让用户在提交成本与数量前看到风险。
 
-仓库当前是公开仓库，因此 GitHub 上的 `holdings.json` 和 `trades.json` 仍可被公开读取。网站密码不能隐藏公开仓库里的持仓、成本和数量；如需隐私，应先把仓库改为私有，并确认 Cloudflare Git 集成仍有权限。
+如果 GitHub 仓库是公开仓库，其中的 `holdings.json` 和 `trades.json` 就可被任何人绕过网站直接读取。网站密码不能隐藏公开仓库里的持仓、成本和数量；如需隐私，应先把仓库改为私有，并确认 Cloudflare Pages Git 集成和 `PIGGY_GITHUB_TOKEN` 仍有权限。
 
 ## Cloudflare Pages 部署
 
-详细设置见 [CLOUDFLARE.md](CLOUDFLARE.md)。当前生产链路是：
+详细设置见 [CLOUDFLARE.md](CLOUDFLARE.md)。完整生产链路是：
 
 ```text
 GitHub main → Cloudflare Pages 自动部署 → alixjd.com
+Cloudflare Cron Worker（北京时间 08:10）→ RADAR_SNAPSHOTS KV → Pages Function 只读快照
 ```
 
-本项目使用仓库根目录作为 Pages 输出，无需 Render。生产环境需要配置：
+本项目使用仓库根目录作为 Pages 输出，无需 Render。Pages 的 Production 环境需要配置：
 
 - `BASIC_AUTH_USER`
 - `BASIC_AUTH_PASSWORD`（Encrypt）
@@ -371,6 +391,7 @@ GitHub main → Cloudflare Pages 自动部署 → alixjd.com
 - `PIGGY_GITHUB_REPO`
 - `PIGGY_GITHUB_HOLDINGS_PATH`
 - `PIGGY_GITHUB_BRANCH`
+- `RADAR_SNAPSHOTS`（KV namespace 绑定，必须与 Cron Worker 指向同一 namespace）
 
 建议在 Cloudflare WAF 或 Rate Limiting 中限制 `POST /api/login` 的尝试频率。
 
@@ -386,7 +407,7 @@ python3 server.py 4173
 
 ```bash
 node --check assets/app.js
-node --test tests/pages-functions.test.mjs
+node --test tests/*.test.mjs
 git diff --check
 ```
 

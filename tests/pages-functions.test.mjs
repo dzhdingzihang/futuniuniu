@@ -691,13 +691,15 @@ test("fails closed when the Pages password is not configured", async () => {
   assert.equal(nextCalls, 0);
 });
 
-test("client adopts local holdings only after GitHub confirms the write", async () => {
+test("client submits one idempotent operation and adopts only the authoritative GitHub document", async () => {
   const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
-  const syncIndex = source.indexOf("await syncHoldingsToGitHubClient(nextHoldings)");
-  const localIndex = source.indexOf("state.holdings = nextHoldings", syncIndex);
+  const syncIndex = source.indexOf("await syncHoldingsToGitHubClient(operation)");
+  const localIndex = source.indexOf("applySuccessfulHoldingSync(result, operation", syncIndex);
   assert.ok(syncIndex > 0);
   assert.ok(localIndex > syncIndex);
-  assert.match(source, /GitHub 同步失败，本次未保存/);
+  assert.match(source, /expectedFileSha: state\.holdingsFileSha \|\| "", operation: operation/);
+  assert.match(source, /state\.holdingPendingOperation \|\| holdingOperationFromDraft/);
+  assert.match(source, /holdingOperationInDocument\(latest\.document, operation\.operationId\)/);
 });
 
 test("startup paints local holdings before background authority checks", async () => {
@@ -1105,24 +1107,32 @@ test("radar cache restores today's valid markets as fresh and prior-day markets 
     let prior = now - 60 * 60 * 1000;
     while (radarCalendarDateKey(prior) === radarCalendarDateKey(now)) prior -= 60 * 60 * 1000;
     const yesterday = new Date(prior).toISOString();
-    const writeCache = function (fetchedAt) {
-      localStorage.setItem(RADAR_CACHE_KEY, JSON.stringify({ version: 1, markets: Object.fromEntries(RADAR_MARKETS.map(function (market) { return [market, snapshot(market, fetchedAt)]; })) }));
+    const writeCache = function (fetchedAt, loadState, stale) {
+      localStorage.setItem(RADAR_CACHE_KEY, JSON.stringify({ version: 2, markets: Object.fromEntries(RADAR_MARKETS.map(function (market) {
+        return [market, Object.assign(snapshot(market, fetchedAt), { loadState: loadState || "fresh", stale: stale === true })];
+      })) }));
     };
     writeCache(today);
     const todayRead = readRadarCache();
     const todayStates = RADAR_MARKETS.map(function (market) { return state.radarMarkets[market].loadState; });
     const todayStatus = state.radarStatus;
     state.radarMarkets = {}; state.radarRows = []; state.radarStatus = "idle";
+    writeCache(today, "stale", true);
+    const staleRead = readRadarCache();
+    const staleStates = RADAR_MARKETS.map(function (market) { return state.radarMarkets[market].loadState; });
+    state.radarMarkets = {}; state.radarRows = []; state.radarStatus = "idle";
     writeCache(yesterday);
     const priorRead = readRadarCache();
     const priorStates = RADAR_MARKETS.map(function (market) { return state.radarMarkets[market].loadState; });
-    return { todayRead, todayStates, todayStatus, priorRead, priorStates };
+    return { todayRead, todayStates, todayStatus, staleRead, staleStates, priorRead, priorStates };
   })()`, context));
 
   assert.deepEqual(result, {
     todayRead: true,
     todayStates: ["fresh", "fresh", "fresh"],
     todayStatus: "success",
+    staleRead: true,
+    staleStates: ["stale", "stale", "stale"],
     priorRead: true,
     priorStates: ["cached", "cached", "cached"],
   });
@@ -1190,7 +1200,7 @@ test("radar top three is explicit per market, excludes holdings, and explains se
   assert.match(result.markup, /港股 Top 3/);
   assert.match(result.markup, /美股 Top 3/);
   assert.match(result.markup, /为什么入选/);
-  assert.match(result.markup, /每日首次进入自动更新/);
+  assert.match(result.markup, /每日 08:10 后台更新/);
   assert.match(result.markup, /趋势与流动性领先 &amp; 可复核/);
   assert.match(result.markup, /<time datetime=/);
   assert.doesNotMatch(result.markup, /当前持仓应被排除/);
@@ -1270,7 +1280,7 @@ test("radar price model accepts 90 valid bars and fails closed for thin malforme
   assert.match(result.pricePlan, /日收盘低于/);
 });
 
-test("radar history batches only the visible ten as five plus five and keeps watchlist free of derived levels", async () => {
+test("radar history batches the visible page plus off-page market Top 3 and keeps watchlist free of derived levels", async () => {
   const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
   const runnable = source.replace(/\nstart\(\)\.catch\(function \(error\) \{[\s\S]*?\n\}\);\s*$/, "\n");
   const context = vm.createContext({ location: { hash: "#radar" }, localStorage: { getItem: () => null, setItem: () => {} } });
@@ -1288,17 +1298,25 @@ test("radar history batches only the visible ten as five plus five and keeps wat
         quoteUpdatedAt: new Date().toISOString(), fetchedAt: new Date().toISOString(), loadState: "fresh"
       };
     }
+    function hkCandidate(index) {
+      const code = String(index + 1).padStart(5, "0");
+      return Object.assign(candidate(index + 20), {
+        id: "港股:" + code, market: "港股", code: code, name: "港股候选" + (index + 1), currency: "HKD", sina: "hk" + code,
+        score: 70 - index
+      });
+    }
     state.holdings = [];
     state.rows = [];
-    state.radarRows = Array.from({ length: 12 }, function (_, index) { return candidate(index); });
-    state.watchMarket = "全部";
+    state.radarRows = Array.from({ length: 12 }, function (_, index) { return candidate(index); }).concat(Array.from({ length: 3 }, function (_, index) { return hkCandidate(index); }));
+    state.watchMarket = "A股";
     state.radarBand = "all";
     state.radarSort = "score";
     state.radarQuery = "";
     state.radarPage = 1;
     const view = radarPageWindow();
-    const batches = radarHistoryBatches(view.pageRows);
-    const fingerprint = radarVisibleFingerprint(view.pageRows);
+    const targets = radarHistoryTargets(view.pageRows);
+    const batches = radarHistoryBatches(targets);
+    const fingerprint = radarVisibleFingerprint(targets);
     const polluted = Object.assign({}, view.pageRows[0], {
       history: [{ date: "2026-08-18", close: 100 }], upper: 112, upperPct: 12, stop: 94, stopPct: -6
     });
@@ -1308,6 +1326,8 @@ test("radar history batches only the visible ten as five plus five and keeps wat
       batchSizes: batches.map(function (batch) { return batch.length; }),
       batchSymbols: batches.map(function (batch) { return batch.map(function (item) { return item.sina; }); }),
       visibleSymbols: view.pageRows.map(function (item) { return item.sina; }),
+      targetSymbols: targets.map(function (item) { return item.sina; }),
+      offPageTopSymbols: radarTopThreeByMarket("港股").map(function (item) { return item.sina; }),
       hiddenSymbols: view.rows.slice(10).map(function (item) { return item.sina; }),
       fingerprint: fingerprint,
       savedWatchEntry: savedWatchEntry
@@ -1315,9 +1335,11 @@ test("radar history batches only the visible ten as five plus five and keeps wat
   })()`, context));
 
   assert.equal(result.pageCount, 10);
-  assert.deepEqual(result.batchSizes, [5, 5]);
-  assert.deepEqual(result.batchSymbols.flat(), result.visibleSymbols);
-  assert.equal(result.fingerprint, result.visibleSymbols.join(","));
+  assert.deepEqual(result.batchSizes, [5, 5, 3]);
+  assert.deepEqual(result.batchSymbols.flat(), result.targetSymbols);
+  result.offPageTopSymbols.forEach((symbol) => assert.ok(result.targetSymbols.includes(symbol)));
+  result.offPageTopSymbols.forEach((symbol) => assert.ok(!result.visibleSymbols.includes(symbol)));
+  assert.equal(result.fingerprint, result.targetSymbols.join(","));
   result.hiddenSymbols.forEach((symbol) => assert.doesNotMatch(result.fingerprint, new RegExp(symbol)));
   assert.doesNotMatch(JSON.stringify(result.savedWatchEntry), /"(?:history|upper|upperPct|stop|stopPct)"/);
 });

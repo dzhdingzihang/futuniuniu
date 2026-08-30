@@ -19,6 +19,12 @@ const RADAR_HISTORY_ERROR_TTL_MS = 5 * 60 * 1000;
 const RADAR_LEVEL_MODEL_VERSION = "radar-levels-v1";
 const NAV_ITEMS = [["overview", "总览"], ["actions", "持仓明细"], ["radar", "机会雷达"], ["trades", "卖出记录"]];
 const VALID_TABS = NAV_ITEMS.map(function (item) { return item[0]; });
+const PAGE_META = {
+  overview: { title: "总览", heading: "账户整体" },
+  actions: { title: "持仓明细", heading: "持仓明细" },
+  radar: { title: "机会雷达", heading: "机会雷达" },
+  trades: { title: "卖出记录", heading: "卖出记录" }
+};
 // Legacy records store the buy price in native currency, but not historical FX.
 // Keep invested cost fixed so a live FX refresh cannot change what was paid.
 const COST_REFERENCE_RATES = { CNY: 1, HKD: 0.92, USD: 7.22 };
@@ -62,6 +68,7 @@ let holdingSearchTimer = 0;
 let radarSearchTimer = 0;
 let radarHistoryTimer = 0;
 let toastTimer = 0;
+let motionPreference = null;
 
 const METRIC_HELP = {
   netInvested: "累计买入成交额减去累计卖出成交额，再加上每笔买入和卖出的固定手续费。历史成交按记录或参考汇率锁定。",
@@ -90,6 +97,9 @@ const state = {
   radarMarkets: {},
   radarStatus: "idle",
   radarError: "",
+  radarPublishedAt: "",
+  radarAttemptedAt: "",
+  radarSnapshotStatus: null,
   expandedRadarId: "",
   radarRequestId: 0,
   radarHistories: {},
@@ -108,6 +118,9 @@ const state = {
   expandedHoldingKey: "",
   baseHoldings: [],
   holdings: [],
+  holdingsDocument: null,
+  holdingsFileSha: "",
+  holdingsRepository: null,
   trades: [],
   rows: [],
   quotes: new Map(),
@@ -121,7 +134,9 @@ const state = {
   isHistoryLoading: false,
   isLoggingOut: false,
   holdingEditorOpen: false,
+  holdingEditorTrigger: "header",
   holdingDraft: null,
+  holdingPendingOperation: null,
   holdingLookup: { status: "idle", message: "输入股票代码后自动识别名称", security: null },
   holdingSave: { status: "idle", message: "" },
   toast: null
@@ -271,15 +286,28 @@ function holdingsFromDocument(document) {
     const explicitSellFee = optionalNumber(fees.sell);
     const buyFee = Number.isFinite(explicitBuyFee) ? explicitBuyFee : defaultBuyFee;
     const sellFee = Number.isFinite(explicitSellFee) ? explicitSellFee : defaultSellFee;
+    const purchaseCostCny = optionalNumber(buy.purchaseCostCny);
+    const buyFeeCny = optionalNumber(buy.feeCny);
+    const sellProceedsCny = optionalNumber(sell && sell.sellProceedsCny);
+    const sellFeeCny = optionalNumber(sell && sell.feeCny);
     const base = {
+      lotId: String(lot.id || ""),
+      parentLotId: String(lot.parentLotId || ""),
       market: market,
       code: code,
       name: String(lot.name || code).trim(),
       cost: Number(buy.price),
       currency: currencyForMarket(market),
-      sina: providerCodeForHolding(market, code)
+      sina: providerCodeForHolding(market, code),
+      buyDate: String(buy.date || ""),
+      buyOperationId: String(buy.operationId || ""),
+      buyFxAsOf: String(buy.fxAsOf || ""),
+      buyFxSource: String(buy.fxSource || ""),
+      buyFeeCny: buyFeeCny
     };
-    if (!sell) return [normalizeHolding(Object.assign({}, base, { status: "holding", qty: buyQty, buyFeeUsd: buyFee }))].filter(isValidHolding);
+    if (!sell) return [normalizeHolding(Object.assign({}, base, {
+      status: "holding", qty: buyQty, buyFeeUsd: buyFee, purchaseCostCny: purchaseCostCny
+    }))].filter(isValidHolding);
     if (!Number.isFinite(sellQty) || sellQty <= 0 || !Number.isFinite(buyQty) || buyQty <= 0 || sellQty > buyQty) return [];
     const ratio = sellQty / buyQty;
     const records = [normalizeHolding(Object.assign({}, base, {
@@ -287,14 +315,23 @@ function holdingsFromDocument(document) {
       qty: sellQty,
       sellPrice: Number(sell.price),
       sellDate: String(sell.date || ""),
+      sellOperationId: String(sell.operationId || ""),
+      sellFxAsOf: String(sell.fxAsOf || ""),
+      sellFxSource: String(sell.fxSource || ""),
       buyFeeUsd: Number.isFinite(buyFee) ? buyFee * ratio : NaN,
-      sellFeeUsd: sellFee
+      sellFeeUsd: sellFee,
+      purchaseCostCny: Number.isFinite(purchaseCostCny) ? purchaseCostCny * ratio : NaN,
+      buyFeeCny: Number.isFinite(buyFeeCny) ? buyFeeCny * ratio : NaN,
+      sellProceedsCny: sellProceedsCny,
+      sellFeeCny: sellFeeCny
     }))];
     if (sellQty < buyQty) {
       records.unshift(normalizeHolding(Object.assign({}, base, {
         status: "holding",
         qty: buyQty - sellQty,
-        buyFeeUsd: Number.isFinite(buyFee) ? buyFee * (1 - ratio) : NaN
+        buyFeeUsd: Number.isFinite(buyFee) ? buyFee * (1 - ratio) : NaN,
+        purchaseCostCny: Number.isFinite(purchaseCostCny) ? purchaseCostCny * (1 - ratio) : NaN,
+        buyFeeCny: Number.isFinite(buyFeeCny) ? buyFeeCny * (1 - ratio) : NaN
       })));
     }
     return records.filter(isValidHolding);
@@ -307,8 +344,8 @@ function isHoldingsDocument(document) {
 
 function selectStartupHoldingsDocument(syncPayload, staticDocument, localDocument) {
   if (syncPayload && syncPayload.ok === true) {
-    if (isHoldingsDocument(syncPayload.holdings)) return { source: "github", document: syncPayload.holdings };
     if (isHoldingsDocument(syncPayload.document)) return { source: "github", document: syncPayload.document };
+    if (isHoldingsDocument(syncPayload.holdings)) return { source: "github", document: syncPayload.holdings };
   }
   if (isHoldingsDocument(staticDocument)) return { source: "static", document: staticDocument };
   if (isHoldingsDocument(localDocument)) return { source: "local", document: localDocument };
@@ -327,7 +364,22 @@ function readableHoldingsDocument(rows) {
         name: row.name,
         buy: { price: row.cost, qty: row.qty }
       };
-      if (row.status === "sold") lot.sell = { price: row.sellPrice, qty: row.qty, date: row.sellDate };
+      if (row.lotId) lot.id = row.lotId;
+      if (row.parentLotId) lot.parentLotId = row.parentLotId;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(row.buyDate)) lot.buy.date = row.buyDate;
+      if (Number.isFinite(row.purchaseCostCny)) lot.buy.purchaseCostCny = row.purchaseCostCny;
+      if (Number.isFinite(row.buyFeeCny)) lot.buy.feeCny = row.buyFeeCny;
+      if (row.buyFxAsOf) lot.buy.fxAsOf = row.buyFxAsOf;
+      if (row.buyFxSource) lot.buy.fxSource = row.buyFxSource;
+      if (row.buyOperationId) lot.buy.operationId = row.buyOperationId;
+      if (row.status === "sold") {
+        lot.sell = { price: row.sellPrice, qty: row.qty, date: row.sellDate };
+        if (Number.isFinite(row.sellProceedsCny)) lot.sell.sellProceedsCny = row.sellProceedsCny;
+        if (Number.isFinite(row.sellFeeCny)) lot.sell.feeCny = row.sellFeeCny;
+        if (row.sellFxAsOf) lot.sell.fxAsOf = row.sellFxAsOf;
+        if (row.sellFxSource) lot.sell.fxSource = row.sellFxSource;
+        if (row.sellOperationId) lot.sell.operationId = row.sellOperationId;
+      }
       const fees = {};
       if (Number.isFinite(row.buyFeeUsd)) fees.buy = row.buyFeeUsd;
       if (Number.isFinite(row.sellFeeUsd)) fees.sell = row.sellFeeUsd;
@@ -423,7 +475,7 @@ function radarRowsFromSnapshots(snapshots) {
         fetchedAt: snapshot.fetchedAt || item.fetchedAt,
         modelVersion: snapshot.modelVersion || item.modelVersion,
         loadState: radarEffectiveLoadState(snapshot),
-        loadError: snapshot.error || ""
+        loadError: snapshot.error && typeof snapshot.error === "object" ? snapshot.error.message || "" : snapshot.error || ""
       });
     });
   });
@@ -434,9 +486,14 @@ function adoptRadarSnapshots(snapshots, source) {
   RADAR_MARKETS.forEach(function (market) {
     const payload = snapshots && snapshots[market];
     if (!isRadarSnapshot(payload, market)) return;
-    const loadState = source === "cache" ? (radarSnapshotIsDailyCurrent(payload) ? "fresh" : "cached") : source || payload.loadState || "cached";
+    const declaredState = payload.loadState;
+    const loadState = source === "cache"
+      ? (declaredState === "stale" || payload.stale === true ? "stale" : radarSnapshotIsDailyCurrent(payload) ? "fresh" : "cached")
+      : source === "envelope"
+        ? (declaredState === "stale" ? "stale" : declaredState === "fresh" && radarSnapshotIsDailyCurrent(payload) ? "fresh" : "cached")
+        : source || declaredState || "cached";
     next[market] = Object.assign({}, payload, { loadState: loadState });
-    if (loadState === "fresh") delete next[market].error;
+    if (loadState === "fresh") next[market].error = "";
   });
   state.radarMarkets = next;
   state.radarRows = radarRowsFromSnapshots(next);
@@ -445,12 +502,14 @@ function adoptRadarSnapshots(snapshots, source) {
 
 function readRadarCache() {
   const cache = readStorage(RADAR_CACHE_KEY, null);
-  if (!cache || Number(cache.version) !== 1 || typeof cache !== "object" || !cache.markets || typeof cache.markets !== "object") return false;
+  if (!cache || ![1, 2].includes(Number(cache.version)) || typeof cache !== "object" || !cache.markets || typeof cache.markets !== "object") return false;
   const count = adoptRadarSnapshots(cache.markets, "cache");
   const currentCount = RADAR_MARKETS.filter(function (market) {
     return radarEffectiveLoadState(state.radarMarkets[market]) === "fresh";
   }).length;
-  if (count) state.radarStatus = currentCount === RADAR_MARKETS.length ? "success" : currentCount ? "partial" : count === RADAR_MARKETS.length ? "cached" : "partial";
+  const staleMarkets = RADAR_MARKETS.filter(function (market) { return radarEffectiveLoadState(state.radarMarkets[market]) === "stale"; });
+  state.radarError = staleMarkets.length ? staleMarkets.join("、") + "沿用上一次有效候选" : "";
+  if (count) state.radarStatus = currentCount === RADAR_MARKETS.length ? "success" : currentCount ? "partial" : staleMarkets.length ? "stale" : count === RADAR_MARKETS.length ? "cached" : "partial";
   return count > 0;
 }
 
@@ -459,10 +518,9 @@ function saveRadarCache() {
   RADAR_MARKETS.forEach(function (market) {
     if (!isRadarSnapshot(state.radarMarkets[market], market)) return;
     markets[market] = Object.assign({}, state.radarMarkets[market]);
-    delete markets[market].loadState;
   });
   try {
-    writeStorage(RADAR_CACHE_KEY, { version: 1, savedAt: new Date().toISOString(), markets: markets });
+    writeStorage(RADAR_CACHE_KEY, { version: 2, savedAt: new Date().toISOString(), markets: markets });
   } catch {
     // The live snapshot remains usable even if browser storage is unavailable.
   }
@@ -483,16 +541,62 @@ async function fetchRadarMarket(market) {
   }
 }
 
+function isRadarEnvelope(payload) {
+  return Boolean(payload && payload.schema === "radar-snapshot-v2" && Number.isFinite(Date.parse(payload.publishedAt || "")) && payload.markets && typeof payload.markets === "object" && payload.status && Array.isArray(payload.status.freshMarkets) && Array.isArray(payload.status.staleMarkets) && Array.isArray(payload.status.unavailableMarkets));
+}
+
+async function fetchRadarEnvelope() {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(function () { controller.abort(); }, 10000);
+  try {
+    const response = await fetch("/api/radar", { cache: "no-store", signal: controller.signal });
+    const payload = await response.json().catch(function () { return {}; });
+    if (!response.ok) throw new Error(payload.error || "每日机会快照读取失败（" + response.status + "）");
+    if (!isRadarEnvelope(payload)) throw new Error("每日机会快照格式不正确");
+    return payload;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function adoptRadarEnvelope(envelope) {
+  const count = adoptRadarSnapshots(envelope.markets, "envelope");
+  state.radarPublishedAt = envelope.publishedAt || "";
+  state.radarAttemptedAt = envelope.attemptedAt || envelope.publishedAt || "";
+  state.radarSnapshotStatus = envelope.status || null;
+  const unavailable = envelope.status.unavailableMarkets || [];
+  const stale = envelope.status.staleMarkets || [];
+  state.radarStatus = count === RADAR_MARKETS.length && !stale.length ? "success" : count ? (stale.length || unavailable.length ? "partial" : "cached") : "error";
+  const messages = [];
+  if (stale.length) messages.push(stale.join("、") + "沿用上一次有效候选");
+  if (unavailable.length) messages.push(unavailable.join("、") + "暂时没有可用候选");
+  state.radarError = messages.join("；");
+  if (count) saveRadarCache();
+  return count;
+}
+
 async function loadRadar(force) {
   if (state.radarStatus === "loading") return;
   const targetMarkets = force ? RADAR_MARKETS.slice() : RADAR_MARKETS.filter(function (market) {
     return !isRadarSnapshot(state.radarMarkets[market], market) || state.radarMarkets[market].loadState !== "fresh" || !radarSnapshotIsDailyCurrent(state.radarMarkets[market]);
   });
-  if (!targetMarkets.length) return;
+  if (force && !targetMarkets.length) return;
   const requestId = ++state.radarRequestId;
   state.radarStatus = "loading";
   state.radarError = "";
   render();
+  if (!force) {
+    try {
+      const envelope = await fetchRadarEnvelope();
+      if (requestId !== state.radarRequestId) return;
+      adoptRadarEnvelope(envelope);
+      render();
+      return;
+    } catch (error) {
+      if (requestId !== state.radarRequestId) return;
+      state.radarError = error && error.message ? error.message : "每日机会快照读取失败";
+    }
+  }
   const results = await Promise.allSettled(targetMarkets.map(fetchRadarMarket));
   if (requestId !== state.radarRequestId) return;
   const failures = [];
@@ -500,8 +604,11 @@ async function loadRadar(force) {
   results.forEach(function (result, index) {
     const market = targetMarkets[index];
     if (result.status === "fulfilled") {
-      state.radarMarkets[market] = Object.assign({}, result.value, { loadState: "fresh", error: "" });
-      freshCount += 1;
+      const declaredState = result.value.loadState;
+      const nextLoadState = declaredState === "stale" ? "stale" : radarSnapshotIsDailyCurrent(result.value) ? "fresh" : "cached";
+      state.radarMarkets[market] = Object.assign({}, result.value, { loadState: nextLoadState, error: nextLoadState === "fresh" ? "" : result.value.error || "本市场返回了旧快照" });
+      if (nextLoadState === "fresh") freshCount += 1;
+      else failures.push(market + "沿用上一次有效候选");
     } else {
       const message = result.reason && result.reason.message ? result.reason.message : market + "扫描失败";
       failures.push(message);
@@ -545,13 +652,18 @@ function feeCny(feeUsd) {
   return Number.isFinite(value) && value >= 0 ? value * COST_REFERENCE_RATES.USD : 0;
 }
 
+function recordedFeeCny(row, side) {
+  const recorded = Number(row && row[side + "FeeCny"]);
+  return Number.isFinite(recorded) && recorded >= 0 ? recorded : feeCny(row && row[side + "FeeUsd"]);
+}
+
 function grossPurchasePrincipalCny(row) {
-  return Math.max(0, Number(row.purchaseCostCny) - feeCny(row.buyFeeUsd));
+  return Math.max(0, Number(row.purchaseCostCny) - recordedFeeCny(row, "buy"));
 }
 
 function grossSaleAmountCny(row) {
   if (row.status !== "sold") return 0;
-  return Number(row.saleProceedsCny) + feeCny(row.sellFeeUsd);
+  return Number(row.saleProceedsCny) + recordedFeeCny(row, "sell");
 }
 
 function uniqueHoldingCount(rows) {
@@ -627,6 +739,8 @@ function normalizeHolding(item) {
   const rawStatus = String(item.status || "holding").toLowerCase();
   const status = rawStatus === "sold" || rawStatus === "卖出" ? "sold" : "holding";
   return {
+    lotId: String(item.lotId || item.id || ""),
+    parentLotId: String(item.parentLotId || ""),
     market: market,
     code: code,
     name: String(item.name || code || "").trim(),
@@ -637,10 +751,19 @@ function normalizeHolding(item) {
     sellProceedsCny: optionalNumber(item.sellProceedsCny ?? item.saleProceedsCny),
     buyFeeUsd: optionalNumber(item.buyFeeUsd),
     sellFeeUsd: optionalNumber(item.sellFeeUsd),
+    buyFeeCny: optionalNumber(item.buyFeeCny),
+    sellFeeCny: optionalNumber(item.sellFeeCny),
     sina: String(item.sina || providerCodeForHolding(market, code)).toLowerCase(),
     status: status,
+    buyDate: String(item.buyDate || ""),
+    buyOperationId: String(item.buyOperationId || ""),
+    buyFxAsOf: String(item.buyFxAsOf || ""),
+    buyFxSource: String(item.buyFxSource || ""),
     sellPrice: optionalNumber(item.sellPrice ?? item.soldPrice ?? item.exitPrice),
-    sellDate: String(item.sellDate || item.soldDate || "")
+    sellDate: String(item.sellDate || item.soldDate || ""),
+    sellOperationId: String(item.sellOperationId || ""),
+    sellFxAsOf: String(item.sellFxAsOf || ""),
+    sellFxSource: String(item.sellFxSource || "")
   };
 }
 
@@ -766,8 +889,8 @@ function summary() {
   const soldRows = state.rows.filter(function (row) { return row.status === "sold"; });
   const grossBuys = sum(state.rows, "purchaseCostCny");
   const saleProceeds = sum(soldRows, "saleProceedsCny");
-  const buyFees = state.rows.reduce(function (total, row) { return total + feeCny(row.buyFeeUsd); }, 0);
-  const sellFees = soldRows.reduce(function (total, row) { return total + feeCny(row.sellFeeUsd); }, 0);
+  const buyFees = state.rows.reduce(function (total, row) { return total + recordedFeeCny(row, "buy"); }, 0);
+  const sellFees = soldRows.reduce(function (total, row) { return total + recordedFeeCny(row, "sell"); }, 0);
   const grossBuyPrincipal = state.rows.reduce(function (total, row) { return total + grossPurchasePrincipalCny(row); }, 0);
   const grossSaleAmount = soldRows.reduce(function (total, row) { return total + grossSaleAmountCny(row); }, 0);
   const netInvested = grossBuys - saleProceeds;
@@ -965,9 +1088,19 @@ function syncBrandVisuals() {
 }
 
 function startBrandAnimations() {
-  if (brandAnimationTimer) return;
+  if (brandAnimationTimer || prefersReducedMotion()) return;
   syncBrandVisuals();
   brandAnimationTimer = window.setInterval(syncBrandVisuals, 100);
+}
+
+function prefersReducedMotion() {
+  if (!window.matchMedia) return false;
+  if (!motionPreference) motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+  return motionPreference.matches;
+}
+
+function preferredScrollBehavior() {
+  return prefersReducedMotion() ? "auto" : "smooth";
 }
 
 function topNav() {
@@ -977,11 +1110,11 @@ function topNav() {
     return "<i class=\"" + (index < brandVisual.coinCount ? "is-stored" : "") + "\" data-stored-coin=\"" + index + "\"></i>";
   }).join("");
   const updateStatus = isBusy
-    ? "<span class=\"market-refresh-status\"><img src=\"assets/pig-logo.png\" alt=\"\"/>" + (state.tab === "radar" ? "小猪正在扫描机会" : "小猪正在核算行情") + "</span>"
-    : "<span class=\"updated\">更新于 " + escapeHtml(state.updatedAt || "待更新") + "</span>";
+    ? "<span class=\"market-refresh-status\" role=\"status\" aria-live=\"polite\"><img src=\"assets/pig-logo.png\" alt=\"\"/>" + (state.tab === "radar" ? "小猪正在读取机会" : "小猪正在核算行情") + "</span>"
+    : "<span class=\"updated\" role=\"status\">更新于 " + escapeHtml(state.updatedAt || "待更新") + "</span>";
   return "<header class=\"site-header\"><a class=\"brand\" href=\"#overview\" aria-label=\"猪猪存钱罐 · 小猪状态：" + escapeHtml(petDefinition.label) + " · 返回总览\"><span class=\"brand-scene\" aria-hidden=\"true\"><span class=\"brand-pig-stage\" data-pet-state=\"" + escapeHtml(brandVisual.petState) + "\" data-pet-label=\"" + escapeHtml(petDefinition.label) + "\"><span class=\"brand-pig-sprite\"></span></span><span class=\"brand-wordmark\"><strong data-text=\"猪猪存钱罐\">猪猪存钱罐</strong></span><span class=\"brand-jar-stage\"><span class=\"jar-coin-bank\">" + storedCoins + "</span><span class=\"brand-coins\"><i></i><i></i><i></i><i></i></span><img class=\"brand-jar\" src=\"assets/glass-savings-jar-v1.png\" alt=\"\"/></span></span></a><nav class=\"global-nav\" aria-label=\"主导航\">" +
     NAV_ITEMS.map(function (item) { return "<button class=\"nav-link " + (state.tab === item[0] ? "active" : "") + "\" " + (state.tab === item[0] ? "aria-current=\"page\" " : "") + "type=\"button\" data-tab=\"" + item[0] + "\">" + navIcon(item[0]) + "<span class=\"nav-label\">" + item[1] + "</span></button>"; }).join("") +
-    "</nav><div class=\"header-tools\">" + updateStatus + "<div class=\"header-action-group\"><button class=\"header-action-button edit\" type=\"button\" data-open-holding-editor=\"holding\">" + headerActionIcon("edit") + "<span>修改持仓</span></button><button class=\"header-action-button refresh\" type=\"button\" data-refresh=\"1\"" + (isBusy ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("refresh") + "<span>刷新</span></button><button class=\"header-action-button logout\" type=\"button\" data-logout aria-label=\"" + (state.isLoggingOut ? "正在退出登录" : "退出登录") + "\"" + (state.isLoggingOut ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("logout") + "<span>" + (state.isLoggingOut ? "退出中" : "退出") + "</span></button></div></div></header>";
+    "</nav><div class=\"header-tools\">" + updateStatus + "<div class=\"header-action-group\"><button class=\"header-action-button edit\" type=\"button\" data-open-holding-editor=\"holding\" data-editor-trigger=\"header\">" + headerActionIcon("edit") + "<span>记录交易</span></button><button class=\"header-action-button refresh\" type=\"button\" data-refresh=\"1\"" + (isBusy ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("refresh") + "<span>刷新</span></button><button class=\"header-action-button logout\" type=\"button\" data-logout aria-label=\"" + (state.isLoggingOut ? "正在退出登录" : "退出登录") + "\"" + (state.isLoggingOut ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("logout") + "<span>" + (state.isLoggingOut ? "退出中" : "退出") + "</span></button></div></div></header>";
 }
 
 function createHoldingDraft(initialStatus) {
@@ -991,7 +1124,8 @@ function createHoldingDraft(initialStatus) {
     name: "",
     sina: "",
     currency: "CNY",
-    status: initialStatus === "sold" ? "sold" : "holding",
+    operationType: initialStatus === "sold" ? "sell" : "buy",
+    tradeDate: localDateString(),
     buyPrice: "",
     buyQty: "",
     sellPrice: "",
@@ -999,10 +1133,12 @@ function createHoldingDraft(initialStatus) {
   };
 }
 
-function openHoldingEditor(initialStatus) {
+function openHoldingEditor(initialStatus, trigger) {
+  state.holdingEditorTrigger = trigger && trigger.dataset ? String(trigger.dataset.editorTrigger || "header") : "header";
   state.holdingDraft = createHoldingDraft(initialStatus);
   state.holdingLookup = { status: "idle", message: "输入股票代码后自动识别名称", security: null };
   state.holdingSave = { status: "idle", message: "" };
+  state.holdingPendingOperation = null;
   state.holdingEditorOpen = true;
   render();
   window.requestAnimationFrame(function () {
@@ -1012,7 +1148,7 @@ function openHoldingEditor(initialStatus) {
 }
 
 function closeHoldingEditor() {
-  if (state.holdingSave && state.holdingSave.status === "syncing") return;
+  if (state.holdingSave && (state.holdingSave.status === "syncing" || state.holdingSave.uncertain)) return;
   window.clearTimeout(holdingLookupTimer);
   if (holdingLookupController) holdingLookupController.abort();
   holdingLookupController = null;
@@ -1020,29 +1156,49 @@ function closeHoldingEditor() {
   state.holdingDraft = null;
   state.holdingLookup = { status: "idle", message: "", security: null };
   state.holdingSave = { status: "idle", message: "" };
+  state.holdingPendingOperation = null;
   render();
   window.requestAnimationFrame(function () {
-    const trigger = document.querySelector("[data-open-holding-editor]");
-    if (trigger) trigger.focus();
+    const triggerSelector = "[data-editor-trigger=\"" + state.holdingEditorTrigger.replace(/\"/g, "\\\"") + "\"]";
+    const opener = document.querySelector(triggerSelector) || document.querySelector("[data-open-holding-editor]");
+    if (opener) opener.focus();
   });
+}
+
+function availableHoldingQty(security) {
+  if (!security) return 0;
+  return state.holdings.filter(function (item) {
+    return item.status !== "sold" && (item.sina === security.sina || (item.market === security.market && comparableCode(item.code) === comparableCode(security.code)));
+  }).reduce(function (total, item) { return total + Number(item.qty || 0); }, 0);
+}
+
+function repositoryPrivacyMarkup() {
+  const repository = state.holdingsRepository;
+  if (!repository || repository.private !== false) return "";
+  return "<div class=\"github-privacy-warning\" role=\"note\"><strong>隐私提醒</strong><span>当前持仓文件位于公开 GitHub 仓库，知道仓库地址的人可以读取。切换为私有仓库前，请不要录入不希望公开的数据。</span></div>";
 }
 
 function holdingEditorModal() {
   if (!state.holdingEditorOpen || !state.holdingDraft) return "";
   const draft = state.holdingDraft;
   const lookup = state.holdingLookup || { status: "idle", message: "", security: null };
-  const isSold = draft.status === "sold";
+  const isSell = draft.operationType === "sell";
   const currency = currencyForMarket(draft.market);
   const currencyLabel = currency === "CNY" ? "人民币 CNY" : currency === "HKD" ? "港币 HKD" : "美元 USD";
   const security = lookup.security;
+  const availableQty = availableHoldingQty(security);
   const saving = state.holdingSave || { status: "idle", message: "" };
   const isSyncing = saving.status === "syncing";
   const saveLabel = isSyncing ? "正在同步 GitHub…" : saving.status === "error" ? "重试同步" : "保存并同步";
   const saveDisabled = lookup.status !== "success" || isSyncing;
   const resultCard = security
-    ? "<div class=\"lookup-result-card\" data-lookup-card><span class=\"lookup-result-mark\">✓</span><div><strong data-lookup-name>" + escapeHtml(security.name) + "</strong><small data-lookup-meta>" + escapeHtml(security.code + " · " + currencyLabel + (security.existing ? " · 已有持仓，将更新" : "")) + "</small></div>" + (Number.isFinite(security.price) ? "<b>现价 " + nativeMoney(security.price, security.currency) + "</b>" : "") + "</div>"
+    ? "<div class=\"lookup-result-card\" data-lookup-card><span class=\"lookup-result-mark\">✓</span><div><strong data-lookup-name>" + escapeHtml(security.name) + "</strong><small data-lookup-meta>" + escapeHtml(security.code + " · " + currencyLabel + (isSell ? " · 可卖 " + availableQty + " 股" : security.existing ? " · 将新增一笔买入" : "")) + "</small></div>" + (Number.isFinite(security.price) ? "<b>现价 " + nativeMoney(security.price, security.currency) + "</b>" : "") + "</div>"
     : "<div class=\"lookup-result-card\" data-lookup-card hidden><span class=\"lookup-result-mark\">✓</span><div><strong data-lookup-name></strong><small data-lookup-meta></small></div></div>";
-  return "<div class=\"holding-modal-layer\"><button class=\"holding-modal-backdrop\" type=\"button\" data-close-holding-editor aria-label=\"关闭修改持仓\"" + (isSyncing ? " disabled" : "") + "></button><section class=\"holding-editor-dialog" + (isSyncing ? " is-syncing" : "") + "\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"holding-editor-title\"><header class=\"holding-editor-head\"><div><span>PORTFOLIO ENTRY</span><h2 id=\"holding-editor-title\">修改持仓</h2><p>只填市场、代码、状态、价格和数量；名称、币种与行情代码自动识别。</p></div><button class=\"holding-modal-close\" type=\"button\" data-close-holding-editor aria-label=\"关闭\"" + (isSyncing ? " disabled" : "") + ">×</button></header><form id=\"holding-editor-form\" novalidate aria-busy=\"" + (isSyncing ? "true" : "false") + "\"><fieldset class=\"holding-fieldset\"><legend>1. 选择市场</legend><div class=\"holding-choice-grid market-choice\">" + ["A股", "港股", "美股"].map(function (market) { return "<label><input type=\"radio\" name=\"market\" value=\"" + market + "\"" + (draft.market === market ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span>" + market + "</span></label>"; }).join("") + "</div></fieldset><fieldset class=\"holding-fieldset\"><legend>2. 输入股票代码</legend><label class=\"holding-code-field\"><span>股票代码</span><div><input id=\"holding-code-input\" name=\"code\" value=\"" + escapeHtml(draft.code) + "\" placeholder=\"例如 601138 / 1810 / NVDA\" autocomplete=\"off\" autocapitalize=\"characters\" spellcheck=\"false\"" + (isSyncing ? " disabled" : "") + "/><button type=\"button\" data-retry-holding-lookup" + (isSyncing ? " disabled" : "") + ">识别</button></div></label><p class=\"holding-lookup-status " + escapeHtml(lookup.status) + "\" data-lookup-status aria-live=\"polite\">" + escapeHtml(lookup.message) + "</p>" + resultCard + "</fieldset><fieldset class=\"holding-fieldset\"><legend>3. 选择持仓状态</legend><div class=\"holding-choice-grid status-choice\"><label><input type=\"radio\" name=\"status\" value=\"holding\"" + (!isSold ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span><b>持有中</b><small>仍在组合里</small></span></label><label><input type=\"radio\" name=\"status\" value=\"sold\"" + (isSold ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span><b>已卖出</b><small>计入已实现盈亏</small></span></label></div></fieldset><fieldset class=\"holding-fieldset\"><legend>4. 填写买入信息</legend><div class=\"holding-number-grid\"><label><span>买入价格 <small data-currency-label>" + currency + "</small></span><input name=\"buyPrice\" type=\"number\" min=\"0\" step=\"0.0001\" inputmode=\"decimal\" value=\"" + escapeHtml(draft.buyPrice) + "\" placeholder=\"0.00\"" + (isSyncing ? " disabled" : "") + "/></label><label><span>买入数量</span><input name=\"buyQty\" type=\"number\" min=\"0\" step=\"any\" inputmode=\"decimal\" value=\"" + escapeHtml(draft.buyQty) + "\" placeholder=\"0\"" + (isSyncing ? " disabled" : "") + "/></label></div></fieldset><fieldset class=\"holding-fieldset sold-fields\" data-sold-fields" + (isSold ? "" : " hidden") + "><legend>5. 填写卖出信息</legend><div class=\"holding-number-grid\"><label><span>卖出价格 <small data-currency-label>" + currency + "</small></span><input name=\"sellPrice\" type=\"number\" min=\"0\" step=\"0.0001\" inputmode=\"decimal\" value=\"" + escapeHtml(draft.sellPrice) + "\" placeholder=\"0.00\"" + (isSold ? " required" : "") + (isSyncing ? " disabled" : "") + "/></label><label><span>卖出数量</span><input name=\"sellQty\" type=\"number\" min=\"0\" step=\"any\" inputmode=\"decimal\" value=\"" + escapeHtml(draft.sellQty) + "\" placeholder=\"0\"" + (isSold ? " required" : "") + (isSyncing ? " disabled" : "") + "/></label></div></fieldset><aside class=\"holding-fee-card\"><div><span>买入手续费</span><strong>US$20</strong></div><i>+</i><div class=\"sell-fee-item\"" + (isSold ? "" : " hidden") + "><span>卖出手续费</span><strong>US$20</strong></div><p>系统自动折算并计入盈亏，无需手工填写币种、名称或行情代码。</p></aside><div class=\"github-sync-note\"><span class=\"github-sync-dot\"></span><div><strong>直接写入 GitHub holdings.json</strong><small>GitHub 确认成功后，本机页面才会更新；失败时保留当前表单。</small></div></div><p class=\"holding-form-error\" data-holding-form-error aria-live=\"assertive\">" + escapeHtml(saving.message || "") + "</p><footer class=\"holding-editor-actions\"><button type=\"button\" data-close-holding-editor" + (isSyncing ? " disabled" : "") + ">取消</button><button class=\"save-holding-button\" type=\"submit\"" + (saveDisabled ? " disabled" : "") + ">" + saveLabel + "</button></footer></form></section></div>";
+  const priceName = isSell ? "sellPrice" : "buyPrice";
+  const qtyName = isSell ? "sellQty" : "buyQty";
+  const priceValue = isSell ? draft.sellPrice : draft.buyPrice;
+  const qtyValue = isSell ? draft.sellQty : draft.buyQty;
+  return "<div class=\"holding-modal-layer\"><button class=\"holding-modal-backdrop\" type=\"button\" data-close-holding-editor aria-label=\"关闭记录交易\"" + (isSyncing ? " disabled" : "") + "></button><section class=\"holding-editor-dialog" + (isSyncing ? " is-syncing" : "") + "\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"holding-editor-title\" aria-describedby=\"holding-editor-description\"><header class=\"holding-editor-head\"><div><span>PORTFOLIO ENTRY</span><h2 id=\"holding-editor-title\">记录一笔交易</h2><p id=\"holding-editor-description\">每次只记录一次买入或卖出；名称、币种和行情代码自动识别。</p></div><button class=\"holding-modal-close\" type=\"button\" data-close-holding-editor aria-label=\"关闭\"" + (isSyncing ? " disabled" : "") + ">×</button></header><form id=\"holding-editor-form\" novalidate aria-busy=\"" + (isSyncing ? "true" : "false") + "\"><fieldset class=\"holding-fieldset\"><legend>1. 选择交易类型</legend><div class=\"holding-choice-grid status-choice\"><label><input type=\"radio\" name=\"operationType\" value=\"buy\"" + (!isSell ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span><b>买入 / 加仓</b><small>新增一笔买入批次</small></span></label><label><input type=\"radio\" name=\"operationType\" value=\"sell\"" + (isSell ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span><b>卖出 / 减仓</b><small>按先进先出扣减持仓</small></span></label></div></fieldset><fieldset class=\"holding-fieldset\"><legend>2. 选择市场</legend><div class=\"holding-choice-grid market-choice\">" + ["A股", "港股", "美股"].map(function (market) { return "<label><input type=\"radio\" name=\"market\" value=\"" + market + "\"" + (draft.market === market ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span>" + market + "</span></label>"; }).join("") + "</div></fieldset><fieldset class=\"holding-fieldset\"><legend>3. 输入股票代码</legend><label class=\"holding-code-field\" for=\"holding-code-input\"><span>股票代码</span><div><input id=\"holding-code-input\" name=\"code\" value=\"" + escapeHtml(draft.code) + "\" placeholder=\"例如 601138 / 1810 / NVDA\" autocomplete=\"off\" autocapitalize=\"characters\" spellcheck=\"false\" aria-describedby=\"holding-code-status\"" + (isSyncing ? " disabled" : "") + "/><button type=\"button\" data-retry-holding-lookup" + (isSyncing ? " disabled" : "") + ">识别</button></div></label><p id=\"holding-code-status\" class=\"holding-lookup-status " + escapeHtml(lookup.status) + "\" data-lookup-status aria-live=\"polite\">" + escapeHtml(lookup.message) + "</p>" + resultCard + "</fieldset><fieldset class=\"holding-fieldset\"><legend>4. 填写成交信息</legend><div class=\"holding-number-grid\"><label><span>成交日期</span><input id=\"holding-trade-date\" name=\"tradeDate\" type=\"date\" value=\"" + escapeHtml(draft.tradeDate) + "\" max=\"" + localDateString() + "\"" + (isSyncing ? " disabled" : "") + "/></label><label><span>" + (isSell ? "卖出价格" : "买入价格") + " <small data-currency-label>" + currency + "</small></span><input id=\"holding-trade-price\" name=\"" + priceName + "\" type=\"number\" min=\"0\" step=\"0.0001\" inputmode=\"decimal\" value=\"" + escapeHtml(priceValue) + "\" placeholder=\"0.00\"" + (isSyncing ? " disabled" : "") + "/></label><label><span>" + (isSell ? "卖出数量" : "买入数量") + (isSell ? " <small>可卖 " + availableQty + "</small>" : "") + "</span><input id=\"holding-trade-qty\" name=\"" + qtyName + "\" type=\"number\" min=\"0\" step=\"any\" inputmode=\"decimal\" value=\"" + escapeHtml(qtyValue) + "\" placeholder=\"0\"" + (isSell && availableQty > 0 ? " max=\"" + availableQty + "\"" : "") + (isSyncing ? " disabled" : "") + "/></label></div></fieldset><aside class=\"holding-fee-card\"><div><span>本次" + (isSell ? "卖出" : "买入") + "手续费</span><strong>US$20</strong></div><p>系统按本次汇率锁定人民币成本或卖出净额，无需手工填写名称、币种和行情代码。</p></aside><div class=\"github-sync-note\"><span class=\"github-sync-dot\"></span><div><strong>同步到 GitHub holdings.json</strong><small>服务器按交易流水更新，买入不会覆盖旧批次；卖出按先进先出扣减。同步失败时保留表单。</small></div></div>" + repositoryPrivacyMarkup() + "<p id=\"holding-form-error\" class=\"holding-form-error\" data-holding-form-error role=\"alert\">" + escapeHtml(saving.message || "") + "</p><footer class=\"holding-editor-actions\"><button type=\"button\" data-close-holding-editor" + (isSyncing ? " disabled" : "") + ">取消</button><button class=\"save-holding-button\" type=\"submit\"" + (saveDisabled ? " disabled" : "") + ">" + saveLabel + "</button></footer></form></section></div>";
 }
 
 function setHoldingLookup(status, message, security) {
@@ -1063,20 +1219,17 @@ function syncHoldingLookupUi() {
     const name = card.querySelector("[data-lookup-name]");
     const meta = card.querySelector("[data-lookup-meta]");
     if (name) name.textContent = lookup.security ? lookup.security.name : "";
-    if (meta) meta.textContent = lookup.security ? lookup.security.code + " · " + lookup.security.currency + (lookup.security.existing ? " · 已有持仓，将更新" : "") : "";
+    if (meta) {
+      const available = availableHoldingQty(lookup.security);
+      meta.textContent = lookup.security ? lookup.security.code + " · " + lookup.security.currency + (state.holdingDraft && state.holdingDraft.operationType === "sell" ? " · 可卖 " + available + " 股" : lookup.security.existing ? " · 将新增一笔买入" : "") : "";
+    }
   }
   const save = document.querySelector(".save-holding-button");
-  if (save) save.disabled = lookup.status !== "success";
+  if (save) save.disabled = lookup.status !== "success" || state.holdingSave.status === "syncing";
 }
 
 function syncHoldingFormUi() {
   if (!state.holdingDraft) return;
-  const sold = state.holdingDraft.status === "sold";
-  const soldFields = document.querySelector("[data-sold-fields]");
-  if (soldFields) soldFields.hidden = !sold;
-  document.querySelectorAll("[data-sold-fields] input").forEach(function (input) { input.required = sold; });
-  const sellFee = document.querySelector(".sell-fee-item");
-  if (sellFee) sellFee.hidden = !sold;
   const currency = currencyForMarket(state.holdingDraft.market);
   document.querySelectorAll("[data-currency-label]").forEach(function (label) { label.textContent = currency; });
   syncHoldingLookupUi();
@@ -1088,7 +1241,7 @@ function comparableCode(value) {
 
 function localHoldingMatch(market, code) {
   const target = comparableCode(code);
-  return state.holdings.find(function (item) { return item.market === market && comparableCode(item.code) === target; }) || null;
+  return state.holdings.find(function (item) { return item.status !== "sold" && item.market === market && comparableCode(item.code) === target; }) || null;
 }
 
 function applyResolvedSecurity(security) {
@@ -1098,17 +1251,14 @@ function applyResolvedSecurity(security) {
   state.holdingDraft.name = security.name;
   state.holdingDraft.sina = security.sina;
   state.holdingDraft.currency = security.currency;
-  if (existing) {
-    if (!state.holdingDraft.buyPrice) state.holdingDraft.buyPrice = String(existing.cost);
-    if (!state.holdingDraft.buyQty) state.holdingDraft.buyQty = String(existing.qty);
-  }
   const codeInput = document.querySelector("#holding-code-input");
-  const buyPrice = document.querySelector("[name=\"buyPrice\"]");
-  const buyQty = document.querySelector("[name=\"buyQty\"]");
   if (codeInput) codeInput.value = security.code;
-  if (buyPrice) buyPrice.value = state.holdingDraft.buyPrice;
-  if (buyQty) buyQty.value = state.holdingDraft.buyQty;
-  setHoldingLookup("success", existing ? "已识别，并找到现有持仓" : "股票名称识别成功", resolved);
+  state.holdingLookup = { status: "success", message: existing ? "已识别，并找到当前持仓" : "股票名称识别成功", security: resolved };
+  render();
+  window.requestAnimationFrame(function () {
+    const price = document.querySelector("#holding-trade-price");
+    if (price) price.focus();
+  });
 }
 
 async function resolveHoldingCode() {
@@ -1151,9 +1301,29 @@ function localDateString(date) {
   return value.getFullYear() + "-" + pad(value.getMonth() + 1) + "-" + pad(value.getDate());
 }
 
-function setHoldingFormError(message) {
+function clearHoldingFieldErrors() {
+  document.querySelectorAll("#holding-editor-form [aria-invalid=\"true\"]").forEach(function (field) {
+    field.removeAttribute("aria-invalid");
+    const describedBy = String(field.getAttribute("aria-describedby") || "").split(/\s+/).filter(function (id) { return id && id !== "holding-form-error"; });
+    if (describedBy.length) field.setAttribute("aria-describedby", describedBy.join(" "));
+    else field.removeAttribute("aria-describedby");
+  });
+}
+
+function setHoldingFormError(message, fieldNames) {
+  clearHoldingFieldErrors();
   const error = document.querySelector("[data-holding-form-error]");
   if (error) error.textContent = message || "";
+  (fieldNames || []).forEach(function (name) {
+    const field = document.querySelector("#holding-editor-form [name=\"" + name.replace(/\"/g, "\\\"") + "\"]");
+    if (!field) return;
+    field.setAttribute("aria-invalid", "true");
+    const describedBy = new Set(String(field.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean));
+    describedBy.add("holding-form-error");
+    field.setAttribute("aria-describedby", Array.from(describedBy).join(" "));
+  });
+  const firstInvalid = document.querySelector("#holding-editor-form [aria-invalid=\"true\"]");
+  if (message && firstInvalid) firstInvalid.focus();
 }
 
 function showToast(message, kind) {
@@ -1169,7 +1339,7 @@ function showToast(message, kind) {
 
 function toastMarkup() {
   if (!state.toast) return "";
-  return "<div class=\"site-toast " + escapeHtml(state.toast.kind) + "\" role=\"status\"><span>" + (state.toast.kind === "success" ? "✓" : "!") + "</span>" + escapeHtml(state.toast.message) + "</div>";
+  return "<div class=\"site-toast " + escapeHtml(state.toast.kind) + "\" role=\"" + (state.toast.kind === "error" ? "alert" : "status") + "\"><span>" + (state.toast.kind === "success" ? "✓" : "!") + "</span>" + escapeHtml(state.toast.message) + "</div>";
 }
 
 async function logoutUser() {
@@ -1191,25 +1361,44 @@ async function logoutUser() {
   }
 }
 
-function holdingRecordFor(draft, security, status, qty, buyFeeUsd) {
-  const fx = COST_REFERENCE_RATES[security.currency] || 1;
+function createHoldingOperationId() {
+  const random = window.crypto && typeof window.crypto.randomUUID === "function" ? window.crypto.randomUUID().replace(/-/g, "") : Math.random().toString(36).slice(2);
+  return "op_" + Date.now().toString(36) + "_" + random.slice(0, 14);
+}
+
+function currentTradeFx(currency) {
   return {
-    market: security.market,
-    code: security.code,
-    name: security.name,
-    status: status,
-    cost: Number(draft.buyPrice),
-    qty: qty,
-    currency: security.currency,
-    sina: security.sina,
-    purchaseCostCny: Number(draft.buyPrice) * qty * fx + buyFeeUsd * COST_REFERENCE_RATES.USD,
-    buyFeeUsd: buyFeeUsd,
-    sellPrice: NaN,
-    sellDate: ""
+    tradeToCny: Number(state.rates[currency]) || COST_REFERENCE_RATES[currency] || 1,
+    usdToCny: Number(state.rates.USD) || COST_REFERENCE_RATES.USD,
+    asOf: state.fxMeta.asOf || localDateString(),
+    source: state.fxMeta.source || "固定参考汇率"
   };
 }
 
-async function syncHoldingsToGitHubClient(nextHoldings) {
+function holdingOperationFromDraft(draft, security) {
+  const isSell = draft.operationType === "sell";
+  const price = Number(isSell ? draft.sellPrice : draft.buyPrice);
+  const qty = Number(isSell ? draft.sellQty : draft.buyQty);
+  const fx = currentTradeFx(security.currency);
+  const feeCny = FIXED_TRADE_FEE_USD * fx.usdToCny;
+  return {
+    operationId: createHoldingOperationId(),
+    type: isSell ? "sell" : "buy",
+    market: HOLDING_MARKET_KEYS[security.market],
+    code: security.code,
+    name: security.name,
+    date: draft.tradeDate,
+    price: price,
+    qty: qty,
+    feeCny: feeCny,
+    purchaseCostCny: isSell ? undefined : price * qty * fx.tradeToCny + feeCny,
+    sellProceedsCny: isSell ? price * qty * fx.tradeToCny - feeCny : undefined,
+    fxAsOf: fx.asOf,
+    fxSource: fx.source
+  };
+}
+
+async function syncHoldingsToGitHubClient(operation) {
   const controller = new AbortController();
   const timeout = window.setTimeout(function () { controller.abort(); }, 15000);
   try {
@@ -1217,83 +1406,152 @@ async function syncHoldingsToGitHubClient(nextHoldings) {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ holdings: nextHoldings }),
+      body: JSON.stringify({ expectedFileSha: state.holdingsFileSha || "", operation: operation }),
       signal: controller.signal
     });
     const payload = await response.json().catch(function () { return {}; });
     if (!response.ok) {
       const error = new Error(payload.error || "GitHub 同步失败");
       error.status = response.status;
+      error.payload = payload;
       throw error;
     }
-    if (payload.ok !== true || !(payload.commitSha || payload.fileSha || payload.alreadyCurrent)) throw new Error("GitHub 没有返回写入确认，请重试");
+    if (payload.ok !== true || !isHoldingsDocument(payload.document)) throw new Error("GitHub 没有返回完整持仓确认，请重试");
     return payload;
   } catch (error) {
-    if (error.name === "AbortError") throw new Error("同步等待超时，尚未确认是否写入 GitHub；请重新打开后核对");
+    if (error.name === "AbortError") {
+      const uncertain = new Error("同步等待超时，正在核对 GitHub 是否已经写入…");
+      uncertain.uncertain = true;
+      throw uncertain;
+    }
     throw error;
   } finally {
     window.clearTimeout(timeout);
   }
 }
 
+function holdingOperationInDocument(document, operationId) {
+  return Boolean(document && Array.isArray(document.lots) && document.lots.some(function (lot) {
+    return String(lot && lot.operationId || "") === operationId || String(lot && lot.buy && lot.buy.operationId || "") === operationId || String(lot && lot.sell && lot.sell.operationId || "") === operationId;
+  }));
+}
+
+async function fetchAuthoritativeHoldings() {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(function () { controller.abort(); }, 8000);
+  try {
+    const response = await fetch("/api/holdings-sync", { credentials: "same-origin", cache: "no-store", signal: controller.signal });
+    const payload = await response.json().catch(function () { return {}; });
+    if (!response.ok || payload.ok !== true || !isHoldingsDocument(payload.document)) throw new Error(payload.error || "无法核对 GitHub 最新持仓");
+    return payload;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function applySuccessfulHoldingSync(result, operation, reconciled) {
+  state.holdingsDocument = result.document;
+  state.holdingsFileSha = String(result.fileSha || state.holdingsFileSha || "");
+  state.holdingsRepository = result.repository || state.holdingsRepository;
+  state.baseHoldings = holdingsFromDocument(result.document);
+  state.holdings = state.baseHoldings.slice();
+  let cacheSaved = true;
+  try { writeStorage(HOLDING_KEY, result.document); } catch { cacheSaved = false; }
+  rebuildRows();
+  state.holdingEditorOpen = false;
+  state.holdingDraft = null;
+  state.holdingLookup = { status: "idle", message: "", security: null };
+  state.holdingSave = { status: "idle", message: "" };
+  state.holdingPendingOperation = null;
+  const confirmation = result.commitSha || result.fileSha || "";
+  const verb = operation.type === "buy" ? "买入" : "卖出";
+  state.toast = { message: verb + (reconciled ? "已在 GitHub 确认" : "已同步到 holdings.json") + (confirmation ? " · " + confirmation.slice(0, 7) : "") + (cacheSaved ? "" : " · 本地缓存不可用"), kind: cacheSaved ? "success" : "warning" };
+  render();
+  window.requestAnimationFrame(function () {
+    const opener = document.querySelector("[data-editor-trigger=\"" + state.holdingEditorTrigger.replace(/\"/g, "\\\"") + "\"]");
+    if (opener) opener.focus();
+  });
+  refreshData();
+}
+
 async function saveHoldingEditor() {
   if (state.holdingSave && state.holdingSave.status === "syncing") return;
   const draft = state.holdingDraft;
   const security = state.holdingLookup && state.holdingLookup.security;
-  if (!draft || !security || state.holdingLookup.status !== "success") { setHoldingFormError("请先完成股票代码识别"); return; }
-  const buyPrice = Number(draft.buyPrice);
-  const buyQty = Number(draft.buyQty);
-  if (!Number.isFinite(buyPrice) || buyPrice <= 0 || !Number.isFinite(buyQty) || buyQty <= 0) { setHoldingFormError("请填写正确的买入价格和买入数量"); return; }
-  const isSold = draft.status === "sold";
-  const sellPrice = Number(draft.sellPrice);
-  const sellQty = Number(draft.sellQty);
-  if (isSold && (!Number.isFinite(sellPrice) || sellPrice <= 0 || !Number.isFinite(sellQty) || sellQty <= 0)) { setHoldingFormError("已卖出记录需要填写卖出价格和卖出数量"); return; }
-  if (isSold && sellQty > buyQty) { setHoldingFormError("卖出数量不能大于买入数量"); return; }
+  if (!draft || !security || state.holdingLookup.status !== "success") { setHoldingFormError("请先完成股票代码识别", ["code"]); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.tradeDate) || draft.tradeDate > localDateString()) { setHoldingFormError("请选择今天或更早的成交日期", ["tradeDate"]); return; }
+  const isSell = draft.operationType === "sell";
+  const priceField = isSell ? "sellPrice" : "buyPrice";
+  const qtyField = isSell ? "sellQty" : "buyQty";
+  const price = Number(draft[priceField]);
+  const qty = Number(draft[qtyField]);
+  if (!Number.isFinite(price) || price <= 0) { setHoldingFormError("请填写正确的成交价格", [priceField]); return; }
+  if (!Number.isFinite(qty) || qty <= 0) { setHoldingFormError("请填写正确的成交数量", [qtyField]); return; }
+  const availableQty = availableHoldingQty(security);
+  if (isSell && availableQty <= 0) { setHoldingFormError("这只股票没有可卖持仓，请先记录买入", ["code"]); return; }
+  if (isSell && qty > availableQty) { setHoldingFormError("卖出数量不能超过可卖的 " + availableQty + " 股", [qtyField]); return; }
 
-  const preserved = state.holdings.filter(function (item) { return item.status === "sold" || item.sina !== security.sina; });
-  const records = [];
-  if (!isSold) {
-    records.push(holdingRecordFor(draft, security, "holding", buyQty, FIXED_TRADE_FEE_USD));
-  } else {
-    const soldRatio = sellQty / buyQty;
-    const soldRecord = holdingRecordFor(draft, security, "sold", sellQty, FIXED_TRADE_FEE_USD * soldRatio);
-    soldRecord.sellPrice = sellPrice;
-    soldRecord.sellDate = localDateString();
-    soldRecord.sellFeeUsd = FIXED_TRADE_FEE_USD;
-    soldRecord.sellProceedsCny = sellPrice * sellQty * (COST_REFERENCE_RATES[security.currency] || 1) - FIXED_TRADE_FEE_USD * COST_REFERENCE_RATES.USD;
-    records.push(soldRecord);
-    const remainingQty = buyQty - sellQty;
-    if (remainingQty > 0) records.unshift(holdingRecordFor(draft, security, "holding", remainingQty, FIXED_TRADE_FEE_USD * (remainingQty / buyQty)));
-  }
-  const nextHoldings = preserved.concat(records).map(normalizeHolding).filter(isValidHolding);
+  const operation = state.holdingPendingOperation || holdingOperationFromDraft(draft, security);
+  state.holdingPendingOperation = operation;
   state.holdingSave = { status: "syncing", message: "正在等待 GitHub 写入确认…" };
   render();
   try {
-    const result = await syncHoldingsToGitHubClient(nextHoldings);
-    state.holdings = nextHoldings;
-    writeStorage(HOLDING_KEY, state.holdings);
-    rebuildRows();
-    state.holdingEditorOpen = false;
-    state.holdingDraft = null;
-    state.holdingLookup = { status: "idle", message: "", security: null };
-    state.holdingSave = { status: "idle", message: "" };
-    const confirmation = result.commitSha || result.fileSha || "";
-    state.toast = { message: "已写入 GitHub holdings.json" + (confirmation ? " · " + confirmation.slice(0, 7) : ""), kind: "success" };
-    render();
-    refreshData();
+    const result = await syncHoldingsToGitHubClient(operation);
+    applySuccessfulHoldingSync(result, operation, false);
   } catch (error) {
-    state.holdingSave = { status: "error", message: error.message || "GitHub 同步失败，本次未保存" };
+    if (error.uncertain) {
+      try {
+        const latest = await fetchAuthoritativeHoldings();
+        state.holdingsFileSha = String(latest.fileSha || state.holdingsFileSha || "");
+        state.holdingsRepository = latest.repository || state.holdingsRepository;
+        if (holdingOperationInDocument(latest.document, operation.operationId)) {
+          applySuccessfulHoldingSync(latest, operation, true);
+          return;
+        }
+        state.holdingSave = { status: "error", message: "GitHub 最新文件中还没有这笔交易；已保留同一交易编号，可安全重试", uncertain: true };
+      } catch (_) {
+        state.holdingSave = { status: "error", message: "暂时无法确认 GitHub 是否写入；请保留表单并点击重试，不要重新录入", uncertain: true };
+      }
+    } else if (error.status === 409 && error.payload) {
+      if (isHoldingsDocument(error.payload.document)) {
+        state.holdingsDocument = error.payload.document;
+        state.baseHoldings = holdingsFromDocument(error.payload.document);
+        state.holdings = state.baseHoldings.slice();
+        rebuildRows();
+        try { writeStorage(HOLDING_KEY, error.payload.document); } catch { /* GitHub remains authoritative. */ }
+      }
+      state.holdingsFileSha = String(error.payload.fileSha || error.payload.currentFileSha || state.holdingsFileSha || "");
+      state.holdingSave = { status: "error", message: "持仓刚被其他页面更新，已载入最新版；请核对后再次保存" };
+    } else {
+      state.holdingSave = { status: "error", message: error.message || "GitHub 同步失败，本次未保存" };
+    }
     render();
   }
 }
 
+function isBeijingWeekend() {
+  const date = calendarDateInTimeZone("Asia/Shanghai");
+  const parsed = new Date(date + "T12:00:00+08:00");
+  return parsed.getUTCDay() === 0 || parsed.getUTCDay() === 6;
+}
+
+function portfolioChartA11yMarkup(points) {
+  const rows = (points || []).filter(function (point) { return Number.isFinite(Number(point.value)); });
+  if (!rows.length) return "<p id=\"portfolio-chart-summary\" class=\"visually-hidden\">暂无累计盈亏走势数据。</p><p id=\"portfolio-chart-live\" class=\"visually-hidden\" role=\"status\" aria-live=\"polite\"></p>";
+  const values = rows.map(function (point) { return Number(point.value); });
+  const latest = rows[rows.length - 1];
+  const summaryText = state.trendDays + "日累计盈亏走势，共 " + rows.length + " 个数据点；最新 " + latest.date + " 为 " + signed(latest.value, 0) + "，区间最高 " + signed(Math.max.apply(null, values), 0) + "，最低 " + signed(Math.min.apply(null, values), 0) + "。";
+  return "<p id=\"portfolio-chart-summary\" class=\"visually-hidden\">" + escapeHtml(summaryText) + "使用左右方向键逐点查看，Home 和 End 跳到首尾。</p><p id=\"portfolio-chart-live\" class=\"visually-hidden\" role=\"status\" aria-live=\"polite\"></p><div class=\"visually-hidden\"><table><caption>" + state.trendDays + "日累计盈亏数据</caption><thead><tr><th scope=\"col\">日期</th><th scope=\"col\">累计盈亏（人民币）</th></tr></thead><tbody>" + rows.map(function (point) { return "<tr><th scope=\"row\">" + escapeHtml(point.date) + "</th><td>" + escapeHtml(signed(point.value, 0)) + "</td></tr>"; }).join("") + "</tbody></table></div>";
+}
+
 function overviewPage() {
   const data = summary();
+  const chartPoints = portfolioSeries(state.trendDays);
   const valuationComplete = data.valuationCount === data.valuationTotal;
   const todayComplete = data.todayCount === data.todayTotal;
   const valuationNote = valuationComplete ? "当前持仓按最新或最近有效行情与汇率折算" : "估值不完整：" + data.valuationCount + "/" + data.valuationTotal + "个持仓有有效价格";
-  const todayNote = todayComplete ? "当日价差 × 当前持仓数量" : "当日行情不完整：" + data.todayCount + "/" + data.todayTotal + "个持仓有有效涨跌";
-  return "<main class=\"page-shell overview-page\">" +
+  const todayNote = todayComplete ? "当日价差 × 当前持仓数量" : isBeijingWeekend() ? "周末主要市场休市，沿用最近有效收盘价" : "当日行情不完整：" + data.todayCount + "/" + data.todayTotal + "个持仓有有效涨跌";
+  return "<main id=\"main-content\" class=\"page-shell overview-page\" tabindex=\"-1\">" +
     "<section class=\"overview-section account-overview-section\"><div class=\"overview-section-heading account-section-heading\"><div><h1>账户整体</h1></div>" + fxStatusLine() + "</div>" +
     "<div class=\"account-metric-grid\">" +
     overviewMetric("股票总投入（人民币）", money(data.netInvested, 0), data.netInvested !== 0 ? "资金基准 100%" : "暂无投入", "买入 " + money(data.grossBuyPrincipal, 0) + " − 卖出 " + money(data.grossSaleAmount, 0) + " + 手续费 " + money(data.totalFees, 0), "neutral", METRIC_HELP.netInvested) +
@@ -1302,12 +1560,15 @@ function overviewPage() {
     overviewMetric("今日盈亏（人民币）", signed(data.today, 0), pct(data.todayRate), todayNote, tone(data.today), METRIC_HELP.todayPnl) +
     "</div><p class=\"fee-policy-note\">港美持仓市值与今日盈亏按最新汇率折算，历史买卖成本按记录或参考汇率固定；每笔买入和卖出各计 US$20 手续费。</p></section>" +
     "<section class=\"overview-section market-overview-section\"><div class=\"overview-section-heading\"><div><h2>市场概览</h2></div><p>市值与今日按最新汇率，投入按历史成本，累计盈亏包含汇兑影响。</p></div><div class=\"overview-market-grid\">" + MARKET_ORDER.map(marketBlock).join("") + "</div></section>" +
-    "<section class=\"overview-section pnl-chart-section\"><article class=\"card chart-card overview-chart-card\"><div class=\"chart-heading\"><div><h2>累计盈亏走势（人民币）" + infoTip(METRIC_HELP.chart) + "</h2><div class=\"chart-legend\"><span class=\"legend-item\"><i class=\"legend-dot\"></i>当前累计盈亏 <b class=\"" + tone(data.totalPnl) + "\">" + signed(data.totalPnl, 0) + "</b></span><span class=\"legend-item\"><i class=\"legend-dot blue\"></i>盈亏平衡线（¥0）</span><span class=\"chart-estimate-note\">按当前持仓回溯估算，未反映期间交易</span></div></div>" + trendButtons() + "</div><div class=\"canvas-wrap overview-canvas-wrap\"><canvas class=\"line-chart\" data-chart=\"portfolio\" tabindex=\"0\" aria-label=\"" + state.trendDays + "日累计盈亏走势图；可触摸或使用左右方向键查看数据点\"></canvas></div></article></section>" +
+    "<section class=\"overview-section pnl-chart-section\"><article class=\"card chart-card overview-chart-card\"><div class=\"chart-heading\"><div><h2>累计盈亏走势（人民币）" + infoTip(METRIC_HELP.chart) + "</h2><div class=\"chart-legend\"><span class=\"legend-item\"><i class=\"legend-dot\"></i>当前累计盈亏 <b class=\"" + tone(data.totalPnl) + "\">" + signed(data.totalPnl, 0) + "</b></span><span class=\"legend-item\"><i class=\"legend-dot blue\"></i>盈亏平衡线（¥0）</span><span class=\"chart-estimate-note\">按当前持仓回溯估算，未反映期间交易</span></div></div>" + trendButtons() + "</div><div class=\"canvas-wrap overview-canvas-wrap\"><canvas class=\"line-chart\" data-chart=\"portfolio\" tabindex=\"0\" role=\"img\" aria-label=\"" + state.trendDays + "日累计盈亏走势图\" aria-keyshortcuts=\"ArrowLeft ArrowRight Home End\" aria-describedby=\"portfolio-chart-summary\"></canvas></div>" + portfolioChartA11yMarkup(chartPoints) + "</article></section>" +
     "<section class=\"overview-section ranking-section\"><div class=\"card overview-ranking-card\">" + rankCard() + "</div></section></main>";
 }
 
 function infoTip(text) {
-  return "<span class=\"info-tip\" tabindex=\"0\" aria-label=\"查看指标说明\"><span class=\"info-icon\" aria-hidden=\"true\">i</span><span class=\"info-popover\" role=\"tooltip\">" + escapeHtml(text) + "</span></span>";
+  let hash = 0;
+  String(text).split("").forEach(function (character) { hash = (hash * 31 + character.charCodeAt(0)) >>> 0; });
+  const id = "metric-help-" + hash.toString(36);
+  return "<span class=\"info-tip\" tabindex=\"0\" aria-label=\"指标说明\" aria-describedby=\"" + id + "\"><span class=\"info-icon\" aria-hidden=\"true\">i</span><span id=\"" + id + "\" class=\"info-popover\" role=\"tooltip\">" + escapeHtml(text) + "</span></span>";
 }
 
 function overviewMetric(label, value, rate, formula, valueTone, helpText) {
@@ -1563,7 +1824,7 @@ function actionsPage() {
   const allRows = openSecurityRows();
   const rows = sortActionRows(filteredHoldingRows(allRows));
   if (state.expandedHoldingKey && !rows.some(function (row) { return row.holdingKey === state.expandedHoldingKey; })) state.expandedHoldingKey = "";
-  return "<main class=\"page-shell action-page\"><header class=\"holding-page-heading\"><h1 class=\"page-title\">持仓明细</h1><p>看清仓位、成本与当前浮动盈亏</p></header>" + holdingSnapshotMarkup(allRows) + holdingStructureMarkup(allRows) + holdingToolbarMarkup(allRows, rows) +
+  return "<main id=\"main-content\" class=\"page-shell action-page\" tabindex=\"-1\"><header class=\"holding-page-heading\"><h1 class=\"page-title\">持仓明细</h1><p>看清仓位、成本与当前浮动盈亏</p></header>" + holdingSnapshotMarkup(allRows) + holdingStructureMarkup(allRows) + holdingToolbarMarkup(allRows, rows) +
     "<section class=\"card holding-list-card\"><div class=\"holding-list-heading\"><div><h2>全部持仓</h2><p>人民币为主读数；港美股第二行显示市场原币，累计人民币口径包含汇兑影响。点击数值表头切换升序或降序。</p></div><strong>" + rows.length + " / " + allRows.length + "只</strong></div>" + holdingActionTable(rows) + "</section></main>";
 }
 
@@ -2073,6 +2334,16 @@ function radarVisibleFingerprint(rows) {
   return (rows || []).map(function (item) { return item.sina; }).filter(Boolean).join(",");
 }
 
+function radarHistoryTargets(rows) {
+  const candidates = RADAR_MARKETS.flatMap(radarTopThreeByMarket).concat(rows || []);
+  const seen = new Set();
+  return candidates.filter(function (item) {
+    if (!item || !item.sina || seen.has(item.sina)) return false;
+    seen.add(item.sina);
+    return true;
+  });
+}
+
 function radarHistoryBatches(rows) {
   const batches = [];
   for (let index = 0; index < (rows || []).length; index += 5) batches.push(rows.slice(index, index + 5));
@@ -2111,9 +2382,10 @@ function pruneRadarHistoryCache() {
 
 async function loadVisibleRadarHistories(expectedFingerprint) {
   const view = radarPageWindow();
-  const fingerprint = radarVisibleFingerprint(view.pageRows);
+  const targets = radarHistoryTargets(view.pageRows);
+  const fingerprint = radarVisibleFingerprint(targets);
   if (!fingerprint || fingerprint !== expectedFingerprint || state.tab !== "radar") return;
-  const missing = view.pageRows.filter(function (item) {
+  const missing = targets.filter(function (item) {
     const status = state.radarHistoryStatus[item.sina];
     return item.sina && radarHistoryNeedsRefresh(item.sina) && (!status || status.state !== "loading");
   });
@@ -2160,7 +2432,8 @@ async function loadVisibleRadarHistories(expectedFingerprint) {
 function scheduleVisibleRadarHistoryLoad() {
   if (state.tab !== "radar") return;
   const view = radarPageWindow();
-  const fingerprint = radarVisibleFingerprint(view.pageRows);
+  const targets = radarHistoryTargets(view.pageRows);
+  const fingerprint = radarVisibleFingerprint(targets);
   if (fingerprint !== state.radarVisibleFingerprint) {
     window.clearTimeout(radarHistoryTimer);
     radarHistoryTimer = 0;
@@ -2169,7 +2442,7 @@ function scheduleVisibleRadarHistoryLoad() {
     state.radarHistoryController = null;
     state.radarVisibleFingerprint = fingerprint;
   }
-  const needsLoad = view.pageRows.some(function (item) {
+  const needsLoad = targets.some(function (item) {
     const status = state.radarHistoryStatus[item.sina];
     return item.sina && radarHistoryNeedsRefresh(item.sina) && (!status || status.state !== "loading");
   });
@@ -2296,6 +2569,11 @@ function radarCandidateRow(item, displayRank) {
   return "<li class=\"radar-candidate " + (expanded ? "is-expanded " : "") + (cached ? "is-cached" : "") + "\"><article><div class=\"radar-candidate-main\"><span class=\"radar-rank\">#" + displayRank + "</span><div class=\"radar-security\">" + marketLabel(item.market) + "<h3>" + escapeHtml(item.name) + "</h3><p>" + escapeHtml(item.code + cacheLabel) + "</p></div><div class=\"radar-score\"><span class=\"radar-band " + band.key + "\">" + band.text + "</span><strong>" + (Number.isFinite(score) ? score.toFixed(1) : "--") + "</strong><meter min=\"0\" max=\"100\" value=\"" + (Number.isFinite(score) ? score.toFixed(1) : "0") + "\">" + (Number.isFinite(score) ? score.toFixed(1) : "--") + "/100</meter></div>" + radarPricePlanMarkup(item) + "<div class=\"radar-thesis\"><span>入选依据</span><p>" + escapeHtml(primaryReason) + "</p></div><div class=\"radar-candidate-actions\"><button class=\"outline-button\" type=\"button\" data-toggle-radar=\"" + escapeHtml(item.id) + "\" aria-expanded=\"" + expanded + "\" aria-controls=\"" + panelId + "\">" + (expanded ? "收起依据" : "查看依据") + "</button><button class=\"" + (saved ? "secondary-button" : "primary-button") + "\" type=\"button\" data-toggle-watch=\"" + escapeHtml(item.id) + "\" aria-pressed=\"" + saved + "\">" + (saved ? "移出观察" : "加入观察") + "</button></div></div><section id=\"" + panelId + "\" aria-label=\"" + escapeHtml(item.name) + "评分依据\"" + (expanded ? "" : " hidden") + ">" + radarCandidateDetail(item) + "</section></article></li>";
 }
 
+function radarSnapshotErrorText(snapshot, fallback) {
+  if (!snapshot || !snapshot.error) return fallback || "";
+  return typeof snapshot.error === "object" ? snapshot.error.message || fallback || "" : String(snapshot.error);
+}
+
 function radarMarketStat(market) {
   const snapshot = state.radarMarkets[market];
   const usable = isRadarSnapshot(snapshot, market);
@@ -2303,10 +2581,10 @@ function radarMarketStat(market) {
   const priority = usable ? snapshot.candidates.filter(function (item) { return optionalNumber(item.score) >= 70; }).length : 0;
   const loadState = radarEffectiveLoadState(snapshot);
   const priorDay = Boolean(snapshot && !radarSnapshotIsDailyCurrent(snapshot));
-  const stateText = loadState === "fresh" ? "今日已更新" : loadState === "cached" ? priorDay ? "缓存 · 非今日" : snapshot && snapshot.error ? "缓存 · 更新失败" : "上次缓存" : loadState === "error" ? "今日更新失败" : "等待扫描";
-  const cardClass = loadState === "error" || !snapshot ? "is-error" : loadState === "cached" ? "is-partial" : "";
+  const stateText = loadState === "fresh" ? "今日已更新" : loadState === "stale" ? "今日更新失败 · 沿用旧榜" : loadState === "cached" ? priorDay ? "缓存 · 非今日" : snapshot && snapshot.error ? "缓存 · 更新失败" : "上次缓存" : loadState === "error" ? "今日更新失败" : "等待扫描";
+  const cardClass = loadState === "error" || !snapshot ? "is-error" : loadState === "cached" || loadState === "stale" ? "is-partial" : "";
   const rawSize = usable ? optionalNumber(snapshot.rawSize) : NaN;
-  const note = loadState === "error" ? snapshot.error || "本市场扫描失败" : loadState === "cached" ? priorDay ? "当前是非今日缓存，进入页面后会自动尝试更新。" : snapshot && snapshot.error ? "今日重新扫描失败，页面会稍后重试。" : "正在获取今日结果。" : "按本市场自身分布评分；候选数量不足200只时不会发布本期排名。";
+  const note = loadState === "error" ? radarSnapshotErrorText(snapshot, "本市场扫描失败") : loadState === "stale" ? radarSnapshotErrorText(snapshot, "今日后台更新失败，明确沿用上次有效候选。") : loadState === "cached" ? priorDay ? "当前是非今日缓存；可点击顶部刷新手动重试。" : snapshot && snapshot.error ? "今日重新扫描失败，页面会稍后重试。" : "正在获取今日结果。" : "按本市场自身分布评分；候选数量不足200只时不会发布本期排名。";
   const time = snapshot && snapshot.fetchedAt ? "<span class=\"radar-market-time\">机会扫描 " + radarTimeMarkup(snapshot.fetchedAt) + " · 北京时间</span>" : "<span class=\"radar-market-time\">机会扫描时间待更新</span>";
   return "<article class=\"radar-market-stat " + cardClass + "\"><header><span>" + marketLabel(market) + "</span><small>" + escapeHtml(stateText) + "</small></header><dl><div><dt>有效候选</dt><dd>" + (Number.isFinite(pool) ? pool : "--") + "<small>只</small></dd></div><div><dt>优先研究</dt><dd>" + (usable ? priority : "--") + "<small>只</small></dd></div><div><dt>原始扫描</dt><dd>" + (Number.isFinite(rawSize) ? rawSize : "--") + "<small>只</small></dd></div></dl><p>" + time + "<small>" + escapeHtml(note) + "</small></p><progress max=\"500\" value=\"" + (Number.isFinite(rawSize) ? Math.min(500, rawSize) : 0) + "\">" + (Number.isFinite(rawSize) ? rawSize : 0) + "/500</progress></article>";
 }
@@ -2315,8 +2593,8 @@ function radarTopThreeMarket(market) {
   const snapshot = state.radarMarkets[market];
   const loadState = radarEffectiveLoadState(snapshot);
   const rows = radarTopThreeByMarket(market);
-  const stateText = loadState === "fresh" ? "今日榜单" : loadState === "cached" ? "缓存榜单" : loadState === "error" ? "更新失败" : "等待更新";
-  const cardClass = loadState === "fresh" ? "" : loadState === "cached" ? " is-cached" : " is-error";
+  const stateText = loadState === "fresh" ? "今日榜单" : loadState === "stale" ? "沿用旧榜" : loadState === "cached" ? "缓存榜单" : loadState === "error" ? "更新失败" : "等待更新";
+  const cardClass = loadState === "fresh" ? "" : loadState === "cached" || loadState === "stale" ? " is-cached" : " is-error";
   const time = snapshot && snapshot.fetchedAt ? radarTimeMarkup(snapshot.fetchedAt) : "<span>时间待更新</span>";
   const list = rows.length ? "<ol class=\"radar-top3-list\">" + rows.map(function (item, index) {
     const metrics = item.metrics || {};
@@ -2324,8 +2602,8 @@ function radarTopThreeMarket(market) {
     const score = optionalNumber(item.score);
     const reasons = Array.isArray(item.reasons) && item.reasons.length ? item.reasons.slice(0, 2) : ["当前没有足够的公开评分依据"];
     const cached = radarEffectiveLoadState(item) !== "fresh";
-    return "<li class=\"radar-top3-item" + (cached ? " is-cached" : "") + "\"><span class=\"radar-top3-rank\" aria-label=\"第" + (index + 1) + "名\">" + (index + 1) + "</span><div class=\"radar-top3-security\"><strong>" + escapeHtml(item.name) + "</strong><span>" + escapeHtml(item.code) + " · 当前价 " + escapeHtml(nativeMoney(metrics.price, item.currency)) + "</span><small>行情 " + escapeHtml(radarQuoteShortTimestamp(item)) + (cached ? " · 缓存" : "") + "</small></div><div class=\"radar-top3-score\"><span class=\"radar-band " + band.key + "\">" + band.text + "</span><strong>" + (Number.isFinite(score) ? score.toFixed(1) : "--") + "</strong><small>研究分</small></div><div class=\"radar-top3-reasons\"><span>为什么入选</span><ul>" + reasons.map(function (reason) { return "<li>" + escapeHtml(reason) + "</li>"; }).join("") + "</ul></div></li>";
-  }).join("") + "</ol>" : "<div class=\"radar-top3-empty\"><strong>暂无可展示候选</strong><p>" + escapeHtml(snapshot && snapshot.error || (loadState === "error" ? "本市场今日更新失败，请稍后重试。" : "正在等待本市场完成今日扫描。")) + "</p></div>";
+    return "<li class=\"radar-top3-item" + (cached ? " is-cached" : "") + "\"><span class=\"radar-top3-rank\" aria-label=\"第" + (index + 1) + "名\">" + (index + 1) + "</span><div class=\"radar-top3-security\"><strong>" + escapeHtml(item.name) + "</strong><span>" + escapeHtml(item.code) + "</span><small>行情 " + escapeHtml(radarQuoteShortTimestamp(item)) + (cached ? " · 缓存" : "") + "</small></div><div class=\"radar-top3-score\"><span class=\"radar-band " + band.key + "\">" + band.text + "</span><strong>" + (Number.isFinite(score) ? score.toFixed(1) : "--") + "</strong><small>研究分</small></div>" + radarPricePlanMarkup(item) + "<div class=\"radar-top3-reasons\"><span>为什么入选</span><ul>" + reasons.map(function (reason) { return "<li>" + escapeHtml(reason) + "</li>"; }).join("") + "</ul></div></li>";
+  }).join("") + "</ol>" : "<div class=\"radar-top3-empty\"><strong>暂无可展示候选</strong><p>" + escapeHtml(radarSnapshotErrorText(snapshot, loadState === "error" ? "本市场今日更新失败，请稍后重试。" : "正在等待本市场完成今日扫描。")) + "</p></div>";
   return "<article class=\"radar-top3-market" + cardClass + "\"><header><div>" + marketLabel(market) + "<h3>" + market + " Top 3</h3></div><div><strong>" + escapeHtml(stateText) + "</strong>" + time + "</div></header>" + list + "</article>";
 }
 
@@ -2333,7 +2611,7 @@ function radarTopThreeSection() {
   const update = radarLatestUpdate();
   const title = update.complete ? "今日三地 Top 3" : "三地市场 Top 3";
   const status = update.complete ? "三市场今日更新完成" : update.currentCount ? "今日已更新 " + update.currentCount + "/3" : update.value ? "等待今日更新 · 当前显示缓存" : "等待今日首次扫描";
-  return "<section class=\"card radar-top3-section\" aria-labelledby=\"radar-top3-title\"><header class=\"radar-top3-head\"><div><span class=\"radar-eyebrow\">DAILY OPPORTUNITIES</span><h2 id=\"radar-top3-title\">" + title + "</h2><p>每个市场按同市场研究分独立排序，固定显性展示前三名；当前持仓不会进入榜单。</p></div><div class=\"radar-top3-update\"><span>" + escapeHtml(status) + "</span>" + radarTimeMarkup(update.value, "时间待更新") + "<small>北京时间 · 每日首次进入自动更新</small></div></header><div class=\"radar-top3-grid\">" + RADAR_MARKETS.map(radarTopThreeMarket).join("") + "</div><footer>Top 3 代表“先研究谁”，原因来自趋势、流动性、短期波动和估值可比性的透明评分，不代表上涨概率、目标价或买入建议。行情时间可能早于机会扫描时间。</footer></section>";
+  return "<section class=\"card radar-top3-section\" aria-labelledby=\"radar-top3-title\"><header class=\"radar-top3-head\"><div><span class=\"radar-eyebrow\">DAILY OPPORTUNITIES</span><h2 id=\"radar-top3-title\">" + title + "</h2><p>每个市场按同市场研究分独立排序，固定显性展示前三名；当前持仓不会进入榜单。</p></div><div class=\"radar-top3-update\"><span>" + escapeHtml(status) + "</span>" + radarTimeMarkup(update.value, "时间待更新") + "<small>北京时间 · 每日 08:10 后台更新</small></div></header><div class=\"radar-top3-grid\">" + RADAR_MARKETS.map(radarTopThreeMarket).join("") + "</div><footer>Top 3 代表“先研究谁”，原因来自趋势、流动性、短期波动和估值可比性的透明评分；10日参考上沿是历史波动情景，不是目标价或收益承诺。</footer></section>";
 }
 
 function radarWatchAside() {
@@ -2379,7 +2657,7 @@ function radarPage() {
     : "10日价位已计算 " + readyLevels + "/" + pageRows.length + (unavailableLevels ? " · " + unavailableLevels + "只数据不足" : "");
   const results = pageRows.length ? "<p class=\"radar-level-progress\" role=\"status\" aria-live=\"polite\">" + escapeHtml(levelProgress) + "</p><ol class=\"radar-candidate-list\">" + pageRows.map(function (item, index) { return radarCandidateRow(item, start + index + 1); }).join("") + "</ol>" : "<div class=\"radar-empty\"><strong>没有符合当前条件的候选</strong><p>可以切换到“全部分数”或清除搜索条件。</p><button type=\"button\" class=\"outline-button\" data-radar-clear>清除筛选</button></div>";
   const pagination = "<nav class=\"radar-pagination\" aria-label=\"候选结果分页\"><button type=\"button\" data-radar-page=\"" + (state.radarPage - 1) + "\"" + (state.radarPage <= 1 ? " disabled" : "") + ">上一页</button><span>第 " + state.radarPage + " / " + totalPages + " 页</span><button type=\"button\" data-radar-page=\"" + (state.radarPage + 1) + "\"" + (state.radarPage >= totalPages ? " disabled" : "") + ">下一页</button></nav>";
-  return "<main class=\"page-shell radar-page\"><header class=\"radar-page-heading\"><div><h1 class=\"page-title\">机会雷达</h1><p class=\"page-subtitle\">从三地高流动性股票中筛出值得优先研究的候选；研究分只用于排序，不代表未来上涨概率。</p></div><div class=\"radar-update-summary\" role=\"status\" aria-live=\"polite\"><span>机会更新时间</span>" + radarTimeMarkup(update.value, "时间待更新") + "<small>" + escapeHtml(updateStatus) + " · 北京时间<br>每日首次进入自动更新 · 有效基础池 <b>" + (poolTotal || "--") + " 只</b> · 优先研究 " + priorityTotal + " 只</small></div></header>" + radarTopThreeSection() + "<section class=\"radar-scan-grid\" aria-busy=\"" + (state.radarStatus === "loading") + "\">" + RADAR_MARKETS.map(radarMarketStat).join("") + "</section><p class=\"radar-scan-status " + (displayStatus === "error" || displayStatus === "stale" ? "error" : "") + "\" role=\"status\" aria-live=\"polite\">" + escapeHtml(scanStatus) + "</p>" + method + "<section class=\"card radar-toolbar\" role=\"search\" aria-label=\"筛选机会候选\"><label class=\"radar-search\"><span>搜索股票</span><input type=\"search\" value=\"" + escapeHtml(state.radarQuery) + "\" placeholder=\"输入名称或代码\" data-radar-search></label><fieldset class=\"radar-filter-group\"><legend>市场</legend><div class=\"radar-filter-options\">" + marketOptions + "</div></fieldset><fieldset class=\"radar-filter-group\"><legend>研究级别</legend><div class=\"radar-filter-options\">" + bandOptions + "</div></fieldset><label class=\"radar-sort\"><span>排序</span><select data-radar-sort><option value=\"score\"" + (state.radarSort === "score" ? " selected" : "") + ">研究优先级</option><option value=\"trend\"" + (state.radarSort === "trend" ? " selected" : "") + ">60日趋势</option><option value=\"liquidity\"" + (state.radarSort === "liquidity" ? " selected" : "") + ">成交活跃度</option><option value=\"risk\"" + (state.radarSort === "risk" ? " selected" : "") + ">短期波动</option><option value=\"change\"" + (state.radarSort === "change" ? " selected" : "") + ">最近交易日涨跌</option></select></label><p class=\"radar-result-status\" role=\"status\">筛选后 " + allRows.length + " 只，当前显示 " + (pageRows.length ? start + 1 : 0) + "–" + (start + pageRows.length) + "。已排除当前持仓中的同代码或同名证券。</p></section><div class=\"radar-content-grid\"><section class=\"card radar-results-card\" aria-labelledby=\"radar-results-title\"><header class=\"radar-results-head\"><div><h2 id=\"radar-results-title\" tabindex=\"-1\">候选股票</h2><p>先看评分依据和反方风险，再决定是否加入观察。</p></div><span>每页 " + RADAR_PAGE_SIZE + " 只</span></header>" + (state.radarStatus === "loading" && !state.radarRows.length ? "<div class=\"radar-loading\"><strong>正在建立600+股票候选池…</strong><p>A股、港股、美股分别扫描，通常需要几秒钟。</p></div>" : results + pagination) + "</section>" + radarWatchAside() + "</div></main>";
+  return "<main class=\"page-shell radar-page\"><header class=\"radar-page-heading\"><div><h1 class=\"page-title\">机会雷达</h1><p class=\"page-subtitle\">从三地高流动性股票中筛出值得优先研究的候选；研究分只用于排序，不代表未来上涨概率。</p></div><div class=\"radar-update-summary\" role=\"status\" aria-live=\"polite\"><span>机会更新时间</span>" + radarTimeMarkup(update.value, "时间待更新") + "<small>" + escapeHtml(updateStatus) + " · 北京时间<br>每日 08:10 后台更新 · 有效基础池 <b>" + (poolTotal || "--") + " 只</b> · 优先研究 " + priorityTotal + " 只</small></div></header>" + radarTopThreeSection() + "<section class=\"radar-scan-grid\" aria-busy=\"" + (state.radarStatus === "loading") + "\">" + RADAR_MARKETS.map(radarMarketStat).join("") + "</section><p class=\"radar-scan-status " + (displayStatus === "error" || displayStatus === "stale" ? "error" : "") + "\" role=\"status\" aria-live=\"polite\">" + escapeHtml(scanStatus) + "</p>" + method + "<section class=\"card radar-toolbar\" role=\"search\" aria-label=\"筛选机会候选\"><label class=\"radar-search\"><span>搜索股票</span><input type=\"search\" value=\"" + escapeHtml(state.radarQuery) + "\" placeholder=\"输入名称或代码\" data-radar-search></label><fieldset class=\"radar-filter-group\"><legend>市场</legend><div class=\"radar-filter-options\">" + marketOptions + "</div></fieldset><fieldset class=\"radar-filter-group\"><legend>研究级别</legend><div class=\"radar-filter-options\">" + bandOptions + "</div></fieldset><label class=\"radar-sort\"><span>排序</span><select data-radar-sort><option value=\"score\"" + (state.radarSort === "score" ? " selected" : "") + ">研究优先级</option><option value=\"trend\"" + (state.radarSort === "trend" ? " selected" : "") + ">60日趋势</option><option value=\"liquidity\"" + (state.radarSort === "liquidity" ? " selected" : "") + ">成交活跃度</option><option value=\"risk\"" + (state.radarSort === "risk" ? " selected" : "") + ">短期波动</option><option value=\"change\"" + (state.radarSort === "change" ? " selected" : "") + ">最近交易日涨跌</option></select></label><p class=\"radar-result-status\" role=\"status\">筛选后 " + allRows.length + " 只，当前显示 " + (pageRows.length ? start + 1 : 0) + "–" + (start + pageRows.length) + "。已排除当前持仓中的同代码或同名证券。</p></section><div class=\"radar-content-grid\"><section class=\"card radar-results-card\" aria-labelledby=\"radar-results-title\"><header class=\"radar-results-head\"><div><h2 id=\"radar-results-title\" tabindex=\"-1\">候选股票</h2><p>先看评分依据和反方风险，再决定是否加入观察。</p></div><span>每页 " + RADAR_PAGE_SIZE + " 只</span></header>" + (state.radarStatus === "loading" && !state.radarRows.length ? "<div class=\"radar-loading\"><strong>正在读取每日机会快照…</strong><p>后台每日扫描三地市场；当前页面只读取统一快照。</p></div>" : results + pagination) + "</section>" + radarWatchAside() + "</div></main>";
 }
 
 function soldDateValue(row) {
@@ -2441,7 +2719,9 @@ function soldFilterControls() {
   const sortOptions = [["date", "卖出时间"], ["pnl", "盈亏金额"], ["rate", "收益率"]].map(function (option) {
     return "<option value=\"" + option[0] + "\"" + (state.tradeSort === option[0] ? " selected" : "") + ">" + option[1] + "</option>";
   }).join("");
-  return "<div class=\"trade-filter-controls\"><div class=\"trade-date-range\" role=\"group\" aria-label=\"卖出日期范围\"><label><span>卖出日期从</span><input type=\"date\" value=\"" + escapeHtml(state.tradeDateStart) + "\" data-trade-date-start></label><span aria-hidden=\"true\">至</span><label><span>卖出日期到</span><input type=\"date\" value=\"" + escapeHtml(state.tradeDateEnd) + "\" data-trade-date-end></label></div><label class=\"trade-sort-field\"><span>排序依据</span><select data-trade-sort>" + sortOptions + "</select></label><button class=\"secondary-button trade-sort-direction\" type=\"button\" data-trade-sort-direction aria-label=\"切换排序方向，当前" + tradeSortDirectionLabel().replace(/[↑↓]\s*/, "") + "\">" + tradeSortDirectionLabel() + "</button>" + (tradeFiltersActive() ? "<button class=\"text-button trade-clear-filter\" type=\"button\" data-clear-trade-filters>清除筛选</button>" : "") + "</div>";
+  const invalid = tradeDateRangeInvalid();
+  const invalidAttributes = invalid ? " aria-invalid=\"true\" aria-describedby=\"trade-filter-status\"" : "";
+  return "<div class=\"trade-filter-controls\"><div class=\"trade-date-range\" role=\"group\" aria-label=\"卖出日期范围\"><label><span>卖出日期从</span><input type=\"date\" value=\"" + escapeHtml(state.tradeDateStart) + "\" data-trade-date-start" + invalidAttributes + "></label><span aria-hidden=\"true\">至</span><label><span>卖出日期到</span><input type=\"date\" value=\"" + escapeHtml(state.tradeDateEnd) + "\" data-trade-date-end" + invalidAttributes + "></label></div><label class=\"trade-sort-field\"><span>排序依据</span><select data-trade-sort>" + sortOptions + "</select></label><button class=\"secondary-button trade-sort-direction\" type=\"button\" data-trade-sort-direction aria-label=\"切换排序方向，当前" + tradeSortDirectionLabel().replace(/[↑↓]\s*/, "") + "\">" + tradeSortDirectionLabel() + "</button>" + (tradeFiltersActive() ? "<button class=\"text-button trade-clear-filter\" type=\"button\" data-clear-trade-filters>清除筛选</button>" : "") + "</div>";
 }
 
 function soldEmptyState() {
@@ -2459,16 +2739,16 @@ function tradesPage() {
   const realizedPnl = soldRows.reduce(function (total, row) { return total + row.pnlCny; }, 0);
   const wins = soldRows.filter(function (row) { return row.pnlCny > 0; }).length;
   const winRate = soldRows.length ? wins / soldRows.length * 100 : 0;
-  return "<main class=\"page-shell\"><div class=\"filter-bar\"><div><h1 class=\"page-title\" style=\"margin:0\">卖出记录</h1><p class=\"section-helper\">记录已完成的卖出批次，并自动计入固定手续费。</p></div><button class=\"primary-button\" type=\"button\" data-open-holding-editor=\"sold\">录入卖出</button></div><section class=\"trade-kpis\">" +
+  return "<main class=\"page-shell\"><div class=\"filter-bar\"><div><h1 class=\"page-title\" style=\"margin:0\">卖出记录</h1><p class=\"section-helper\">记录已完成的卖出批次，并自动计入固定手续费。</p></div><button class=\"primary-button\" type=\"button\" data-open-holding-editor=\"sold\" data-editor-trigger=\"trades\">录入卖出</button></div><section class=\"trade-kpis\">" +
     tradeKpi("已卖出批次", soldRows.length + " 笔", "盈利 " + wins + " 笔 · 胜率 " + winRate.toFixed(0) + "%") + tradeKpi("买入成本", money(purchaseCost, 0), "买入价 × 数量，人民币折算") + tradeKpi("卖出金额", money(saleProceeds, 0), "卖出价 × 数量，人民币折算") + tradeKpi("已实现盈亏", signed(realizedPnl, 0), "卖出金额 − 买入成本", tone(realizedPnl)) + "</section>" +
-    "<section class=\"card table-card sold-record-section\"><div class=\"trade-toolbar\"><div class=\"trade-toolbar-heading\">" + soldMarketTabs() + "<span class=\"trade-source\">卖出批次来自 GitHub holdings.json</span></div>" + soldFilterControls() + "</div><p class=\"trade-result-summary" + (tradeDateRangeInvalid() ? " is-error" : "") + "\" role=\"status\">" + (tradeDateRangeInvalid() ? "日期范围无效，请调整后查看记录。" : "当前显示 " + soldRows.length + " / " + allSoldCount + " 笔卖出记录") + "</p><div class=\"table-scroll sold-record-desktop\"><table class=\"sold-record-table\"><thead><tr><th>卖出日期</th><th>市场</th><th>股票</th><th>买入价</th><th>卖出价</th><th>数量</th><th>买入成本</th><th>卖出金额</th><th>已实现盈亏</th><th>收益率</th></tr></thead><tbody>" + (soldRows.length ? soldRows.map(soldRecordRow).join("") : "<tr><td colspan=\"10\">" + soldEmptyState() + "</td></tr>") + "</tbody></table></div><div class=\"sold-record-mobile\">" + (soldRows.length ? soldRows.map(soldRecordMobileCard).join("") : soldEmptyState()) + "</div></section></main>";
+    "<section class=\"card table-card sold-record-section\"><div class=\"trade-toolbar\"><div class=\"trade-toolbar-heading\">" + soldMarketTabs() + "<span class=\"trade-source\">卖出批次来自 GitHub holdings.json</span></div>" + soldFilterControls() + "</div><p id=\"trade-filter-status\" class=\"trade-result-summary" + (tradeDateRangeInvalid() ? " is-error" : "") + "\" role=\"status\">" + (tradeDateRangeInvalid() ? "日期范围无效，请调整后查看记录。" : "当前显示 " + soldRows.length + " / " + allSoldCount + " 笔卖出记录") + "</p><div class=\"table-scroll sold-record-desktop\"><table class=\"sold-record-table\"><caption class=\"visually-hidden\">卖出记录，可按市场、卖出时间、盈亏金额或收益率筛选排序</caption><thead><tr><th scope=\"col\">卖出日期</th><th scope=\"col\">市场</th><th scope=\"col\">股票</th><th scope=\"col\">买入价</th><th scope=\"col\">卖出价</th><th scope=\"col\">数量</th><th scope=\"col\">买入成本</th><th scope=\"col\">卖出金额</th><th scope=\"col\">已实现盈亏</th><th scope=\"col\">收益率</th></tr></thead><tbody>" + (soldRows.length ? soldRows.map(soldRecordRow).join("") : "<tr><td colspan=\"10\">" + soldEmptyState() + "</td></tr>") + "</tbody></table></div><div class=\"sold-record-mobile\">" + (soldRows.length ? soldRows.map(soldRecordMobileCard).join("") : soldEmptyState()) + "</div></section></main>";
 }
 
 function soldMarketTabs() {
   const allSold = state.rows.filter(function (row) { return row.status === "sold"; });
   return "<div class=\"tab-group\">" + ["全部", "A股", "港股", "美股"].map(function (market) {
     const count = market === "全部" ? allSold.length : allSold.filter(function (row) { return row.market === market; }).length;
-    return "<button type=\"button\" class=\"" + (state.tradeMarket === market ? "active" : "") + "\" data-trade-market=\"" + market + "\">" + market + " <small>" + count + "</small></button>";
+    return "<button type=\"button\" class=\"" + (state.tradeMarket === market ? "active" : "") + "\" data-trade-market=\"" + market + "\" aria-pressed=\"" + (state.tradeMarket === market) + "\">" + market + " <small>" + count + "</small></button>";
   }).join("") + "</div>";
 }
 
@@ -2586,10 +2866,71 @@ function topFiveConcentration() {
   return open.slice(0, 5).reduce(function (n, row) { return n + row.valueCny; }, 0) / data.value * 100;
 }
 
-function render() {
-  const page = state.tab === "actions" ? actionsPage() : state.tab === "radar" ? radarPage() : state.tab === "trades" ? tradesPage() : overviewPage();
+function applyPageMeta(announceRoute) {
+  const meta = PAGE_META[state.tab] || PAGE_META.overview;
+  document.title = meta.title + " · 猪猪存钱罐";
+  if (!announceRoute) return;
+  const announcer = document.querySelector("#route-announcer");
+  if (announcer) {
+    announcer.textContent = "";
+    window.requestAnimationFrame(function () { announcer.textContent = "已进入" + meta.title + "页面"; });
+  }
+  window.requestAnimationFrame(function () {
+    const heading = document.querySelector("#app .page-shell h1");
+    if (!heading) {
+      const main = document.querySelector("#main-content");
+      if (main) main.focus({ preventScroll: true });
+      return;
+    }
+    heading.setAttribute("tabindex", "-1");
+    heading.focus({ preventScroll: true });
+  });
+}
+
+function syncModalIsolation() {
+  document.querySelectorAll("#app > .site-header, #app > .page-shell, #app > .page-footer").forEach(function (element) {
+    if (state.holdingEditorOpen) {
+      element.setAttribute("inert", "");
+      element.setAttribute("aria-hidden", "true");
+    } else {
+      element.removeAttribute("inert");
+      element.removeAttribute("aria-hidden");
+    }
+  });
+}
+
+function normalizeHoldingEditorSemantics() {
+  const field = document.querySelector("label.holding-code-field");
+  if (field) {
+    const wrapper = document.createElement("div");
+    wrapper.className = field.className;
+    while (field.firstChild) wrapper.appendChild(field.firstChild);
+    field.replaceWith(wrapper);
+    const title = wrapper.firstElementChild;
+    const input = wrapper.querySelector("#holding-code-input");
+    if (title && input) {
+      title.id = "holding-code-label";
+      input.setAttribute("aria-labelledby", "holding-code-label");
+    }
+  }
+  if (state.holdingSave && state.holdingSave.uncertain) {
+    document.querySelectorAll("#holding-editor-form input, #holding-editor-form [data-retry-holding-lookup], [data-close-holding-editor]").forEach(function (control) { control.disabled = true; });
+  }
+}
+
+function render(announceRoute) {
+  const rawPage = state.tab === "actions" ? actionsPage() : state.tab === "radar" ? radarPage() : state.tab === "trades" ? tradesPage() : overviewPage();
+  const page = rawPage;
   document.body.classList.toggle("modal-open", state.holdingEditorOpen);
   document.querySelector("#app").innerHTML = topNav() + page + "<footer class=\"page-footer\">数据来自公开行情接口，可能有延迟。港美持仓市值与今日盈亏按最新汇率折算；历史买卖成本按记录或参考汇率固定。页面中的分析和观察内容仅作研究提示，不构成投资建议。</footer>" + holdingEditorModal() + toastMarkup();
+  const main = document.querySelector("#app > main.page-shell");
+  if (main) {
+    main.id = "main-content";
+    main.setAttribute("tabindex", "-1");
+  }
+  normalizeHoldingEditorSemantics();
+  applyPageMeta(Boolean(announceRoute));
+  syncModalIsolation();
   syncBrandVisuals();
   if (state.holdingEditorOpen) window.requestAnimationFrame(syncHoldingFormUi);
   scheduleJarDeposits();
@@ -2730,8 +3071,10 @@ function drawCharts() {
     canvas.addEventListener("pointermove", updatePointerHover);
     canvas.addEventListener("pointerdown", updatePointerHover);
     canvas.addEventListener("focus", function () {
-      canvas.dataset.hoverIndex = String(Math.max(0, portfolioSeries(state.trendDays).length - 1));
+      const index = Math.max(0, portfolioSeries(state.trendDays).length - 1);
+      canvas.dataset.hoverIndex = String(index);
       drawChartCanvas(canvas);
+      announcePortfolioPoint(index);
     });
     canvas.addEventListener("keydown", function (event) {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") return;
@@ -2742,10 +3085,17 @@ function drawCharts() {
       const next = event.key === "Home" ? 0 : event.key === "End" ? length - 1 : Math.max(0, Math.min(length - 1, current + (event.key === "ArrowLeft" ? -1 : 1)));
       canvas.dataset.hoverIndex = String(next);
       drawChartCanvas(canvas);
+      announcePortfolioPoint(next);
     });
     canvas.addEventListener("pointerleave", function () { delete canvas.dataset.hoverIndex; drawChartCanvas(canvas); });
     canvas.addEventListener("blur", function () { delete canvas.dataset.hoverIndex; drawChartCanvas(canvas); });
   });
+}
+
+function announcePortfolioPoint(index) {
+  const point = portfolioSeries(state.trendDays)[index];
+  const live = document.querySelector("#portfolio-chart-live");
+  if (point && live) live.textContent = point.date + "，累计盈亏 " + signed(point.value, 0) + "，第 " + (index + 1) + " 个，共 " + portfolioSeries(state.trendDays).length + " 个数据点。";
 }
 
 function formatAxisMoney(value) {
@@ -2853,13 +3203,13 @@ function eventHandlers() {
       state.tab = tab;
       if (tab !== "actions") state.expandedHoldingKey = "";
       if (tab !== "radar") state.expandedRadarId = "";
-      render();
+      render(true);
       if (tab === "radar") loadRadar(false);
     }
   });
   document.addEventListener("click", function (event) {
     const openHolding = event.target.closest("[data-open-holding-editor]");
-    if (openHolding) { openHoldingEditor(openHolding.dataset.openHoldingEditor); return; }
+    if (openHolding) { openHoldingEditor(openHolding.dataset.openHoldingEditor, openHolding); return; }
     const closeHolding = event.target.closest("[data-close-holding-editor]");
     if (closeHolding) { closeHoldingEditor(); return; }
     const retryLookup = event.target.closest("[data-retry-holding-lookup]");
@@ -2911,7 +3261,7 @@ function eventHandlers() {
         const heading = document.querySelector("#radar-results-title");
         if (heading) {
           heading.focus({ preventScroll: true });
-          heading.scrollIntoView({ behavior: "smooth", block: "start" });
+          heading.scrollIntoView({ behavior: preferredScrollBehavior(), block: "start" });
         }
       });
       return;
@@ -3057,7 +3407,7 @@ function eventHandlers() {
       writeStorage(TRADE_KEY, state.trades); render(); return;
     }
     const show = event.target.closest("[data-show-form]");
-    if (show) { const panel = document.querySelector("#trade-form-panel"); if (panel) { panel.hidden = false; panel.scrollIntoView({ behavior: "smooth", block: "start" }); } return; }
+    if (show) { const panel = document.querySelector("#trade-form-panel"); if (panel) { panel.hidden = false; panel.scrollIntoView({ behavior: preferredScrollBehavior(), block: "start" }); } return; }
     const exportButton = event.target.closest("[data-export]");
     if (exportButton) exportJson(exportButton.dataset.export);
   });
@@ -3103,6 +3453,7 @@ function eventHandlers() {
     }
     if (!state.holdingDraft || !event.target.closest("#holding-editor-form") || !event.target.name) return;
     state.holdingDraft[event.target.name] = event.target.value;
+    state.holdingPendingOperation = null;
     setHoldingFormError("");
     if (event.target.name === "code") {
       state.holdingDraft.name = "";
@@ -3155,8 +3506,16 @@ function eventHandlers() {
     if (!state.holdingDraft || !event.target.closest("#holding-editor-form") || !event.target.name) return;
     const field = event.target.name;
     state.holdingDraft[field] = event.target.value;
+    state.holdingPendingOperation = null;
     setHoldingFormError("");
-    if (field === "status") { syncHoldingFormUi(); return; }
+    if (field === "operationType") {
+      render();
+      window.requestAnimationFrame(function () {
+        const control = document.querySelector("#holding-editor-form [name=\"operationType\"][value=\"" + state.holdingDraft.operationType + "\"]");
+        if (control) control.focus();
+      });
+      return;
+    }
     if (field === "market") {
       state.holdingDraft.currency = currencyForMarket(event.target.value);
       state.holdingDraft.code = "";
@@ -3206,6 +3565,23 @@ function eventHandlers() {
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "visible") refreshRadarIfStale();
   });
+  if (window.matchMedia) {
+    motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const handleMotionPreference = function () {
+      if (motionPreference.matches) {
+        window.clearInterval(brandAnimationTimer);
+        window.clearTimeout(jarDepositTimer);
+        brandAnimationTimer = 0;
+        jarDepositTimer = 0;
+        syncBrandVisuals();
+      } else {
+        startBrandAnimations();
+        scheduleJarDeposits();
+      }
+    };
+    if (typeof motionPreference.addEventListener === "function") motionPreference.addEventListener("change", handleMotionPreference);
+    else if (typeof motionPreference.addListener === "function") motionPreference.addListener(handleMotionPreference);
+  }
   window.setInterval(refreshRadarIfStale, 5 * 60 * 1000);
 }
 
@@ -3264,6 +3640,7 @@ async function refreshData() {
 }
 
 function adoptStartupDocuments(holdingsDocument, tradesDocument) {
+  state.holdingsDocument = Array.isArray(holdingsDocument) ? readableHoldingsDocument(holdingsDocument) : holdingsDocument;
   state.baseHoldings = holdingsFromDocument(holdingsDocument);
   state.holdings = state.baseHoldings.slice();
   state.trades = (Array.isArray(tradesDocument) ? tradesDocument : []).map(normalizeTrade);
@@ -3317,13 +3694,17 @@ async function start() {
   }
 
   const syncPayload = await syncRequest;
+  if (syncPayload && syncPayload.ok === true) {
+    state.holdingsFileSha = String(syncPayload.fileSha || "");
+    state.holdingsRepository = syncPayload.repository || null;
+  }
   const authoritative = selectStartupHoldingsDocument(syncPayload, staticResult[0], linked);
   const startupStateUnchanged = interactiveSnapshot === startupStateFingerprint();
   if (startupStateUnchanged && (authoritative.source === "github" || (authoritative.source === "static" && currentSource === "local"))) {
     const previousSymbols = activeHoldings().map(function (item) { return item.sina; }).sort().join(",");
     adoptStartupDocuments(authoritative.document, Array.isArray(localTrades) ? localTrades : staticResult[1]);
     rebuildRows();
-    try { writeStorage(HOLDING_KEY, state.holdings); } catch { /* Cache failure must not replace the authoritative source. */ }
+    try { writeStorage(HOLDING_KEY, state.holdingsDocument); } catch { /* Cache failure must not replace the authoritative source. */ }
     render();
     const nextSymbols = activeHoldings().map(function (item) { return item.sina; }).sort().join(",");
     if (previousSymbols !== nextSymbols) {
@@ -3333,5 +3714,5 @@ async function start() {
 }
 
 start().catch(function (error) {
-  document.querySelector("#app").innerHTML = "<main class=\"loading-screen\"><div class=\"error\">页面初始化失败：" + escapeHtml(error.message) + "。请刷新重试。</div></main>";
+  document.querySelector("#app").innerHTML = "<main id=\"main-content\" class=\"loading-screen\" tabindex=\"-1\"><div class=\"error\" role=\"alert\">页面初始化失败：" + escapeHtml(error.message) + "。请刷新重试。</div></main>";
 });

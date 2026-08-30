@@ -1,4 +1,12 @@
-import { HoldingsSyncError, readGitHubHoldings, syncHoldingsToGitHub } from "../lib/github-holdings.js";
+import {
+  HoldingsSyncError,
+  createHoldingsDocument,
+  readGitHubHoldings,
+  readGitHubRepositoryStatus,
+  sanitizeHoldings,
+  syncHoldingOperationToGitHub,
+  syncHoldingsToGitHub,
+} from "../lib/github-holdings.js";
 
 function json(payload, status = 200) {
   return Response.json(payload, {
@@ -25,26 +33,44 @@ function requireProtectedWrite(env) {
 
 function errorResponse(error) {
   const status = error instanceof HoldingsSyncError ? error.status : 500;
-  return json({ ok: false, error: error.message || "GitHub 同步失败" }, status);
+  const payload = { ok: false, error: error.message || "GitHub 同步失败" };
+  if (error instanceof HoldingsSyncError && error.code) payload.code = error.code;
+  if (error instanceof HoldingsSyncError && error.details) Object.assign(payload, error.details);
+  return json(payload, status);
 }
 
 export async function onRequestGet({ env, fetcher = fetch }) {
   try {
     requireProtectedWrite(env);
-    const current = await readGitHubHoldings(configFromEnv(env), fetcher);
-    return json({ ok: true, githubConfigured: true, currentFileReadable: true, ...current });
+    const config = configFromEnv(env);
+    const [current, repository] = await Promise.all([
+      readGitHubHoldings(config, fetcher),
+      readGitHubRepositoryStatus(config, fetcher),
+    ]);
+    return json({ ok: true, githubConfigured: true, currentFileReadable: true, ...current, repository });
   } catch (error) {
     return errorResponse(error);
   }
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, fetcher = fetch }) {
   try {
     requireProtectedWrite(env);
     const body = await request.json();
+    if (body && body.operation) {
+      const result = await syncHoldingOperationToGitHub(
+        body.operation,
+        body.expectedFileSha,
+        configFromEnv(env),
+        fetcher,
+      );
+      return json({ ok: true, ...result });
+    }
     const input = body && Object.prototype.hasOwnProperty.call(body, "holdings") ? body.holdings : body;
-    const result = await syncHoldingsToGitHub(input, configFromEnv(env));
-    return json({ ok: true, ...result });
+    const document = createHoldingsDocument(input);
+    const holdings = sanitizeHoldings(document);
+    const result = await syncHoldingsToGitHub(document, configFromEnv(env), fetcher);
+    return json({ ok: true, ...result, document, holdings });
   } catch (error) {
     return errorResponse(error);
   }

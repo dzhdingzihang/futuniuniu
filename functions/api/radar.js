@@ -1,3 +1,5 @@
+import { readRadarSnapshotEnvelope } from "../lib/radar-snapshot.js";
+
 const EASTMONEY_RADAR_URL = "https://push2delay.eastmoney.com/api/qt/clist/get";
 
 export const RADAR_MODEL_VERSION = "radar-v1.1";
@@ -129,10 +131,21 @@ export function isEligibleRadarCandidate(candidate) {
 function percentile(value, values, missing = 0) {
   if (!Number.isFinite(value) || !values.length) return missing;
   if (values.length === 1) return 0.5;
-  let lower = 0;
-  while (lower < values.length && values[lower] < value) lower += 1;
-  let upper = lower;
-  while (upper < values.length && values[upper] === value) upper += 1;
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (values[middle] < value) low = middle + 1;
+    else high = middle;
+  }
+  const lower = low;
+  high = values.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (values[middle] <= value) low = middle + 1;
+    else high = middle;
+  }
+  const upper = low;
   const averageRank = (lower + Math.max(lower, upper - 1)) / 2;
   return averageRank / (values.length - 1);
 }
@@ -298,22 +311,56 @@ export async function scanRadarMarket({ market, fetcher = fetch, now = () => new
   };
 }
 
-function errorResponse(error, market) {
-  const radarError = error instanceof RadarError
+function asRadarError(error) {
+  return error instanceof RadarError
     ? error
     : new RadarError(error?.message || "机会雷达行情服务暂时不可用");
+}
+
+function errorResponse(error, market) {
+  const radarError = asRadarError(error);
   return Response.json(
     { error: radarError.message, code: radarError.code, market: RADAR_MARKETS[market] ? market : null },
     { status: radarError.status, headers: { "Cache-Control": "private, no-store" } },
   );
 }
 
-export async function onRequestGet({ request, fetcher = fetch, now = () => new Date(), timeoutMs = RADAR_UPSTREAM_TIMEOUT_MS }) {
+function snapshotUnavailableResponse(message) {
+  return Response.json(
+    { error: message, code: "RADAR_SNAPSHOT_UNAVAILABLE" },
+    { status: 503, headers: { "Cache-Control": "private, no-store" } },
+  );
+}
+
+function fallbackSnapshot(snapshot, error, now) {
+  const radarError = asRadarError(error);
+  const stamp = now();
+  const at = (stamp instanceof Date ? stamp : new Date(stamp)).toISOString();
+  return {
+    ...snapshot,
+    loadState: "stale",
+    stale: true,
+    error: { code: radarError.code, message: radarError.message, at },
+  };
+}
+
+export async function onRequestGet({ request, env = {}, fetcher = fetch, now = () => new Date(), timeoutMs = RADAR_UPSTREAM_TIMEOUT_MS }) {
   const market = new URL(request.url).searchParams.get("market") || "";
+  if (!market) {
+    if (!env.RADAR_SNAPSHOTS) return snapshotUnavailableResponse("机会雷达快照尚未配置");
+    const envelope = await readRadarSnapshotEnvelope(env.RADAR_SNAPSHOTS);
+    if (!envelope) return snapshotUnavailableResponse("机会雷达快照尚未生成");
+    return Response.json(envelope, { headers: { "Cache-Control": "private, no-store" } });
+  }
   try {
     const snapshot = await scanRadarMarket({ market, fetcher, now, timeoutMs });
     return Response.json(snapshot, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
+    const envelope = await readRadarSnapshotEnvelope(env.RADAR_SNAPSHOTS);
+    const cached = envelope?.markets?.[market];
+    if (cached && Array.isArray(cached.candidates)) {
+      return Response.json(fallbackSnapshot(cached, error, now), { headers: { "Cache-Control": "private, no-store" } });
+    }
     return errorResponse(error, market);
   }
 }
