@@ -269,7 +269,7 @@ test("scheduler delegates one refresh to waitUntil and wrangler declares the dai
 
   const pagesConfig = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(pagesConfig, /name\s*=\s*"futuniuniu"/);
-  assert.match(pagesConfig, /pages_build_output_dir\s*=\s*"\/"/);
+  assert.match(pagesConfig, /pages_build_output_dir\s*=\s*"\."/);
   assert.match(pagesConfig, /\[\[env\.production\.kv_namespaces\]\]/);
   assert.match(pagesConfig, /binding\s*=\s*"RADAR_SNAPSHOTS"/);
   assert.match(pagesConfig, /id\s*=\s*"ef5aab4de2784bf59b61c4d0f59d6861"/);

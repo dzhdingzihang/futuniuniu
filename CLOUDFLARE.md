@@ -114,6 +114,7 @@ npx wrangler kv key get "radar:latest:v1" --binding RADAR_SNAPSHOTS --remote --c
 ## 5. 把同一 KV 绑定给 Pages
 
 仓库根目录的 `wrangler.toml` 是 Pages Functions 生产配置的版本化来源；其中
+`pages_build_output_dir = "."` 表示直接发布仓库根目录的静态页面，不能写成 `/`（Cloudflare 会将其判定为仓库外目录）；
 `env.production.kv_namespaces` 已把 `RADAR_SNAPSHOTS` 指向 Cron Worker 使用的同一 namespace。
 推送生产分支并创建新 Pages deployment 后，这个绑定会与代码一起生效。
 

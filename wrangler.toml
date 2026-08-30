@@ -1,7 +1,7 @@
 # Downloaded from the existing Git-integrated Pages project and checked into
 # source control so the production Functions binding is deployed atomically.
 name = "futuniuniu"
-pages_build_output_dir = "/"
+pages_build_output_dir = "."
 compatibility_date = "2026-08-15"
 
 [env.production]
