@@ -8,7 +8,8 @@
   },
   "kv_namespaces": [
     {
-      "binding": "RADAR_SNAPSHOTS"
+      "binding": "RADAR_SNAPSHOTS",
+      "id": "ef5aab4de2784bf59b61c4d0f59d6861"
     }
   ]
 }
