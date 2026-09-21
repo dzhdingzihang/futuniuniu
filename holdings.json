@@ -438,9 +438,21 @@
         "price": 59.5,
         "qty": 100
       },
-      "id": "legacy-a-300820-undated-29",
+      "id": "legacy-a-300820-undated-29:sold:op_muak9ylg_c6561fe2f6cd4c:1",
+      "parentLotId": "legacy-a-300820-undated-29",
+      "sell": {
+        "price": 60,
+        "qty": 100,
+        "date": "2026-09-19",
+        "sellProceedsCny": 5866.050498961891,
+        "feeCny": 133.94950103810862,
+        "fxAsOf": "2026-09-18",
+        "fxSource": "Frankfurter",
+        "operationId": "op_muak9ylg_c6561fe2f6cd4c"
+      },
       "fees": {
-        "buy": 20
+        "buy": 20,
+        "sell": 20
       }
     },
     {
