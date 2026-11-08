@@ -3070,10 +3070,10 @@ function longChartNote(points) {
   let status;
   if (!activeHoldings().length) status = "暂无当前持仓";
   else if (!entry || entry.loading) status = "正在读取长期日线…";
-  else if (entry.missing) status = entry.missing + " 只持仓缺少长期日线，可再次点击本区间重试";
   else {
     const bars = points.filter(point => point.date !== "当前");
     status = bars.length ? "可估值区间 " + bars[0].date + " 至 " + bars.at(-1).date : "各持仓缺少共同可估值日期";
+    if (entry.missing) status += " · " + entry.missing + " 只持仓仅查询到短期日线或暂无日线，可点击区间重试";
   }
   return '<p class="chart-window-note" role="status">' + start + " 至 " + today + " · " + status + "</p>";
 }
@@ -3082,10 +3082,11 @@ function longPortfolioValues(days, rows, currentValue) {
   const { start, today } = longChartWindow(days);
   const entry = longChartCache.get(longChartKey(days).key);
   const current = { date: "当前", value: currentValue };
-  if (!entry || entry.loading || entry.missing) return Number.isFinite(currentValue) ? [current] : [];
-  if (entry.rows === state.rows && entry.rates === state.rates && Object.is(entry.currentValue, currentValue) && entry.values) return entry.values;
+  if (!entry || entry.loading) return Number.isFinite(currentValue) ? [current] : [];
+  if (entry.rows === state.rows && entry.rates === state.rates && entry.shortHistories === state.histories &&
+      Object.is(entry.currentValue, currentValue) && entry.values) return entry.values;
   const positions = rows.map(row => ({
-    bars: entry.histories[row.sina] || [], cursor: -1, weight: row.qty * (state.rates[row.currency] || 1)
+    bars: entry.histories[row.sina] || state.histories[row.sina] || [], cursor: -1, weight: row.qty * (state.rates[row.currency] || 1)
   }));
   const dates = [...new Set(positions.flatMap(pos => pos.bars.map(bar => bar.date)))].filter(date => date >= start && date <= today).sort();
   const series = [];
@@ -3104,7 +3105,7 @@ function longPortfolioValues(days, rows, currentValue) {
     if (series.at(-1)?.date === today) series.pop();
     series.push(current);
   }
-  Object.assign(entry, { rows: state.rows, rates: state.rates, currentValue, values: series });
+  Object.assign(entry, { rows: state.rows, rates: state.rates, shortHistories: state.histories, currentValue, values: series });
   return series;
 }
 
