@@ -287,6 +287,7 @@ function holdingsFromDocument(document) {
     const buyFee = Number.isFinite(explicitBuyFee) ? explicitBuyFee : defaultBuyFee;
     const sellFee = Number.isFinite(explicitSellFee) ? explicitSellFee : defaultSellFee;
     const purchaseCostCny = optionalNumber(buy.purchaseCostCny);
+    const adjustmentCny = optionalNumber(buy.adjustmentCny);
     const buyFeeCny = optionalNumber(buy.feeCny);
     const sellProceedsCny = optionalNumber(sell && sell.sellProceedsCny);
     const sellFeeCny = optionalNumber(sell && sell.feeCny);
@@ -296,6 +297,8 @@ function holdingsFromDocument(document) {
       market: market,
       code: code,
       name: String(lot.name || code).trim(),
+      note: String(lot.note || "").trim(),
+      quality: String(lot.quality || "").trim(),
       cost: Number(buy.price),
       currency: currencyForMarket(market),
       sina: providerCodeForHolding(market, code),
@@ -306,7 +309,8 @@ function holdingsFromDocument(document) {
       buyFeeCny: buyFeeCny
     };
     if (!sell) return [normalizeHolding(Object.assign({}, base, {
-      status: "holding", qty: buyQty, buyFeeUsd: buyFee, purchaseCostCny: purchaseCostCny
+      status: "holding", qty: buyQty, buyFeeUsd: buyFee, purchaseCostCny: purchaseCostCny,
+      adjustmentCny: adjustmentCny
     }))].filter(isValidHolding);
     if (!Number.isFinite(sellQty) || sellQty <= 0 || !Number.isFinite(buyQty) || buyQty <= 0 || sellQty > buyQty) return [];
     const ratio = sellQty / buyQty;
@@ -321,6 +325,7 @@ function holdingsFromDocument(document) {
       buyFeeUsd: Number.isFinite(buyFee) ? buyFee * ratio : NaN,
       sellFeeUsd: sellFee,
       purchaseCostCny: Number.isFinite(purchaseCostCny) ? purchaseCostCny * ratio : NaN,
+      adjustmentCny: Number.isFinite(adjustmentCny) ? adjustmentCny * ratio : NaN,
       buyFeeCny: Number.isFinite(buyFeeCny) ? buyFeeCny * ratio : NaN,
       sellProceedsCny: sellProceedsCny,
       sellFeeCny: sellFeeCny
@@ -331,6 +336,7 @@ function holdingsFromDocument(document) {
         qty: buyQty - sellQty,
         buyFeeUsd: Number.isFinite(buyFee) ? buyFee * (1 - ratio) : NaN,
         purchaseCostCny: Number.isFinite(purchaseCostCny) ? purchaseCostCny * (1 - ratio) : NaN,
+        adjustmentCny: Number.isFinite(adjustmentCny) ? adjustmentCny * (1 - ratio) : NaN,
         buyFeeCny: Number.isFinite(buyFeeCny) ? buyFeeCny * (1 - ratio) : NaN
       })));
     }
@@ -352,10 +358,10 @@ function selectStartupHoldingsDocument(syncPayload, staticDocument, localDocumen
   return { source: "empty", document: [] };
 }
 
-function readableHoldingsDocument(rows) {
-  return {
+function readableHoldingsDocument(rows, metadataSource) {
+  const document = {
     version: 2,
-    guide: "market 只填 A / HK / US；没有 sell 表示持有中，有 sell 表示已卖出；币种、状态和行情代码由系统生成。",
+    guide: "日常新增只填 market、code、name 和 buy.date/price/qty；没有 sell 表示持有。purchaseCostCny 已包含 adjustmentCny 时请勿重复相加。",
     newTradeFeeUsd: { buy: FIXED_TRADE_FEE_USD, sell: FIXED_TRADE_FEE_USD },
     lots: rows.map(normalizeHolding).filter(isValidHolding).map(function (row) {
       const lot = {
@@ -366,8 +372,11 @@ function readableHoldingsDocument(rows) {
       };
       if (row.lotId) lot.id = row.lotId;
       if (row.parentLotId) lot.parentLotId = row.parentLotId;
+      if (row.note) lot.note = row.note;
+      if (row.quality) lot.quality = row.quality;
       if (/^\d{4}-\d{2}-\d{2}$/.test(row.buyDate)) lot.buy.date = row.buyDate;
       if (Number.isFinite(row.purchaseCostCny)) lot.buy.purchaseCostCny = row.purchaseCostCny;
+      if (Number.isFinite(row.adjustmentCny)) lot.buy.adjustmentCny = row.adjustmentCny;
       if (Number.isFinite(row.buyFeeCny)) lot.buy.feeCny = row.buyFeeCny;
       if (row.buyFxAsOf) lot.buy.fxAsOf = row.buyFxAsOf;
       if (row.buyFxSource) lot.buy.fxSource = row.buyFxSource;
@@ -387,6 +396,17 @@ function readableHoldingsDocument(rows) {
       return lot;
     })
   };
+  if (metadataSource && typeof metadataSource === "object" && !Array.isArray(metadataSource)) {
+    ["asOf", "valuationAsOf"].forEach(function (key) {
+      const value = String(metadataSource[key] || "").trim();
+      if (value) document[key] = value;
+    });
+    ["source", "fx"].forEach(function (key) {
+      const value = metadataSource[key];
+      if (value && typeof value === "object" && !Array.isArray(value)) document[key] = JSON.parse(JSON.stringify(value));
+    });
+  }
+  return document;
 }
 
 function dualMoney(nativeValue, currency, cnyValue, toneClass) {
@@ -631,6 +651,8 @@ async function loadRadar(force) {
 }
 
 function fixedPurchaseCost(item) {
+  // adjustmentCny is an audit-only component that is already included in the
+  // locked purchaseCostCny. Never add it again here.
   const recordedCost = Number(item.purchaseCostCny ?? item.costCny);
   if (Number.isFinite(recordedCost) && recordedCost > 0) return recordedCost;
   const buyFeeUsd = Number(item.buyFeeUsd);
@@ -681,6 +703,26 @@ function readMarketCache() {
   if (cache.rates && typeof cache.rates === "object") state.rates = Object.assign({}, state.rates, cache.rates);
   if (cache.fxMeta && typeof cache.fxMeta === "object") state.fxMeta = Object.assign({}, state.fxMeta, cache.fxMeta);
   if (cache.updatedAt) state.updatedAt = String(cache.updatedAt);
+  applyWorkbookFxFallback();
+  return true;
+}
+
+function workbookFx(document) {
+  if (!document || typeof document !== "object" || Array.isArray(document)) return null;
+  const source = document.source && typeof document.source === "object" ? document.source : {};
+  const fx = document.fx && typeof document.fx === "object" ? document.fx : source.fx && typeof source.fx === "object" ? source.fx : null;
+  if (!fx) return null;
+  const usd = optionalNumber(fx.USD ?? fx.USD_CNY);
+  const hkd = optionalNumber(fx.HKD ?? fx.HKD_CNY);
+  if (!Number.isFinite(usd) || usd <= 0 || !Number.isFinite(hkd) || hkd <= 0) return null;
+  return { CNY: 1, USD: usd, HKD: hkd, asOf: String(fx.asOf || source.asOf || document.asOf || "") };
+}
+
+function applyWorkbookFxFallback() {
+  const fx = workbookFx(state.holdingsDocument);
+  if (!fx || (state.fxMeta && state.fxMeta.fallback === false)) return false;
+  state.rates = { CNY: 1, USD: fx.USD, HKD: fx.HKD };
+  state.fxMeta = { asOf: fx.asOf || null, fetchedAt: null, source: "Excel 锁定汇率", fallback: true };
   return true;
 }
 
@@ -744,10 +786,13 @@ function normalizeHolding(item) {
     market: market,
     code: code,
     name: String(item.name || code || "").trim(),
+    note: String(item.note || "").trim(),
+    quality: String(item.quality || "").trim(),
     cost: Number(item.cost),
     qty: Number(item.qty),
     currency: String(item.currency || currencyForMarket(market)).toUpperCase(),
     purchaseCostCny: optionalNumber(item.purchaseCostCny ?? item.costCny),
+    adjustmentCny: optionalNumber(item.adjustmentCny),
     sellProceedsCny: optionalNumber(item.sellProceedsCny ?? item.saleProceedsCny),
     buyFeeUsd: optionalNumber(item.buyFeeUsd),
     sellFeeUsd: optionalNumber(item.sellFeeUsd),
@@ -938,10 +983,16 @@ function marketSummary(market) {
   const yesterdayValueCny = valuationComplete && todayComplete ? valueCny - todayCny : NaN;
   const usdToNative = COST_REFERENCE_RATES.USD / (COST_REFERENCE_RATES[currency] || 1);
   const grossBuysNative = all.reduce(function (total, row) {
+    if (tradeDetailsMissing(row) && Number.isFinite(Number(row.purchaseCostCny))) {
+      return total + Number(row.purchaseCostCny) / fx;
+    }
     const fee = Number.isFinite(row.buyFeeUsd) && row.buyFeeUsd > 0 ? row.buyFeeUsd * usdToNative : 0;
     return total + row.cost * row.qty + fee;
   }, 0);
   const saleProceedsNative = all.reduce(function (total, row) {
+    if (tradeDetailsMissing(row) && row.status === "sold" && Number.isFinite(Number(row.saleProceedsCny))) {
+      return total + Number(row.saleProceedsCny) / fx;
+    }
     if (row.status !== "sold" || !Number.isFinite(row.sellPrice)) return total;
     const fee = Number.isFinite(row.sellFeeUsd) && row.sellFeeUsd > 0 ? row.sellFeeUsd * usdToNative : 0;
     return total + row.sellPrice * row.qty - fee;
@@ -1920,7 +1971,7 @@ function holdingDesktopRow(row, maxWeight) {
   const cumulativeMarkup = holdingPnlMarkup(row.pnlCny, row.pnlNative, row.currency, row.pnlRate, "估值数据缺失");
   const weightText = ratioPct(row.holdingPct, 2);
   const weightWidth = Number.isFinite(row.holdingPct) ? Math.min(100, row.holdingPct / maxWeight * 100).toFixed(1) : "0";
-  return "<tr class=\"holding-main-row" + (expanded ? " is-expanded" : "") + "\"><th scope=\"row\"><div class=\"holding-stock-cell\"><div>" + stockCell(row) + "</div>" + marketLabel(row.market) + "</div></th><td class=\"number-cell\">" + row.qty.toLocaleString("zh-CN") + "</td><td>" + tableDualMoney(row.nativeTotalCost, row.currency, row.purchaseCostCny, "", "含买入费") + "</td><td><div class=\"holding-price-pair\"><span>" + nativeMoney(row.cost, row.currency) + "</span><i>→</i><b>" + currentPrice + "</b><small>" + priceNote + "</small></div></td><td><div class=\"holding-value-cell\"><b>" + money(row.valueCny, 0) + "</b><span>" + weightText + "</span><i><em style=\"width:" + weightWidth + "%\"></em></i></div></td><td>" + todayMarkup + "</td><td>" + cumulativeMarkup + "</td><td><button class=\"holding-expand-button\" type=\"button\" data-toggle-holding=\"" + escapeHtml(row.holdingKey) + "\" aria-expanded=\"" + expanded + "\"" + (expanded ? " aria-controls=\"" + panelId + "\"" : "") + ">" + (expanded ? "收起" : "查看") + "</button></td></tr>" + (expanded ? "<tr class=\"holding-detail-row\"><td colspan=\"8\">" + holdingOutlookMarkup(row, "desktop") + "</td></tr>" : "");
+  return "<tr class=\"holding-main-row" + (expanded ? " is-expanded" : "") + "\"><th scope=\"row\"><div class=\"holding-stock-cell\"><div>" + stockCell(row) + "</div>" + marketLabel(row.market) + "</div></th><td class=\"number-cell\">" + row.qty.toLocaleString("zh-CN") + "</td><td>" + tableDualMoney(row.nativeTotalCost, row.currency, row.purchaseCostCny, "", "含买入费及成本调整") + "</td><td><div class=\"holding-price-pair\"><span>" + nativeMoney(row.cost, row.currency) + "</span><i>→</i><b>" + currentPrice + "</b><small>" + priceNote + "</small></div></td><td><div class=\"holding-value-cell\"><b>" + money(row.valueCny, 0) + "</b><span>" + weightText + "</span><i><em style=\"width:" + weightWidth + "%\"></em></i></div></td><td>" + todayMarkup + "</td><td>" + cumulativeMarkup + "</td><td><button class=\"holding-expand-button\" type=\"button\" data-toggle-holding=\"" + escapeHtml(row.holdingKey) + "\" aria-expanded=\"" + expanded + "\"" + (expanded ? " aria-controls=\"" + panelId + "\"" : "") + ">" + (expanded ? "收起" : "查看") + "</button></td></tr>" + (expanded ? "<tr class=\"holding-detail-row\"><td colspan=\"8\">" + holdingOutlookMarkup(row, "desktop") + "</td></tr>" : "");
 }
 
 function holdingMobileCard(row) {
@@ -1932,7 +1983,7 @@ function holdingMobileCard(row) {
     ? holdingPnlMarkup(row.todayPnlCny, row.todayPnlNative, row.currency, row.changePct, "今日行情缺失")
     : holdingPnlMarkup(NaN, NaN, row.currency, NaN, "今日行情缺失");
   const cumulativeMarkup = holdingPnlMarkup(row.pnlCny, row.pnlNative, row.currency, row.pnlRate, "估值数据缺失");
-  return "<article class=\"holding-mobile-card" + (expanded ? " is-expanded" : "") + "\" role=\"listitem\"><header><div><strong>" + escapeHtml(row.name) + "</strong><span>" + escapeHtml(row.code) + marketSuffix(row) + "</span></div>" + marketLabel(row.market) + "</header><p class=\"holding-mobile-cost\">数量 " + row.qty.toLocaleString("zh-CN") + "股 · 总成本 " + money(row.purchaseCostCny, 0) + "<small>" + (row.currency === "CNY" ? "人民币" : nativeMoney(row.nativeTotalCost, row.currency)) + " · 含买入费</small></p><dl><div><dt>买入均价 → 当前价</dt><dd>" + nativeMoney(row.cost, row.currency) + " → " + currentPrice + "<small class=\"holding-price-source\">" + priceNote + "</small></dd></div><div><dt>市值 · 仓位</dt><dd>" + money(row.valueCny, 0) + " · " + ratioPct(row.holdingPct, 2) + "</dd></div><div><dt>今日盈亏</dt><dd>" + todayMarkup + "</dd></div><div><dt>累计盈亏</dt><dd>" + cumulativeMarkup + "</dd></div></dl><button class=\"holding-mobile-expand\" type=\"button\" data-toggle-holding=\"" + escapeHtml(row.holdingKey) + "\" aria-expanded=\"" + expanded + "\"" + (expanded ? " aria-controls=\"" + panelId + "\"" : "") + ">" + (expanded ? "收起未来2周展望" : "查看未来2周展望") + "</button>" + (expanded ? holdingOutlookMarkup(row, "mobile") : "") + "</article>";
+  return "<article class=\"holding-mobile-card" + (expanded ? " is-expanded" : "") + "\" role=\"listitem\"><header><div><strong>" + escapeHtml(row.name) + "</strong><span>" + escapeHtml(row.code) + marketSuffix(row) + "</span></div>" + marketLabel(row.market) + "</header><p class=\"holding-mobile-cost\">数量 " + row.qty.toLocaleString("zh-CN") + "股 · 总成本 " + money(row.purchaseCostCny, 0) + "<small>" + (row.currency === "CNY" ? "人民币" : nativeMoney(row.nativeTotalCost, row.currency)) + " · 含买入费及成本调整</small></p><dl><div><dt>买入均价 → 当前价</dt><dd>" + nativeMoney(row.cost, row.currency) + " → " + currentPrice + "<small class=\"holding-price-source\">" + priceNote + "</small></dd></div><div><dt>市值 · 仓位</dt><dd>" + money(row.valueCny, 0) + " · " + ratioPct(row.holdingPct, 2) + "</dd></div><div><dt>今日盈亏</dt><dd>" + todayMarkup + "</dd></div><div><dt>累计盈亏</dt><dd>" + cumulativeMarkup + "</dd></div></dl><button class=\"holding-mobile-expand\" type=\"button\" data-toggle-holding=\"" + escapeHtml(row.holdingKey) + "\" aria-expanded=\"" + expanded + "\"" + (expanded ? " aria-controls=\"" + panelId + "\"" : "") + ">" + (expanded ? "收起未来2周展望" : "查看未来2周展望") + "</button>" + (expanded ? holdingOutlookMarkup(row, "mobile") : "") + "</article>";
 }
 
 function cleanedDailyHistory(history) {
@@ -2755,12 +2806,18 @@ function soldMarketTabs() {
 function soldRecordRow(row) {
   const nativePnl = row.pnlCny / (COST_REFERENCE_RATES[row.currency] || 1);
   const returnRate = soldReturnRate(row);
-  return "<tr><td>" + escapeHtml(row.sellDate || "—") + "</td><td>" + marketLabel(row.market) + "</td><td><strong>" + escapeHtml(row.name) + "</strong><span class=\"stock-code\">" + escapeHtml(row.code) + "</span></td><td class=\"number-cell\">" + nativeMoney(row.cost, row.currency) + "</td><td class=\"number-cell\">" + nativeMoney(row.sellPrice, row.currency) + "</td><td>" + row.qty.toLocaleString("zh-CN") + "</td><td class=\"number-cell\">" + money(row.purchaseCostCny, 0) + "</td><td class=\"number-cell\">" + money(row.saleProceedsCny, 0) + "</td><td class=\"number-cell " + tone(row.pnlCny) + "\"><strong>" + signed(row.pnlCny, 0) + "</strong><small>" + signedNative(nativePnl, row.currency) + "</small></td><td class=\"number-cell " + tone(returnRate) + "\"><strong>" + pct(returnRate) + "</strong></td></tr>";
+  const missingDetails = tradeDetailsMissing(row);
+  return "<tr><td>" + escapeHtml(row.sellDate || "—") + "</td><td>" + marketLabel(row.market) + "</td><td><strong>" + escapeHtml(row.name) + "</strong><span class=\"stock-code\">" + escapeHtml(row.code) + "</span></td><td class=\"number-cell\">" + (missingDetails ? "—" : nativeMoney(row.cost, row.currency)) + "</td><td class=\"number-cell\">" + (missingDetails ? "—" : nativeMoney(row.sellPrice, row.currency)) + "</td><td>" + (missingDetails ? "—" : row.qty.toLocaleString("zh-CN")) + "</td><td class=\"number-cell\">" + money(row.purchaseCostCny, 0) + "</td><td class=\"number-cell\">" + money(row.saleProceedsCny, 0) + "</td><td class=\"number-cell " + tone(row.pnlCny) + "\"><strong>" + signed(row.pnlCny, 0) + "</strong><small>" + signedNative(nativePnl, row.currency) + "</small></td><td class=\"number-cell " + tone(returnRate) + "\"><strong>" + pct(returnRate) + "</strong></td></tr>";
 }
 
 function soldRecordMobileCard(row) {
   const nativePnl = row.pnlCny / (COST_REFERENCE_RATES[row.currency] || 1), returnRate = soldReturnRate(row);
-  return "<article class=\"sold-record-card\"><header><div>" + marketLabel(row.market) + "<span><strong>" + escapeHtml(row.name) + "</strong><small>" + escapeHtml(row.code) + "</small></span></div><time datetime=\"" + escapeHtml(soldDateValue(row)) + "\">" + escapeHtml(row.sellDate || "日期待补") + "</time></header><dl><div><dt>买入价</dt><dd>" + nativeMoney(row.cost, row.currency) + "</dd></div><div><dt>卖出价</dt><dd>" + nativeMoney(row.sellPrice, row.currency) + "</dd></div><div><dt>数量</dt><dd>" + row.qty.toLocaleString("zh-CN") + "</dd></div><div><dt>卖出金额</dt><dd>" + money(row.saleProceedsCny, 0) + "</dd></div></dl><footer><div><span>已实现盈亏</span><strong class=\"" + tone(row.pnlCny) + "\">" + signed(row.pnlCny, 0) + "</strong><small class=\"" + tone(row.pnlCny) + "\">" + signedNative(nativePnl, row.currency) + "</small></div><div><span>收益率</span><strong class=\"" + tone(returnRate) + "\">" + pct(returnRate) + "</strong></div></footer></article>";
+  const missingDetails = tradeDetailsMissing(row);
+  return "<article class=\"sold-record-card\"><header><div>" + marketLabel(row.market) + "<span><strong>" + escapeHtml(row.name) + "</strong><small>" + escapeHtml(row.code) + "</small></span></div><time datetime=\"" + escapeHtml(soldDateValue(row)) + "\">" + escapeHtml(row.sellDate || "日期待补") + "</time></header><dl><div><dt>买入价</dt><dd>" + (missingDetails ? "—" : nativeMoney(row.cost, row.currency)) + "</dd></div><div><dt>卖出价</dt><dd>" + (missingDetails ? "—" : nativeMoney(row.sellPrice, row.currency)) + "</dd></div><div><dt>数量</dt><dd>" + (missingDetails ? "—" : row.qty.toLocaleString("zh-CN")) + "</dd></div><div><dt>卖出金额</dt><dd>" + money(row.saleProceedsCny, 0) + "</dd></div></dl><footer><div><span>已实现盈亏</span><strong class=\"" + tone(row.pnlCny) + "\">" + signed(row.pnlCny, 0) + "</strong><small class=\"" + tone(row.pnlCny) + "\">" + signedNative(nativePnl, row.currency) + "</small></div><div><span>收益率</span><strong class=\"" + tone(returnRate) + "\">" + pct(returnRate) + "</strong></div></footer></article>";
+}
+
+function tradeDetailsMissing(row) {
+  return Boolean(row && row.quality === "trade-details-missing");
 }
 
 function tradeKpi(label, value, note, toneClass) {
@@ -3134,12 +3191,15 @@ function applyTrade(trade) {
     const soldQty = Math.min(originalQty, trade.qty);
     const priorPurchaseCost = fixedPurchaseCost(current);
     const soldPurchaseCost = priorPurchaseCost * soldQty / originalQty;
+    const priorAdjustmentCny = Number(current.adjustmentCny);
+    const soldAdjustmentCny = Number.isFinite(priorAdjustmentCny) ? priorAdjustmentCny * soldQty / originalQty : NaN;
     const priorBuyFeeUsd = Number.isFinite(current.buyFeeUsd) ? current.buyFeeUsd : 0;
     const soldBuyFeeUsd = priorBuyFeeUsd * soldQty / originalQty;
     const soldRecord = Object.assign({}, current, {
       qty: soldQty,
       status: "sold",
       purchaseCostCny: soldPurchaseCost,
+      adjustmentCny: soldAdjustmentCny,
       buyFeeUsd: soldBuyFeeUsd,
       sellPrice: trade.price,
       sellDate: trade.date,
@@ -3151,6 +3211,7 @@ function applyTrade(trade) {
     } else {
       current.qty = originalQty - soldQty;
       current.purchaseCostCny = priorPurchaseCost - soldPurchaseCost;
+      if (Number.isFinite(priorAdjustmentCny)) current.adjustmentCny = priorAdjustmentCny - soldAdjustmentCny;
       current.buyFeeUsd = priorBuyFeeUsd - soldBuyFeeUsd;
       state.holdings.push(soldRecord);
     }
@@ -3175,7 +3236,7 @@ function saveTrade(form) {
 }
 
 function exportJson(kind) {
-  const payload = kind === "trades" ? state.trades : readableHoldingsDocument(state.holdings);
+  const payload = kind === "trades" ? state.trades : readableHoldingsDocument(state.holdings, state.holdingsDocument);
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -3616,13 +3677,20 @@ async function refreshData() {
       quoteEntries.forEach(function (entry) { state.quoteMeta[entry[0]] = fetchedAt; });
     }
   }
-  state.rates = { CNY: 1, USD: Number(result[1].rates && result[1].rates.USD_CNY) || state.rates.USD || 7.22, HKD: Number(result[1].rates && result[1].rates.HKD_CNY) || state.rates.HKD || 0.92 };
-  const hasLiveRates = Number.isFinite(Number(result[1].rates && result[1].rates.USD_CNY)) && Number.isFinite(Number(result[1].rates && result[1].rates.HKD_CNY));
+  const responseUsd = Number(result[1].rates && result[1].rates.USD_CNY);
+  const responseHkd = Number(result[1].rates && result[1].rates.HKD_CNY);
+  const responseFallback = result[1].fallback === true;
+  const sourceFx = workbookFx(state.holdingsDocument);
+  const useSourceFx = responseFallback && sourceFx;
+  state.rates = useSourceFx
+    ? { CNY: 1, USD: sourceFx.USD, HKD: sourceFx.HKD }
+    : { CNY: 1, USD: Number.isFinite(responseUsd) && responseUsd > 0 ? responseUsd : state.rates.USD || 7.22, HKD: Number.isFinite(responseHkd) && responseHkd > 0 ? responseHkd : state.rates.HKD || 0.92 };
+  const hasLiveRates = !responseFallback && Number.isFinite(responseUsd) && responseUsd > 0 && Number.isFinite(responseHkd) && responseHkd > 0;
   state.fxMeta = {
-    asOf: result[1].asOf || null,
-    fetchedAt: result[1].fetchedAt || (hasLiveRates ? new Date().toISOString() : state.fxMeta.fetchedAt || null),
-    source: result[1].source || (hasLiveRates ? "Frankfurter" : state.fxMeta.source || "固定参考汇率"),
-    fallback: result[1].fallback !== undefined ? Boolean(result[1].fallback) : !hasLiveRates
+    asOf: useSourceFx ? sourceFx.asOf || null : result[1].asOf || null,
+    fetchedAt: useSourceFx ? null : result[1].fetchedAt || (hasLiveRates ? new Date().toISOString() : state.fxMeta.fetchedAt || null),
+    source: useSourceFx ? "Excel 锁定汇率" : result[1].source || (hasLiveRates ? "Frankfurter" : state.fxMeta.source || "固定参考汇率"),
+    fallback: useSourceFx ? true : result[1].fallback !== undefined ? Boolean(result[1].fallback) : !hasLiveRates
   };
   if (quotesRefreshed) state.updatedAt = formatUpdatedAt(new Date());
   rebuildRows();
@@ -3641,6 +3709,7 @@ async function refreshData() {
 
 function adoptStartupDocuments(holdingsDocument, tradesDocument) {
   state.holdingsDocument = Array.isArray(holdingsDocument) ? readableHoldingsDocument(holdingsDocument) : holdingsDocument;
+  applyWorkbookFxFallback();
   state.baseHoldings = holdingsFromDocument(holdingsDocument);
   state.holdings = state.baseHoldings.slice();
   state.trades = (Array.isArray(tradesDocument) ? tradesDocument : []).map(normalizeTrade);

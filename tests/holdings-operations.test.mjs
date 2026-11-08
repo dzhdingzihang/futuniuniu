@@ -81,6 +81,47 @@ test("enriched v2 metadata survives sanitization and readable-document conversio
   assert.deepEqual(createHoldingsDocument(rows).lots, source.lots);
 });
 
+test("workbook metadata, lot quality, and included cost adjustment survive document conversion", () => {
+  const source = {
+    version: 2,
+    asOf: "2026-11-08",
+    valuationAsOf: "2026-11-06",
+    source: { type: "excel", file: "20261108股票记录.xlsx", sheet: "全市场股票明细" },
+    fx: { USD: 6.67885, HKD: 0.8516, asOf: "2026-11-08 10:30" },
+    lots: [{
+      id: "excel-us-nvda-open",
+      market: "US",
+      code: "NVDA",
+      name: "英伟达",
+      note: "工作簿锁定成本",
+      quality: "verified",
+      buy: {
+        price: 100,
+        qty: 4,
+        purchaseCostCny: 4020,
+        adjustmentCny: 1000,
+      },
+      fees: { buy: 0 },
+    }],
+  };
+
+  const rows = sanitizeHoldings(source);
+  assert.equal(rows[0].purchaseCostCny, 4020);
+  assert.equal(rows[0].adjustmentCny, 1000);
+  assert.equal(rows[0].note, "工作簿锁定成本");
+  assert.equal(rows[0].quality, "verified");
+
+  const document = createHoldingsDocument(source);
+  assert.deepEqual(document.source, source.source);
+  assert.deepEqual(document.fx, source.fx);
+  assert.equal(document.asOf, source.asOf);
+  assert.equal(document.valuationAsOf, source.valuationAsOf);
+  assert.equal(document.lots[0].buy.purchaseCostCny, 4020);
+  assert.equal(document.lots[0].buy.adjustmentCny, 1000);
+  assert.equal(document.lots[0].note, "工作簿锁定成本");
+  assert.equal(document.lots[0].quality, "verified");
+});
+
 test("partial-sale conversion preserves locked CNY totals and operation metadata", () => {
   const source = {
     version: 2,
@@ -94,6 +135,7 @@ test("partial-sale conversion preserves locked CNY totals and operation metadata
         qty: 10,
         date: "2026-08-01",
         purchaseCostCny: 4600,
+        adjustmentCny: 1000,
         feeCny: 140,
         operationId: "buy-partial",
       },
@@ -111,11 +153,61 @@ test("partial-sale conversion preserves locked CNY totals and operation metadata
   const document = createHoldingsDocument(sanitizeHoldings(source));
   const rows = sanitizeHoldings(document);
   assert.equal(rows.reduce((sum, row) => sum + row.purchaseCostCny, 0), 4600);
+  assert.equal(rows.reduce((sum, row) => sum + row.adjustmentCny, 0), 1000);
   assert.equal(rows.filter((row) => row.status === "sold").reduce((sum, row) => sum + row.sellProceedsCny, 0), 2050);
   assert.equal(rows.reduce((sum, row) => sum + row.buyFeeUsd, 0), 20);
   assert.equal(rows.filter((row) => row.status === "sold").reduce((sum, row) => sum + row.sellFeeUsd, 0), 20);
   assert.equal(rows.some((row) => row.buyOperationId === "buy-partial"), true);
   assert.equal(rows.some((row) => row.sellOperationId === "sell-partial"), true);
+});
+
+test("partial sell operations preserve workbook metadata and split adjustment without duplication", () => {
+  const source = {
+    version: 2,
+    asOf: "2026-11-08",
+    valuationAsOf: "2026-11-06",
+    source: { type: "excel", file: "20261108股票记录.xlsx" },
+    fx: { USD: 6.67885, HKD: 0.8516 },
+    lots: [{
+      id: "excel-us-nvda-open",
+      market: "US",
+      code: "NVDA",
+      name: "英伟达",
+      note: "成本调整只计一次",
+      quality: "verified",
+      buy: {
+        price: 100,
+        qty: 4,
+        date: "2026-08-01",
+        purchaseCostCny: 4020,
+        adjustmentCny: 1000,
+      },
+      fees: { buy: 0 },
+    }],
+  };
+
+  const result = applyHoldingOperation(source, {
+    type: "sell",
+    operationId: "sell-adjusted-one",
+    market: "US",
+    code: "NVDA",
+    price: 110,
+    qty: 1,
+    date: "2026-11-08",
+    sellProceedsCny: 720,
+    feeCny: 0,
+  });
+
+  assert.equal(result.asOf, source.asOf);
+  assert.equal(result.valuationAsOf, source.valuationAsOf);
+  assert.deepEqual(result.source, source.source);
+  assert.deepEqual(result.fx, source.fx);
+  assert.equal(result.lots.reduce((sum, lot) => sum + Number(lot.buy.adjustmentCny || 0), 0), 1000);
+  assert.equal(result.lots.reduce((sum, lot) => sum + Number(lot.buy.purchaseCostCny || 0), 0), 4020);
+  assert.deepEqual(result.lots.map((lot) => lot.note), ["成本调整只计一次", "成本调整只计一次"]);
+  assert.deepEqual(result.lots.map((lot) => lot.quality), ["verified", "verified"]);
+  assert.equal(result.lots.find((lot) => !lot.sell).buy.adjustmentCny, 750);
+  assert.equal(result.lots.find((lot) => lot.sell).buy.adjustmentCny, 250);
 });
 
 test("buy operations append a new lot without replacing an existing position", () => {

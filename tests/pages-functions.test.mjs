@@ -410,6 +410,69 @@ test("writes the readable v2 schema", () => {
   assert.deepEqual(document.lots, [{ market: "US", code: "NVDA", name: "英伟达", buy: { price: 200, qty: 3 }, fees: { buy: 20 } }]);
 });
 
+test("client v2 preserves stock cost adjustments and audit notes without double counting", async () => {
+  const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
+  const runnable = source.replace(/\nstart\(\)\.catch\(function \(error\) \{[\s\S]*?\n\}\);\s*$/, "\n");
+  const context = vm.createContext({ location: { hash: "" }, localStorage: { getItem: () => null, setItem: () => {} } });
+  new vm.Script(runnable).runInContext(context);
+  const result = JSON.parse(JSON.stringify(vm.runInContext(`(() => {
+    const rows = holdingsFromDocument({
+      version: 2,
+      lots: [{
+        market: "US",
+        code: "AAA",
+        name: "AAA",
+        note: "workbook source note",
+        quality: "trade-details-missing",
+        buy: { price: 100, qty: 10, purchaseCostCny: 5000, adjustmentCny: 1000 },
+        sell: { price: 110, qty: 4, date: "2026-11-05", sellProceedsCny: 2500 }
+      }]
+    });
+    return {
+      rows: rows.map(row => ({
+        status: row.status,
+        qty: row.qty,
+        purchaseCostCny: row.purchaseCostCny,
+        fixedPurchaseCostCny: fixedPurchaseCost(row),
+        adjustmentCny: row.adjustmentCny,
+        note: row.note,
+        quality: row.quality
+      })),
+      document: readableHoldingsDocument(rows, {
+        asOf: "2026-11-08",
+        valuationAsOf: "2026-11-06",
+        source: { type: "excel", file: "20261108股票记录.xlsx" },
+        fx: { USD: 6.67885, HKD: 0.8516 }
+      })
+    };
+  })()`, context)));
+
+  assert.deepEqual(result.rows, [
+    { status: "holding", qty: 6, purchaseCostCny: 3000, fixedPurchaseCostCny: 3000, adjustmentCny: 600, note: "workbook source note", quality: "trade-details-missing" },
+    { status: "sold", qty: 4, purchaseCostCny: 2000, fixedPurchaseCostCny: 2000, adjustmentCny: 400, note: "workbook source note", quality: "trade-details-missing" },
+  ]);
+  assert.equal(result.document.lots.reduce((total, lot) => total + lot.buy.adjustmentCny, 0), 1000);
+  assert.ok(result.document.lots.every((lot) => lot.note === "workbook source note" && lot.quality === "trade-details-missing"));
+  assert.equal(result.document.asOf, "2026-11-08");
+  assert.equal(result.document.valuationAsOf, "2026-11-06");
+  assert.deepEqual(result.document.source, { type: "excel", file: "20261108股票记录.xlsx" });
+  assert.deepEqual(result.document.fx, { USD: 6.67885, HKD: 0.8516 });
+
+  const sourceFx = JSON.parse(JSON.stringify(vm.runInContext(`(() => {
+    state.fxMeta = { asOf: null, fetchedAt: null, source: "固定参考汇率", fallback: true };
+    adoptStartupDocuments({
+      version: 2,
+      source: { type: "excel", asOf: "2026-11-08", fx: { USD: 6.67885, HKD: 0.8516, asOf: "2026-11-08 10:30 Asia/Shanghai" } },
+      lots: []
+    }, []);
+    return { rates: state.rates, fxMeta: state.fxMeta };
+  })()`, context)));
+  assert.deepEqual(sourceFx, {
+    rates: { CNY: 1, USD: 6.67885, HKD: 0.8516 },
+    fxMeta: { asOf: "2026-11-08 10:30 Asia/Shanghai", fetchedAt: null, source: "Excel 锁定汇率", fallback: true },
+  });
+});
+
 test("reads and sanitizes the current GitHub holdings document", async () => {
   const content = Buffer.from(JSON.stringify(createHoldingsDocument([holding])), "utf8").toString("base64");
   const calls = [];
@@ -1561,4 +1624,19 @@ test("sold records filter by inclusive sell dates and sort by date, realized pro
   assert.match(markup, /data-clear-trade-filters/);
   assert.match(markup, /sold-record-mobile/);
   assert.doesNotMatch(markup, /丙公司/);
+
+  const missingDetailsMarkup = vm.runInContext(`(() => {
+    const row = { market: "A股", code: "605090", name: "九丰能源", status: "sold", currency: "CNY", sellDate: "2026-11-05", cost: 1, sellPrice: 1, qty: 1, quality: "trade-details-missing", purchaseCostCny: 10000, saleProceedsCny: 12000, pnlCny: 2000, pnlRate: 20 };
+    return soldRecordRow(row) + soldRecordMobileCard(row);
+  })()`, context);
+  assert.ok((missingDetailsMarkup.match(/>—</g) || []).length >= 6);
+  assert.doesNotMatch(missingDetailsMarkup, /¥1\.00/);
+
+  const missingDetailsMarket = plain(vm.runInContext(`(() => {
+    state.rates = { CNY: 1, HKD: 0.92, USD: 7.22 };
+    state.rows = [{ market: "A股", code: "605090", name: "九丰能源", status: "sold", currency: "CNY", cost: 1, sellPrice: 1, qty: 1, quality: "trade-details-missing", purchaseCostCny: 10000, saleProceedsCny: 12000, pnlCny: 2000, todayPnlCny: 0, valueCny: 0 }];
+    const data = marketSummary("A股");
+    return { grossBuysNative: data.grossBuysNative, saleProceedsNative: data.saleProceedsNative, netInvestedNative: data.netInvestedNative, pnlNative: data.pnlNative };
+  })()`, context));
+  assert.deepEqual(missingDetailsMarket, { grossBuysNative: 10000, saleProceedsNative: 12000, netInvestedNative: -2000, pnlNative: 2000 });
 });

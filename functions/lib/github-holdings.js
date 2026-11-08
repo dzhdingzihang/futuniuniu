@@ -39,6 +39,24 @@ const MARKET_NAMES = { A: "A股", HK: "港股", US: "美股" };
 const MARKET_CODES = { "A股": "A", "港股": "HK", "美股": "US" };
 const DEFAULT_TRADE_FEE_USD = 20;
 
+function copyJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function rootMetadata(input) {
+  if (!input || Array.isArray(input) || typeof input !== "object") return {};
+  const metadata = {};
+  for (const key of ["asOf", "valuationAsOf"]) {
+    const value = String(input[key] || "").trim();
+    if (value) metadata[key] = value;
+  }
+  for (const key of ["source", "fx"]) {
+    const value = input[key];
+    if (value && typeof value === "object" && !Array.isArray(value)) metadata[key] = copyJson(value);
+  }
+  return metadata;
+}
+
 function currencyForMarket(market) {
   return market === "港股" ? "HKD" : market === "美股" ? "USD" : "CNY";
 }
@@ -88,6 +106,9 @@ function rowsFromInput(input) {
     const buyFxSource = String(buy.fxSource || "").trim();
     const purchaseCostCny = cleanOptionalNumber(buy.purchaseCostCny);
     const buyFeeCny = cleanOptionalNumber(buy.feeCny);
+    const adjustmentCny = cleanOptionalNumber(buy.adjustmentCny);
+    const note = String(lot.note || "").trim();
+    const quality = String(lot.quality || "").trim();
     if (lotId) base.lotId = lotId;
     if (parentLotId) base.parentLotId = parentLotId;
     if (buyDate) base.buyDate = buyDate;
@@ -96,6 +117,9 @@ function rowsFromInput(input) {
     if (buyFxSource) base.buyFxSource = buyFxSource;
     if (purchaseCostCny !== undefined) base.purchaseCostCny = purchaseCostCny;
     if (buyFeeCny !== undefined) base.buyFeeCny = buyFeeCny;
+    if (adjustmentCny !== undefined) base.adjustmentCny = adjustmentCny;
+    if (note) base.note = note;
+    if (quality) base.quality = quality;
     if (!sell) return [{ ...base, status: "holding", qty: buyQty, buyFeeUsd: buyFee }];
     if (!Number.isFinite(sellQty) || sellQty <= 0 || !Number.isFinite(buyQty) || buyQty <= 0 || sellQty > buyQty) {
       throw new HoldingsSyncError("第 " + (index + 1) + " 条卖出数量不正确");
@@ -113,6 +137,7 @@ function rowsFromInput(input) {
     }
     if (purchaseCostCny !== undefined) soldBase.purchaseCostCny = purchaseCostCny * ratio;
     if (buyFeeCny !== undefined) soldBase.buyFeeCny = buyFeeCny * ratio;
+    if (adjustmentCny !== undefined) soldBase.adjustmentCny = adjustmentCny * ratio;
     const records = [{
       ...soldBase,
       status: "sold",
@@ -136,6 +161,7 @@ function rowsFromInput(input) {
       };
       if (purchaseCostCny !== undefined) holdingRecord.purchaseCostCny = purchaseCostCny * (1 - ratio);
       if (buyFeeCny !== undefined) holdingRecord.buyFeeCny = buyFeeCny * (1 - ratio);
+      if (adjustmentCny !== undefined) holdingRecord.adjustmentCny = adjustmentCny * (1 - ratio);
       records.unshift(holdingRecord);
     }
     return records;
@@ -175,6 +201,8 @@ export function sanitizeHoldings(input) {
     const optionalStrings = {
       lotId: item.lotId,
       parentLotId: item.parentLotId,
+      note: item.note,
+      quality: item.quality,
       buyDate: item.buyDate,
       buyOperationId: item.buyOperationId,
       buyFxAsOf: item.buyFxAsOf,
@@ -190,21 +218,26 @@ export function sanitizeHoldings(input) {
     if (output.buyDate && !/^\d{4}-\d{2}-\d{2}$/.test(output.buyDate)) {
       throw new HoldingsSyncError("第 " + (index + 1) + " 条买入日期不正确");
     }
-    ["purchaseCostCny", "sellProceedsCny", "buyFeeCny", "sellFeeCny", "buyFeeUsd", "sellFeeUsd", "sellPrice"].forEach((key) => {
+    ["purchaseCostCny", "sellProceedsCny", "adjustmentCny", "buyFeeCny", "sellFeeCny", "buyFeeUsd", "sellFeeUsd", "sellPrice"].forEach((key) => {
       const value = cleanOptionalNumber(item[key]);
       if (value !== undefined) output[key] = value;
     });
+    if (output.adjustmentCny !== undefined && output.adjustmentCny < 0) {
+      throw new HoldingsSyncError("第 " + (index + 1) + " 条成本调整不正确");
+    }
     if (status === "sold") output.sellDate = sellDate;
     return output;
   });
 }
 
 export function createHoldingsDocument(input) {
+  const metadata = rootMetadata(input);
   const rows = sanitizeHoldings(input);
   return {
     version: 2,
-    guide: "market 只填 A / HK / US；没有 sell 表示持有中，有 sell 表示已卖出；币种、状态和行情代码由系统生成。",
+    guide: "日常新增只填 market、code、name 和 buy.date/price/qty；没有 sell 表示持有。purchaseCostCny 已包含 adjustmentCny 时请勿重复相加。",
     newTradeFeeUsd: { buy: DEFAULT_TRADE_FEE_USD, sell: DEFAULT_TRADE_FEE_USD },
+    ...metadata,
     lots: rows.map((row) => {
       const lot = {
         market: MARKET_CODES[row.market],
@@ -214,8 +247,11 @@ export function createHoldingsDocument(input) {
       };
       if (row.lotId) lot.id = row.lotId;
       if (row.parentLotId) lot.parentLotId = row.parentLotId;
+      if (row.note) lot.note = row.note;
+      if (row.quality) lot.quality = row.quality;
       if (row.buyDate) lot.buy.date = row.buyDate;
       if (row.purchaseCostCny !== undefined) lot.buy.purchaseCostCny = row.purchaseCostCny;
+      if (row.adjustmentCny !== undefined) lot.buy.adjustmentCny = row.adjustmentCny;
       if (row.buyFeeCny !== undefined) lot.buy.feeCny = row.buyFeeCny;
       if (row.buyFxAsOf) lot.buy.fxAsOf = row.buyFxAsOf;
       if (row.buyFxSource) lot.buy.fxSource = row.buyFxSource;
@@ -235,10 +271,6 @@ export function createHoldingsDocument(input) {
       return lot;
     }),
   };
-}
-
-function copyJson(value) {
-  return JSON.parse(JSON.stringify(value));
 }
 
 function operationValue(operation, trade, key) {
@@ -301,7 +333,7 @@ function ensureLotIds(document) {
 function copyScaledBuy(buy, quantity, sourceQuantity) {
   const output = { ...buy, qty: quantity };
   const ratio = quantity / sourceQuantity;
-  for (const key of ["purchaseCostCny", "feeCny"]) {
+  for (const key of ["purchaseCostCny", "adjustmentCny", "feeCny"]) {
     const value = cleanOptionalNumber(buy[key]);
     if (value !== undefined) output[key] = value * ratio;
   }
@@ -420,7 +452,7 @@ export function applyHoldingOperation(input, rawOperation) {
     if (sellFeeCnyShares[allocation.fragmentIndex] !== undefined) sell.feeCny = sellFeeCnyShares[allocation.fragmentIndex];
     if (fxAsOf) sell.fxAsOf = fxAsOf;
     if (fxSource) sell.fxSource = fxSource;
-    nextLots.push({
+    const soldLot = {
       id: lot.id + ":sold:" + operationId + ":" + (allocation.fragmentIndex + 1),
       parentLotId: lot.id,
       market: lot.market,
@@ -432,7 +464,10 @@ export function applyHoldingOperation(input, rawOperation) {
         buy: sourceBuyFee * allocation.quantity / allocation.sourceQuantity,
         sell: sellFeeShares[allocation.fragmentIndex],
       },
-    });
+    };
+    if (lot.note) soldLot.note = lot.note;
+    if (lot.quality) soldLot.quality = lot.quality;
+    nextLots.push(soldLot);
   });
 
   return createHoldingsDocument({ ...document, lots: nextLots });

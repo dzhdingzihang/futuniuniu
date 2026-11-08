@@ -1,657 +1,2131 @@
 {
   "version": 2,
-  "guide": "market 只填 A / HK / US；没有 sell 表示持有中，有 sell 表示已卖出；币种、状态和行情代码由系统生成。",
+  "guide": "日常新增只填 market、code、name 和 buy.date/price/qty；没有 sell 表示持有。导入记录的 purchaseCostCny 已锁定人民币成本，且已包含 adjustmentCny，请勿重复相加。",
+  "source": {
+    "type": "excel",
+    "file": "20261108股票记录.xlsx",
+    "asOf": "2026-11-08",
+    "valuationAsOf": "2026-11-06",
+    "fx": {
+      "CNY": 1,
+      "HKD": 0.8516,
+      "USD": 6.67885,
+      "asOf": "2026-11-08 10:30 Asia/Shanghai"
+    },
+    "sheets": [
+      "全市场股票明细",
+      "股票盈亏",
+      "持仓估值",
+      "当前实盘持仓",
+      "人民币成本明细",
+      "成交原始记录"
+    ],
+    "costAdjustment": {
+      "amountCny": 1000,
+      "scope": "每个唯一 market+code 一次",
+      "includedInPurchaseCostCny": true
+    },
+    "reconciliation": {
+      "securityCount": 80,
+      "openSecurityCount": 31,
+      "closedSecurityCount": 49,
+      "sourcePnlCny": -261399.85,
+      "adjustmentTotalCny": 80000,
+      "adjustedPnlCny": -341399.85
+    }
+  },
   "newTradeFeeUsd": {
     "buy": 20,
     "sell": 20
   },
   "lots": [
     {
-      "market": "HK",
-      "code": "07709",
-      "name": "2倍做多海力士",
-      "buy": {
-        "price": 120,
-        "qty": 1400
-      },
-      "id": "legacy-hk-07709-undated-1",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "HK",
-      "code": "07709",
-      "name": "2倍做多海力士",
-      "buy": {
-        "price": 100,
-        "qty": 1400
-      },
-      "id": "legacy-hk-07709-undated-2",
-      "sell": {
-        "price": 34,
-        "qty": 1400,
-        "date": "2026-08-01"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "HK",
-      "code": "02208",
-      "name": "金风科技",
-      "buy": {
-        "price": 17.5,
-        "qty": 1600
-      },
-      "id": "legacy-hk-02208-undated-3",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "HK",
-      "code": "01810",
-      "name": "小米集团-W",
-      "buy": {
-        "price": 43.5,
-        "qty": 1400
-      },
-      "id": "legacy-hk-01810-undated-4",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "HK",
-      "code": "01772",
-      "name": "赣锋锂业",
-      "buy": {
-        "price": 68,
-        "qty": 200
-      },
-      "id": "legacy-hk-01772-undated-5",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "HK",
-      "code": "01024",
-      "name": "快手-W",
-      "buy": {
-        "price": 46.5,
-        "qty": 300
-      },
-      "id": "legacy-hk-01024-undated-6",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "HK",
-      "code": "01024",
-      "name": "快手-W",
-      "buy": {
-        "price": 260,
-        "qty": 900
-      },
-      "id": "legacy-hk-01024-undated-7",
-      "sell": {
-        "price": 55.7,
-        "qty": 900,
-        "date": "2025-02-25"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "HK",
-      "code": "00981",
-      "name": "中芯国际",
-      "buy": {
-        "price": 79,
-        "qty": 500
-      },
-      "id": "legacy-hk-00981-undated-8",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "HK",
-      "code": "00763",
-      "name": "中兴通讯",
-      "buy": {
-        "price": 31,
-        "qty": 400
-      },
-      "id": "legacy-hk-00763-undated-9",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "HK",
-      "code": "03308",
-      "name": "中际旭创",
-      "buy": {
-        "price": 990,
-        "qty": 50
-      },
-      "id": "legacy-hk-03308-undated-10",
-      "sell": {
-        "price": 880,
-        "qty": 50,
-        "date": "2026-07-30"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "TSLL",
-      "name": "2倍做多TSLA",
-      "buy": {
-        "price": 12,
-        "qty": 300
-      },
-      "id": "legacy-us-tsll-undated-11",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "OKLL",
-      "name": "2倍做多OKLO",
-      "buy": {
-        "price": 9.6,
-        "qty": 600
-      },
-      "id": "legacy-us-okll-undated-12",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "NOK",
-      "name": "诺基亚",
-      "buy": {
-        "price": 15,
-        "qty": 320
-      },
-      "id": "legacy-us-nok-undated-13",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "LITX",
-      "name": "2倍做多LITE",
-      "buy": {
-        "price": 42,
-        "qty": 10
-      },
-      "id": "legacy-us-litx-undated-14",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "LITX",
-      "name": "2倍做多LITE",
-      "buy": {
-        "price": 42,
-        "qty": 60
-      },
-      "id": "legacy-us-litx-undated-15",
-      "sell": {
-        "price": 35.5,
-        "qty": 60,
-        "date": "2026-06-17"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "GLW",
-      "name": "康宁",
-      "buy": {
-        "price": 180,
-        "qty": 30
-      },
-      "id": "legacy-us-glw-undated-16",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "GLW",
-      "name": "康宁",
-      "buy": {
-        "price": 180,
-        "qty": 17
-      },
-      "id": "legacy-us-glw-undated-17",
-      "sell": {
-        "price": 208,
-        "qty": 17,
-        "date": "2026-06-22"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "DRAM",
-      "name": "DRAM",
-      "buy": {
-        "price": 57,
-        "qty": 100
-      },
-      "id": "legacy-us-dram-undated-18",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "DRAM",
-      "name": "DRAM",
-      "buy": {
-        "price": 57,
-        "qty": 20
-      },
-      "id": "legacy-us-dram-undated-19",
-      "sell": {
-        "price": 70,
-        "qty": 20,
-        "date": "2026-06-17"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "ASTX",
-      "name": "2倍做多ASTS",
-      "buy": {
-        "price": 41,
-        "qty": 40
-      },
-      "id": "legacy-us-astx-undated-20",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "ASTX",
-      "name": "2倍做多ASTS",
-      "buy": {
-        "price": 45,
-        "qty": 20
-      },
-      "id": "legacy-us-astx-undated-21",
-      "sell": {
-        "price": 32,
-        "qty": 20,
-        "date": "2026-06-10"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "COHX",
-      "name": "2倍做多COHR",
-      "buy": {
-        "price": 58,
-        "qty": 10
-      },
-      "id": "legacy-us-cohx-undated-22",
-      "sell": {
-        "price": 59,
-        "qty": 10,
-        "date": "2026-06-17"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "DKNX",
-      "name": "2倍做多DKNG",
-      "buy": {
-        "price": 22,
-        "qty": 10
-      },
-      "id": "legacy-us-dknx-undated-23",
-      "sell": {
-        "price": 22,
-        "qty": 10,
-        "date": "2026-06-17"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "US",
-      "code": "NEBX",
-      "name": "2倍做多NBIS",
-      "buy": {
-        "price": 34,
-        "qty": 70
-      },
-      "id": "legacy-us-nebx-undated-24",
-      "sell": {
-        "price": 15,
-        "qty": 70,
-        "date": "2026-07-29"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "A",
-      "code": "601179",
-      "name": "中国西电",
-      "buy": {
-        "price": 16.5,
-        "qty": 500
-      },
-      "id": "legacy-a-601179-undated-25",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "A",
-      "code": "601138",
-      "name": "工业富联",
-      "buy": {
-        "price": 64,
-        "qty": 300
-      },
-      "id": "legacy-a-601138-undated-26",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "A",
-      "code": "600869",
-      "name": "远东股份",
-      "buy": {
-        "price": 23,
-        "qty": 100
-      },
-      "id": "legacy-a-600869-undated-27",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "A",
-      "code": "600667",
-      "name": "太极实业",
-      "buy": {
-        "price": 25,
-        "qty": 400
-      },
-      "id": "legacy-a-600667-undated-28",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "A",
-      "code": "300820",
-      "name": "英杰电气",
-      "buy": {
-        "price": 59.5,
-        "qty": 100
-      },
-      "id": "legacy-a-300820-undated-29:sold:op_muak9ylg_c6561fe2f6cd4c:1",
-      "parentLotId": "legacy-a-300820-undated-29",
-      "sell": {
-        "price": 60,
-        "qty": 100,
-        "date": "2026-09-19",
-        "sellProceedsCny": 5866.050498961891,
-        "feeCny": 133.94950103810862,
-        "fxAsOf": "2026-09-18",
-        "fxSource": "Frankfurter",
-        "operationId": "op_muak9ylg_c6561fe2f6cd4c"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "A",
-      "code": "300067",
-      "name": "安诺其",
-      "buy": {
-        "price": 8.5,
-        "qty": 800
-      },
-      "id": "legacy-a-300067-undated-30",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "A",
-      "code": "300053",
-      "name": "航宇微",
-      "buy": {
-        "price": 21.5,
-        "qty": 100
-      },
-      "id": "legacy-a-300053-undated-31",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "A",
-      "code": "300053",
-      "name": "航宇微",
-      "buy": {
-        "price": 21.5,
-        "qty": 800
-      },
-      "id": "legacy-a-300053-undated-32",
-      "sell": {
-        "price": 16.38,
-        "qty": 800,
-        "date": "2026-06-17"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
-      "market": "A",
-      "code": "002639",
-      "name": "雪人集团",
-      "buy": {
-        "price": 22.5,
-        "qty": 100
-      },
-      "id": "legacy-a-002639-undated-33",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
-      "market": "A",
-      "code": "002639",
-      "name": "雪人集团",
-      "buy": {
-        "price": 22.5,
-        "qty": 500
-      },
-      "id": "legacy-a-002639-undated-34",
-      "sell": {
-        "price": 14.2,
-        "qty": 500,
-        "date": "2026-06-17"
-      },
-      "fees": {
-        "buy": 20,
-        "sell": 20
-      }
-    },
-    {
+      "id": "excel-a-002384-open",
       "market": "A",
       "code": "002384",
       "name": "东山精密",
+      "quality": "broker-position",
+      "note": "有股数差 · 券商持仓盈亏 · 估值日期见持仓页",
       "buy": {
-        "price": 260,
-        "qty": 200
+        "price": 201.836,
+        "qty": 400,
+        "purchaseCostCny": 81755.4,
+        "date": "2026-07-01",
+        "adjustmentCny": 1000
       },
-      "id": "legacy-a-002384-undated-35",
       "fees": {
-        "buy": 20
+        "buy": 0
       }
     },
     {
+      "id": "excel-a-601138-open",
       "market": "A",
-      "code": "002217",
-      "name": "合力泰",
+      "code": "601138",
+      "name": "工业富联",
+      "quality": "broker-position",
+      "note": "股数相符 · 券商持仓盈亏 · 估值日期见持仓页",
       "buy": {
-        "price": 4,
-        "qty": 100
+        "price": 62.621,
+        "qty": 300,
+        "purchaseCostCny": 19602.42,
+        "date": "2026-04-13",
+        "adjustmentCny": 1000
       },
-      "id": "legacy-a-002217-undated-36",
       "fees": {
-        "buy": 20
+        "buy": 0
       }
     },
     {
+      "id": "excel-a-002463-open",
       "market": "A",
-      "code": "002217",
-      "name": "合力泰",
+      "code": "002463",
+      "name": "沪电股份",
+      "quality": "broker-position",
+      "note": "股数相符 · 券商持仓盈亏 · 估值日期见持仓页",
       "buy": {
-        "price": 4,
-        "qty": 2900
-      },
-      "id": "legacy-a-002217-undated-37",
-      "sell": {
-        "price": 2.5,
-        "qty": 2900,
-        "date": "2026-06-17"
+        "price": 125.05,
+        "qty": 100,
+        "purchaseCostCny": 13513.66,
+        "date": "2026-08-18",
+        "adjustmentCny": 1000
       },
       "fees": {
-        "buy": 20,
-        "sell": 20
+        "buy": 0
       }
     },
     {
-      "market": "A",
-      "code": "001896",
-      "name": "豫能控股",
-      "buy": {
-        "price": 15.5,
-        "qty": 200
-      },
-      "id": "legacy-a-001896-undated-38",
-      "fees": {
-        "buy": 20
-      }
-    },
-    {
+      "id": "excel-a-000630-open",
       "market": "A",
       "code": "000630",
       "name": "铜陵有色",
+      "quality": "broker-position",
+      "note": "推算与持仓相符 · 两笔推算合计。7.45 元一笔的日期待核。",
       "buy": {
-        "price": 7.2,
-        "qty": 3000
+        "price": 6.993,
+        "qty": 3000,
+        "purchaseCostCny": 21812.34,
+        "date": "2026-06-24",
+        "adjustmentCny": 1000
       },
-      "id": "legacy-a-000630-undated-39",
       "fees": {
-        "buy": 20
+        "buy": 0
       }
     },
     {
+      "id": "excel-a-600667-open",
       "market": "A",
-      "code": "002463",
-      "name": "沪电科技",
+      "code": "600667",
+      "name": "太极实业",
+      "quality": "broker-position",
+      "note": "股数相符 · 券商持仓盈亏 · 估值日期见持仓页",
       "buy": {
-        "price": 126.1,
-        "qty": 100
+        "price": 24.113,
+        "qty": 400,
+        "purchaseCostCny": 10646.69,
+        "date": "2026-07-08",
+        "adjustmentCny": 1000
       },
-      "id": "legacy-a-002463-undated-40",
       "fees": {
-        "buy": 20
+        "buy": 0
       }
     },
     {
+      "id": "excel-a-601179-open",
+      "market": "A",
+      "code": "601179",
+      "name": "中国西电",
+      "quality": "broker-position",
+      "note": "有股数差 · 券商持仓盈亏 · 估值日期见持仓页",
+      "buy": {
+        "price": 15.87,
+        "qty": 500,
+        "purchaseCostCny": 8888.41,
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-a-300067-open",
+      "market": "A",
+      "code": "300067",
+      "name": "安诺其",
+      "quality": "broker-position",
+      "note": "股数相符 · 券商持仓盈亏 · 估值日期见持仓页",
+      "buy": {
+        "price": 7.786,
+        "qty": 800,
+        "purchaseCostCny": 7235.94,
+        "date": "2026-05-08",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-a-002639-open",
+      "market": "A",
+      "code": "002639",
+      "name": "雪人集团",
+      "quality": "broker-position",
+      "note": "有股数差 · 券商持仓盈亏 · 估值日期见持仓页",
+      "buy": {
+        "price": 21.798,
+        "qty": 100,
+        "purchaseCostCny": 6948.29,
+        "date": "2026-03-06",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-a-300053-open",
+      "market": "A",
+      "code": "300053",
+      "name": "航宇微",
+      "quality": "broker-position",
+      "note": "有股数差 · 券商持仓盈亏 · 估值日期见持仓页",
+      "buy": {
+        "price": 20.368,
+        "qty": 100,
+        "purchaseCostCny": 6244.09,
+        "date": "2026-01-13",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-a-600869-open",
+      "market": "A",
+      "code": "600869",
+      "name": "远东股份",
+      "quality": "broker-position",
+      "note": "股数相符 · 券商持仓盈亏 · 估值日期见持仓页",
+      "buy": {
+        "price": 22.075,
+        "qty": 100,
+        "purchaseCostCny": 3015.99,
+        "date": "2026-05-14",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-a-001896-open",
+      "market": "A",
+      "code": "001896",
+      "name": "豫能控股",
+      "quality": "broker-position",
+      "note": "股数相符 · 券商持仓盈亏 · 估值日期见持仓页",
+      "buy": {
+        "price": 14.485,
+        "qty": 200,
+        "purchaseCostCny": 3902.94,
+        "date": "2026-03-05",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-a-002217-open",
+      "market": "A",
+      "code": "002217",
+      "name": "ST合力泰",
+      "quality": "broker-position",
+      "note": "有股数差 · 券商持仓盈亏 · 估值日期见持仓页",
+      "buy": {
+        "price": 3.59,
+        "qty": 100,
+        "purchaseCostCny": 4475.71,
+        "date": "2026-05-11",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-a-605090-sold",
+      "market": "A",
+      "code": "605090",
+      "name": "九丰能源",
+      "quality": "trade-details-missing",
+      "note": "未见买卖记录 · 券商历史总盈亏 · 截至 11/05；原始成交明细不完整；内部占位价格/数量仅为兼容格式，页面应显示未见",
+      "buy": {
+        "price": 21552.396916,
+        "qty": 1,
+        "purchaseCostCny": 22552.4,
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 27981.476916,
+        "qty": 1,
+        "date": "2026-11-05",
+        "sellProceedsCny": 27981.48
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-600120-sold",
+      "market": "A",
+      "code": "600120",
+      "name": "浙江东方",
+      "quality": "broker-closed-pnl",
+      "note": "股数相符 · 券商历史总盈亏 · 截至 11/05",
+      "buy": {
+        "price": 6.78,
+        "qty": 4500,
+        "purchaseCostCny": 31510,
+        "date": "2025-02-07",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 8.2,
+        "qty": 4500,
+        "date": "2025-02-11",
+        "sellProceedsCny": 36862.19
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-302132-sold",
+      "market": "A",
+      "code": "302132",
+      "name": "中航成飞",
+      "quality": "broker-closed-pnl",
+      "note": "股数相符 · 券商历史总盈亏 · 截至 11/05",
+      "buy": {
+        "price": 68.4,
+        "qty": 200,
+        "purchaseCostCny": 14680,
+        "date": "2025-05-07",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 79.15,
+        "qty": 200,
+        "date": "2025-05-26",
+        "sellProceedsCny": 15812.08
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-300423-sold",
+      "market": "A",
+      "code": "300423",
+      "name": "昇辉科技",
+      "quality": "trade-details-missing",
+      "note": "未见买卖记录 · 券商历史总盈亏 · 截至 11/05；原始成交明细不完整；内部占位价格/数量仅为兼容格式，页面应显示未见",
+      "buy": {
+        "price": 26923.571429,
+        "qty": 1,
+        "purchaseCostCny": 27923.57,
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 28431.291429,
+        "qty": 1,
+        "date": "2026-11-05",
+        "sellProceedsCny": 28431.29
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-603322-sold",
+      "market": "A",
+      "code": "603322",
+      "name": "超讯通信",
+      "quality": "broker-closed-pnl",
+      "note": "股数相符 · 历史排名名为超讯通信，成交页名为超讯科技。",
+      "buy": {
+        "price": 42.27,
+        "qty": 300,
+        "purchaseCostCny": 13681,
+        "date": "2025-02-13",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 46.9,
+        "qty": 300,
+        "date": "2025-03-17",
+        "sellProceedsCny": 14052.69
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-600660-sold",
+      "market": "A",
+      "code": "600660",
+      "name": "福耀玻璃",
+      "quality": "trade-details-missing",
+      "note": "有股数差 · 可见卖出 100 股及股息入账，买入记录未见。；原始成交明细不完整；内部占位价格/数量仅为兼容格式，页面应显示未见",
+      "buy": {
+        "price": 48.669939,
+        "qty": 100,
+        "purchaseCostCny": 5866.99,
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 57.1,
+        "qty": 100,
+        "date": "2024-11-19",
+        "sellProceedsCny": 6056.97
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-000988-sold",
       "market": "A",
       "code": "000988",
       "name": "华工科技",
+      "quality": "trade-details-missing",
+      "note": "有股数差 · 券商历史总盈亏 · 截至 11/05；原始成交明细不完整；内部占位价格/数量仅为兼容格式，页面应显示未见",
       "buy": {
-        "price": 172,
-        "qty": 100
-      },
-      "id": "legacy-a-000988-undated-41",
-      "sell": {
-        "price": 180,
+        "price": 171,
         "qty": 100,
-        "date": "2026-06-17"
+        "purchaseCostCny": 18100,
+        "date": "2026-05-26",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 180.01,
+        "qty": 100,
+        "date": "2026-11-05",
+        "sellProceedsCny": 18001
       },
       "fees": {
-        "buy": 20,
-        "sell": 20
+        "buy": 0,
+        "sell": 0
       }
     },
     {
+      "id": "excel-a-688720-sold",
+      "market": "A",
+      "code": "688720",
+      "name": "艾森股份",
+      "quality": "broker-closed-pnl",
+      "note": "股数相符 · 券商历史总盈亏 · 截至 11/05",
+      "buy": {
+        "price": 46.48,
+        "qty": 200,
+        "purchaseCostCny": 10296,
+        "date": "2024-10-08",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 48.94,
+        "qty": 200,
+        "date": "2024-11-15",
+        "sellProceedsCny": 9772.92
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-300820-sold",
+      "market": "A",
+      "code": "300820",
+      "name": "英杰电气",
+      "quality": "broker-closed-pnl",
+      "note": "股数相符 · 券商历史总盈亏 · 截至 11/05",
+      "buy": {
+        "price": 58.43,
+        "qty": 100,
+        "purchaseCostCny": 6843,
+        "date": "2025-10-10",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 60.15,
+        "qty": 100,
+        "date": "2026-09-15",
+        "sellProceedsCny": 6037.99
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-600313-sold",
+      "market": "A",
+      "code": "600313",
+      "name": "农发种业",
+      "quality": "broker-closed-pnl",
+      "note": "股数相符 · 券商历史总盈亏 · 截至 11/05",
+      "buy": {
+        "price": 8.18,
+        "qty": 600,
+        "purchaseCostCny": 5908,
+        "date": "2026-03-02",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 8.52,
+        "qty": 600,
+        "date": "2026-03-05",
+        "sellProceedsCny": 5099.34
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-601099-sold",
+      "market": "A",
+      "code": "601099",
+      "name": "太平洋",
+      "quality": "broker-closed-pnl",
+      "note": "股数相符 · 券商历史总盈亏 · 截至 11/05",
+      "buy": {
+        "price": 5.1,
+        "qty": 1000,
+        "purchaseCostCny": 6100,
+        "date": "2024-10-08",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 4.51,
+        "qty": 1000,
+        "date": "2024-11-15",
+        "sellProceedsCny": 4497.65
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-603259-sold",
+      "market": "A",
+      "code": "603259",
+      "name": "药明康德",
+      "quality": "broker-closed-pnl",
+      "note": "股数相符 · 券商历史总盈亏 · 截至 11/05",
+      "buy": {
+        "price": 57.6,
+        "qty": 200,
+        "purchaseCostCny": 12520,
+        "date": "2024-10-08",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 53.04,
+        "qty": 200,
+        "date": "2024-11-15",
+        "sellProceedsCny": 10592.47
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-600999-sold",
+      "market": "A",
+      "code": "600999",
+      "name": "招商证券",
+      "quality": "broker-closed-pnl",
+      "note": "股数相符 · 与阳光照明各自有独立成交，本行归入招商证券。",
+      "buy": {
+        "price": 20.58,
+        "qty": 500,
+        "purchaseCostCny": 11290,
+        "date": "2024-12-10",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 18.04,
+        "qty": 500,
+        "date": "2025-03-12",
+        "sellProceedsCny": 9005.3
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-002030-sold",
+      "market": "A",
+      "code": "002030",
+      "name": "达安基因",
+      "quality": "trade-details-missing",
+      "note": "未见买卖记录 · 券商历史总盈亏 · 截至 11/05；原始成交明细不完整；内部占位价格/数量仅为兼容格式，页面应显示未见",
+      "buy": {
+        "price": 7819.364059,
+        "qty": 1,
+        "purchaseCostCny": 8819.36,
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 5630.724059,
+        "qty": 1,
+        "date": "2026-11-05",
+        "sellProceedsCny": 5630.72
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-600520-sold",
+      "market": "A",
+      "code": "600520",
+      "name": "文一科技",
+      "quality": "trade-details-missing",
+      "note": "未见买卖记录 · 券商历史总盈亏 · 截至 11/05；原始成交明细不完整；内部占位价格/数量仅为兼容格式，页面应显示未见",
+      "buy": {
+        "price": 6814.25166,
+        "qty": 1,
+        "purchaseCostCny": 7814.25,
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 2812.24166,
+        "qty": 1,
+        "date": "2026-11-05",
+        "sellProceedsCny": 2812.24
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-a-600261-sold",
+      "market": "A",
+      "code": "600261",
+      "name": "阳光照明",
+      "quality": "gross-trade-difference",
+      "note": "可见买卖已平 · 可见成交毛差及毛收益率，未扣费用，券商净盈亏待核。",
+      "buy": {
+        "price": 3.853333,
+        "qty": 3000,
+        "purchaseCostCny": 12560,
+        "date": "2025-02-06",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 3.21,
+        "qty": 3000,
+        "date": "2025-05-08",
+        "sellProceedsCny": 9630
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-01024-open",
+      "market": "HK",
+      "code": "01024",
+      "name": "快手-W",
+      "quality": "ledger-reconciled",
+      "note": "跨账户合并",
+      "buy": {
+        "price": 45.98,
+        "qty": 300,
+        "purchaseCostCny": 13213.8,
+        "date": "2021-04-30",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-hk-01024-sold",
+      "market": "HK",
+      "code": "01024",
+      "name": "快手-W",
+      "quality": "ledger-reconciled",
+      "note": "跨账户合并",
+      "buy": {
+        "price": 152.611667,
+        "qty": 900,
+        "purchaseCostCny": 140666.64,
+        "date": "2021-04-30"
+      },
+      "sell": {
+        "price": 56.533333,
+        "qty": 900,
+        "date": "2025-02-20",
+        "sellProceedsCny": 46938.65
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-07709-open",
+      "market": "HK",
+      "code": "07709",
+      "name": "南方东英SK海力士每日杠杆最多 (2x) 产品",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 36.333,
+        "qty": 2900,
+        "purchaseCostCny": 91750.11,
+        "date": "2026-04-15",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-hk-07709-sold",
+      "market": "HK",
+      "code": "07709",
+      "name": "南方东英SK海力士每日杠杆最多 (2x) 产品",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 64.435122,
+        "qty": 5300,
+        "purchaseCostCny": 367001.64,
+        "date": "2026-04-15"
+      },
+      "sell": {
+        "price": 82.612075,
+        "qty": 5300,
+        "date": "2026-09-11",
+        "sellProceedsCny": 377888.47
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-02208-open",
+      "market": "HK",
+      "code": "02208",
+      "name": "金风科技",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 16.819,
+        "qty": 1600,
+        "purchaseCostCny": 24859.09,
+        "date": "2026-01-12",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-hk-00763-open",
+      "market": "HK",
+      "code": "00763",
+      "name": "中兴通讯",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 30.48,
+        "qty": 400,
+        "purchaseCostCny": 11923.13,
+        "date": "2026-01-13",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-hk-00763-sold",
+      "market": "HK",
+      "code": "00763",
+      "name": "中兴通讯",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 30.48,
+        "qty": 400,
+        "purchaseCostCny": 10923.13,
+        "date": "2026-01-13"
+      },
+      "sell": {
+        "price": 31.26,
+        "qty": 400,
+        "date": "2026-06-05",
+        "sellProceedsCny": 10757.33
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-00981-open",
+      "market": "HK",
+      "code": "00981",
+      "name": "中芯国际",
+      "quality": "ledger-reconciled",
+      "note": "跨账户合并",
+      "buy": {
+        "price": 77.4,
+        "qty": 500,
+        "purchaseCostCny": 34497.08,
+        "date": "2021-01-07",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-hk-00981-sold",
+      "market": "HK",
+      "code": "00981",
+      "name": "中芯国际",
+      "quality": "ledger-reconciled",
+      "note": "跨账户合并",
+      "buy": {
+        "price": 40.65,
+        "qty": 1000,
+        "purchaseCostCny": 18636.3,
+        "date": "2021-01-07"
+      },
+      "sell": {
+        "price": 42.55,
+        "qty": 1000,
+        "date": "2025-12-03",
+        "sellProceedsCny": 38580.16
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-01772-open",
+      "market": "HK",
+      "code": "01772",
+      "name": "赣锋锂业",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 42.113,
+        "qty": 600,
+        "purchaseCostCny": 22812.72,
+        "date": "2025-10-10",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-hk-01772-sold",
+      "market": "HK",
+      "code": "01772",
+      "name": "赣锋锂业",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 44.7525,
+        "qty": 1000,
+        "purchaseCostCny": 42441.28,
+        "date": "2025-10-10"
+      },
+      "sell": {
+        "price": 70.15,
+        "qty": 1000,
+        "date": "2026-03-31",
+        "sellProceedsCny": 61557.51
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-01810-open",
+      "market": "HK",
+      "code": "01810",
+      "name": "小米集团-W",
+      "quality": "ledger-reconciled",
+      "note": "新股净认购款；跨账户合并；获配股数按持仓反推",
+      "buy": {
+        "price": 33.908,
+        "qty": 1600,
+        "purchaseCostCny": 49384.41,
+        "date": "2018-06-27",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-hk-01810-sold",
+      "market": "HK",
+      "code": "01810",
+      "name": "小米集团-W",
+      "quality": "ledger-reconciled",
+      "note": "新股净认购款；跨账户合并；获配股数按持仓反推",
+      "buy": {
+        "price": 24.027786,
+        "qty": 2800,
+        "purchaseCostCny": 46336.58,
+        "date": "2018-06-27"
+      },
+      "sell": {
+        "price": 37.544286,
+        "qty": 2800,
+        "date": "2025-06-30",
+        "sellProceedsCny": 95640.9
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-01797-sold",
+      "market": "HK",
+      "code": "01797",
+      "name": "新东方在线",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 16.561111,
+        "qty": 4500,
+        "purchaseCostCny": 63314.44,
+        "date": "2021-01-19",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 9.17,
+        "qty": 4500,
+        "date": "2021-06-18",
+        "sellProceedsCny": 34162.88
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-09626-sold",
+      "market": "HK",
+      "code": "09626",
+      "name": "哔哩哔哩-W",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 716,
+        "qty": 20,
+        "purchaseCostCny": 12933.44,
+        "date": "2021-07-29",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 111,
+        "qty": 20,
+        "date": "2024-08-28",
+        "sellProceedsCny": 2007.86
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-07226-sold",
+      "market": "HK",
+      "code": "07226",
+      "name": "南方两倍做多恒科",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 6.423425,
+        "qty": 7300,
+        "purchaseCostCny": 44831.28,
+        "date": "2025-02-12",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 5.085,
+        "qty": 7300,
+        "date": "2025-06-13",
+        "sellProceedsCny": 33936.93
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-03308-sold",
+      "market": "HK",
+      "code": "03308",
+      "name": "中际旭创",
+      "quality": "ledger-reconciled",
+      "note": "新股净认购款；获配股数按持仓反推",
+      "buy": {
+        "price": 989.8832,
+        "qty": 50,
+        "purchaseCostCny": 43702.35,
+        "date": "2026-07-27",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 892,
+        "qty": 50,
+        "date": "2026-07-30",
+        "sellProceedsCny": 38340.21
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-02051-sold",
+      "market": "HK",
+      "code": "02051",
+      "name": "51信用卡",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 6.705,
+        "qty": 1000,
+        "purchaseCostCny": 6807.49,
+        "date": "2018-07-16",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 1.83,
+        "qty": 1000,
+        "date": "2019-10-21",
+        "sellProceedsCny": 1629.79
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-02331-sold",
+      "market": "HK",
+      "code": "02331",
+      "name": "李宁",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 18.52,
+        "qty": 1500,
+        "purchaseCostCny": 26285.32,
+        "date": "2024-10-08",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 16.46,
+        "qty": 1500,
+        "date": "2025-02-17",
+        "sellProceedsCny": 23001.08
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-00100-sold",
+      "market": "HK",
+      "code": "00100",
+      "name": "MINIMAX-W",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 767.5,
+        "qty": 20,
+        "purchaseCostCny": 14368.9,
+        "date": "2026-05-08",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 718,
+        "qty": 20,
+        "date": "2026-05-11",
+        "sellProceedsCny": 12434.33
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-06626-sold",
+      "market": "HK",
+      "code": "06626",
+      "name": "越秀服务",
+      "quality": "ledger-reconciled",
+      "note": "新股净认购款；获配股数按持仓反推",
+      "buy": {
+        "price": 4.92918,
+        "qty": 500,
+        "purchaseCostCny": 3096.05,
+        "date": "2021-06-21",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 3,
+        "qty": 500,
+        "date": "2024-08-28",
+        "sellProceedsCny": 1350.77
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-06831-sold",
+      "market": "HK",
+      "code": "06831",
+      "name": "绿茶集团",
+      "quality": "ledger-reconciled",
+      "note": "新股净认购款；获配股数按持仓反推",
+      "buy": {
+        "price": 7.2625,
+        "qty": 400,
+        "purchaseCostCny": 3683.66,
+        "date": "2025-05-13",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 6.22,
+        "qty": 400,
+        "date": "2025-06-13",
+        "sellProceedsCny": 2255.3
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-03121-sold",
+      "market": "HK",
+      "code": "03121",
+      "name": "南方KOSPI",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 7.93,
+        "qty": 2000,
+        "purchaseCostCny": 14721.59,
+        "date": "2026-06-18",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 8,
+        "qty": 2000,
+        "date": "2026-06-25",
+        "sellProceedsCny": 13853.88
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-02618-sold",
+      "market": "HK",
+      "code": "02618",
+      "name": "京东物流",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 13.54,
+        "qty": 500,
+        "purchaseCostCny": 7166.86,
+        "date": "2024-10-08",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 14.4,
+        "qty": 500,
+        "date": "2025-02-18",
+        "sellProceedsCny": 6714.19
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-06601-sold",
+      "market": "HK",
+      "code": "06601",
+      "name": "朝云集团",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 7.75,
+        "qty": 1000,
+        "purchaseCostCny": 7545.33,
+        "date": "2021-03-09",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 8.24,
+        "qty": 1000,
+        "date": "2021-03-17",
+        "sellProceedsCny": 6856.54
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-00700-sold",
+      "market": "HK",
+      "code": "00700",
+      "name": "腾讯控股",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 374.8,
+        "qty": 200,
+        "purchaseCostCny": 65612.03,
+        "date": "2018-07-11",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 381.4,
+        "qty": 200,
+        "date": "2019-05-10",
+        "sellProceedsCny": 66213.64
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-09988-sold",
+      "market": "HK",
+      "code": "09988",
+      "name": "阿里巴巴-SW",
+      "quality": "ledger-reconciled",
+      "note": "新股净认购款；获配股数按持仓反推",
+      "buy": {
+        "price": 177.7736,
+        "qty": 100,
+        "purchaseCostCny": 17022.16,
+        "date": "2019-11-20",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 221,
+        "qty": 100,
+        "date": "2021-01-05",
+        "sellProceedsCny": 18384.08
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-09961-sold",
+      "market": "HK",
+      "code": "09961",
+      "name": "携程集团-S",
+      "quality": "ledger-reconciled",
+      "note": "新股净认购款；获配股数按持仓反推",
+      "buy": {
+        "price": 270.7006,
+        "qty": 50,
+        "purchaseCostCny": 12455.54,
+        "date": "2021-04-13",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 362.8,
+        "qty": 50,
+        "date": "2024-08-28",
+        "sellProceedsCny": 16540.5
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-03690-sold",
+      "market": "HK",
+      "code": "03690",
+      "name": "美团-W",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 202.85,
+        "qty": 200,
+        "purchaseCostCny": 35742.7,
+        "date": "2019-12-23",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 305,
+        "qty": 200,
+        "date": "2021-04-27",
+        "sellProceedsCny": 50869.15
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-09633-sold",
+      "market": "HK",
+      "code": "09633",
+      "name": "农夫山泉",
+      "quality": "ledger-reconciled",
+      "note": "跨账户合并",
+      "buy": {
+        "price": 32.81,
+        "qty": 1000,
+        "purchaseCostCny": 30001.19,
+        "date": "2020-09-08",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 53.3,
+        "qty": 1000,
+        "date": "2025-09-22",
+        "sellProceedsCny": 48698.08
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-06869-sold",
+      "market": "HK",
+      "code": "06869",
+      "name": "长飞光纤光缆",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 35.062857,
+        "qty": 3500,
+        "purchaseCostCny": 113634.57,
+        "date": "2025-11-03",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 42,
+        "qty": 3500,
+        "date": "2025-12-10",
+        "sellProceedsCny": 133196.59
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-02076-sold",
+      "market": "HK",
+      "code": "02076",
+      "name": "BOSS直聘-W",
+      "quality": "ledger-reconciled",
+      "note": "100 股暂定成本取卖出前一天的汇率；详细报价日见「历史汇率」。",
+      "buy": {
+        "price": 100,
+        "qty": 100,
+        "purchaseCostCny": 10151.18,
+        "date": "2025-09-21",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 92.8,
+        "qty": 100,
+        "date": "2025-09-22",
+        "sellProceedsCny": 8466.69
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-okll-open",
+      "market": "US",
+      "code": "OKLL",
+      "name": "2倍做多OKLO ETF-Defiance",
+      "quality": "ledger-reconciled",
+      "note": "买卖数量及均价已按拆合股统一",
+      "buy": {
+        "price": 24.338,
+        "qty": 140,
+        "purchaseCostCny": 24138.51,
+        "date": "2026-05-22",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-okll-sold",
+      "market": "US",
+      "code": "OKLL",
+      "name": "2倍做多OKLO ETF-Defiance",
+      "quality": "ledger-reconciled",
+      "note": "买卖数量及均价已按拆合股统一",
+      "buy": {
+        "price": 30.310328,
+        "qty": 150,
+        "purchaseCostCny": 36621.03,
+        "date": "2026-05-22"
+      },
+      "sell": {
+        "price": 27.456667,
+        "qty": 150,
+        "date": "2026-08-25",
+        "sellProceedsCny": 27795.3
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-nok-open",
+      "market": "US",
+      "code": "NOK",
+      "name": "诺基亚",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 13.459,
+        "qty": 400,
+        "purchaseCostCny": 37495.97,
+        "date": "2026-05-26",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-mvll-open",
+      "market": "US",
+      "code": "MVLL",
+      "name": "2倍做多MRVL ETF-GraniteShares",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 13.829,
+        "qty": 250,
+        "purchaseCostCny": 24073.48,
+        "date": "2026-10-29",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-mvll-sold",
+      "market": "US",
+      "code": "MVLL",
+      "name": "2倍做多MRVL ETF-GraniteShares",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 14.98,
+        "qty": 100,
+        "purchaseCostCny": 11911.8,
+        "date": "2026-10-29"
+      },
+      "sell": {
+        "price": 14.125,
+        "qty": 100,
+        "date": "2026-11-05",
+        "sellProceedsCny": 9375.85
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-glw-open",
+      "market": "US",
+      "code": "GLW",
+      "name": "康宁",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 175.373,
+        "qty": 30,
+        "purchaseCostCny": 36750.89,
+        "date": "2026-05-06",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-glw-sold",
+      "market": "US",
+      "code": "GLW",
+      "name": "康宁",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 175.909091,
+        "qty": 14,
+        "purchaseCostCny": 16859.75,
+        "date": "2026-05-06"
+      },
+      "sell": {
+        "price": 209,
+        "qty": 14,
+        "date": "2026-06-24",
+        "sellProceedsCny": 19914.49
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-astx-open",
+      "market": "US",
+      "code": "ASTX",
+      "name": "2倍做多ASTS ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 33.055,
+        "qty": 40,
+        "purchaseCostCny": 9985.03,
+        "date": "2026-05-29",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-astx-sold",
+      "market": "US",
+      "code": "ASTX",
+      "name": "2倍做多ASTS ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 38.910448,
+        "qty": 27,
+        "purchaseCostCny": 8733.08,
+        "date": "2026-05-29"
+      },
+      "sell": {
+        "price": 38.940741,
+        "qty": 27,
+        "date": "2026-06-11",
+        "sellProceedsCny": 7092.21
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-litx-open",
+      "market": "US",
+      "code": "LITX",
+      "name": "2倍做多LITE ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 40.89,
+        "qty": 10,
+        "purchaseCostCny": 3776.79,
+        "date": "2026-05-11",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-litx-sold",
+      "market": "US",
+      "code": "LITX",
+      "name": "2倍做多LITE ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 42.23,
+        "qty": 110,
+        "purchaseCostCny": 31666.9,
+        "date": "2026-05-11"
+      },
+      "sell": {
+        "price": 38.909091,
+        "qty": 110,
+        "date": "2026-06-17",
+        "sellProceedsCny": 28912.75
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-dram-open",
+      "market": "US",
+      "code": "DRAM",
+      "name": "Roundhill Memory ETF",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 52.222,
+        "qty": 130,
+        "purchaseCostCny": 47027.95,
+        "date": "2026-05-11",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-dram-sold",
+      "market": "US",
+      "code": "DRAM",
+      "name": "Roundhill Memory ETF",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 53.13671,
+        "qty": 80,
+        "purchaseCostCny": 29721.7,
+        "date": "2026-05-11"
+      },
+      "sell": {
+        "price": 67.0375,
+        "qty": 80,
+        "date": "2026-06-18",
+        "sellProceedsCny": 36255.91
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-eypt-open",
       "market": "US",
       "code": "EYPT",
-      "name": "EyePoint Pharmaceuticals Inc.",
+      "name": "EyePoint",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
       "buy": {
-        "price": 4.3,
-        "qty": 100,
+        "price": 3.014,
+        "qty": 190,
+        "purchaseCostCny": 4897.83,
         "date": "2026-08-17",
-        "purchaseCostCny": 3024.3968008602724,
-        "feeCny": 134.4176355937899,
-        "fxAsOf": "2026-08-28",
-        "fxSource": "Frankfurter",
-        "operationId": "op_mtfpo1u6_9c5fef384a4645"
+        "adjustmentCny": 1000
       },
-      "id": "lot-op_mtfpo1u6_9c5fef384a4645",
       "fees": {
-        "buy": 20
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-tsll-open",
+      "market": "US",
+      "code": "TSLL",
+      "name": "2倍做多TSLA ETF-Direxion",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 10.576,
+        "qty": 250,
+        "purchaseCostCny": 18960.63,
+        "date": "2026-05-15",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-tsll-sold",
+      "market": "US",
+      "code": "TSLL",
+      "name": "2倍做多TSLA ETF-Direxion",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 10.685714,
+        "qty": 100,
+        "purchaseCostCny": 7456.47,
+        "date": "2026-05-15"
+      },
+      "sell": {
+        "price": 10.7,
+        "qty": 100,
+        "date": "2026-09-03",
+        "sellProceedsCny": 7173.75
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-crdu-open",
+      "market": "US",
+      "code": "CRDU",
+      "name": "2倍做多CRDO ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 7.55,
+        "qty": 50,
+        "purchaseCostCny": 3551.77,
+        "date": "2026-09-02",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-intw-open",
+      "market": "US",
+      "code": "INTW",
+      "name": "2倍做多INTC ETF-GraniteShares",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 7.659,
+        "qty": 100,
+        "purchaseCostCny": 6110.48,
+        "date": "2026-10-30",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-goox-open",
+      "market": "US",
+      "code": "GOOX",
+      "name": "2倍做多GOOG ETF-T-REX",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 47.96,
+        "qty": 50,
+        "purchaseCostCny": 16988.86,
+        "date": "2026-10-29",
+        "adjustmentCny": 1000
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-nebx-sold",
+      "market": "US",
+      "code": "NEBX",
+      "name": "2倍做多NBIS ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 33.5,
+        "qty": 70,
+        "purchaseCostCny": 16891.2,
+        "date": "2026-07-23",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 18.542857,
+        "qty": 70,
+        "date": "2026-07-29",
+        "sellProceedsCny": 8743.22
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-ffai-sold",
+      "market": "US",
+      "code": "FFAI",
+      "name": "Faraday Future Intelligent Electric Inc.",
+      "quality": "ledger-reconciled",
+      "note": "买卖数量及均价已按拆合股统一；跨账户合并",
+      "buy": {
+        "price": 83.771429,
+        "qty": 7,
+        "purchaseCostCny": 5290.11,
+        "date": "2024-05-17",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 2.1,
+        "qty": 7,
+        "date": "2025-09-03",
+        "sellProceedsCny": 90.61
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-pdd-sold",
+      "market": "US",
+      "code": "PDD",
+      "name": "拼多多",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 105.23,
+        "qty": 26,
+        "purchaseCostCny": 19891.18,
+        "date": "2026-03-25",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 97.22,
+        "qty": 26,
+        "date": "2026-05-06",
+        "sellProceedsCny": 17202.23
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-nnox-sold",
+      "market": "US",
+      "code": "NNOX",
+      "name": "Nano X Imaging",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 8.52,
+        "qty": 50,
+        "purchaseCostCny": 4110.17,
+        "date": "2024-12-09",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 6.2,
+        "qty": 50,
+        "date": "2025-03-06",
+        "sellProceedsCny": 2231.16
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-nio-sold",
+      "market": "US",
+      "code": "NIO",
+      "name": "蔚来",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 5.570402,
+        "qty": 498,
+        "purchaseCostCny": 20777.12,
+        "date": "2025-09-08",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 5.58,
+        "qty": 498,
+        "date": "2026-03-11",
+        "sellProceedsCny": 19035.43
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-dknx-sold",
+      "market": "US",
+      "code": "DKNX",
+      "name": "2倍做多DKNG ETF-Defiance",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 21.8,
+        "qty": 20,
+        "purchaseCostCny": 3963.44,
+        "date": "2026-06-01",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 21.8,
+        "qty": 20,
+        "date": "2026-06-18",
+        "sellProceedsCny": 2938.39
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-cohx-sold",
+      "market": "US",
+      "code": "COHX",
+      "name": "2倍做多COHR ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 56.7,
+        "qty": 20,
+        "purchaseCostCny": 8725.78,
+        "date": "2026-05-11",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 57.4,
+        "qty": 20,
+        "date": "2026-06-18",
+        "sellProceedsCny": 7750.83
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-muu-sold",
+      "market": "US",
+      "code": "MUU",
+      "name": "2倍做多MU ETF-Direxion",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 750.5,
+        "qty": 4,
+        "purchaseCostCny": 21407.78,
+        "date": "2026-07-02",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 770.4875,
+        "qty": 4,
+        "date": "2026-07-09",
+        "sellProceedsCny": 20892.95
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-futu-sold",
+      "market": "US",
+      "code": "FUTU",
+      "name": "富途控股",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 57,
+        "qty": 90,
+        "purchaseCostCny": 38136.67,
+        "date": "2024-04-02",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 58.5,
+        "qty": 90,
+        "date": "2024-04-09",
+        "sellProceedsCny": 38066
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-tsla-sold",
+      "market": "US",
+      "code": "TSLA",
+      "name": "特斯拉",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 236.2,
+        "qty": 20,
+        "purchaseCostCny": 35238.45,
+        "date": "2025-03-20",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 247.2,
+        "qty": 20,
+        "date": "2025-03-31",
+        "sellProceedsCny": 35843.24
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-soxl-sold",
+      "market": "US",
+      "code": "SOXL",
+      "name": "三倍做多半导体ETF-Direxion",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 14.16,
+        "qty": 100,
+        "purchaseCostCny": 11265.12,
+        "date": "2025-05-08",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 17.78,
+        "qty": 100,
+        "date": "2025-05-20",
+        "sellProceedsCny": 12819.53
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-babx-sold",
+      "market": "US",
+      "code": "BABX",
+      "name": "2倍做多BABA ETF-GraniteShares",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 26.87,
+        "qty": 77,
+        "purchaseCostCny": 15863.44,
+        "date": "2025-06-12",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 35.8,
+        "qty": 77,
+        "date": "2025-09-02",
+        "sellProceedsCny": 19677.92
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-jd-sold",
+      "market": "US",
+      "code": "JD",
+      "name": "京东",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 40.34,
+        "qty": 150,
+        "purchaseCostCny": 44058.47,
+        "date": "2024-10-16",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 46.2,
+        "qty": 150,
+        "date": "2025-03-06",
+        "sellProceedsCny": 50207.89
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-baba-sold",
+      "market": "US",
+      "code": "BABA",
+      "name": "阿里巴巴",
+      "quality": "ledger-reconciled",
+      "note": "跨账户合并",
+      "buy": {
+        "price": 84.6,
+        "qty": 60,
+        "purchaseCostCny": 37737.35,
+        "date": "2024-05-13",
+        "adjustmentCny": 1000
+      },
+      "sell": {
+        "price": 111,
+        "qty": 60,
+        "date": "2024-10-01",
+        "sellProceedsCny": 46726.52
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
       }
     }
   ]

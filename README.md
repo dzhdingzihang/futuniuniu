@@ -283,6 +283,23 @@ band = max(rawBand, -ln(0.97))
 
 ### v2 格式与锁定字段
 
+日常手工新增一笔时只需要写最小字段；币种、持有状态、行情代码和默认手续费都由程序补全：
+
+```json
+{
+  "market": "US",
+  "code": "AAPL",
+  "name": "苹果",
+  "buy": {
+    "date": "2026-11-08",
+    "price": 220,
+    "qty": 10
+  }
+}
+```
+
+卖出时不需要改原 lot，优先使用页面顶部的“记录交易”，服务器会按 FIFO 自动拆分。下面的锁定成本、汇率、幂等键和审计字段由系统生成，不是每次手工录入的必填项。
+
 ```json
 {
   "version": 2,
@@ -298,7 +315,8 @@ band = max(rawBand, -ln(0.97))
         "qty": 10,
         "date": "2026-08-01",
         "operationId": "op_buy_demo",
-        "purchaseCostCny": 7364.4,
+        "purchaseCostCny": 8364.4,
+        "adjustmentCny": 1000,
         "feeCny": 144.4,
         "fxAsOf": "2026-08-01",
         "fxSource": "Frankfurter"
@@ -312,10 +330,38 @@ band = max(rawBand, -ln(0.97))
 - `market` 只使用 `A`、`HK`、`US`；没有 `sell` 表示仍持有，有 `sell` 表示该拆分数量已卖出。
 - `id` 是 lot 标识，`parentLotId` 在部分卖出时指回原 lot；`buy.operationId` 和 `sell.operationId` 用于追踪交易与幂等重试。
 - `purchaseCostCny` 是含买入手续费的锁定买入成本；`sellProceedsCny` 是扣除卖出手续费后的锁定卖出净额。
+- `adjustmentCny` 是成本调整的说明字段，**已经包含在 `purchaseCostCny` 内**，展示和汇总时不能再加一次。2026-11-08 的 Excel 迁移按每个唯一 `market + code` 只计一次 `¥1,000`，不是按账户、lot 或每笔成交重复计算。
 - `feeCny`、`fxAsOf`、`fxSource` 保留交易当时的手续费人民币金额、汇率日期和来源，防止历史成本被今天的汇率重写。
-- 部分卖出会把原 lot 拆为剩余持有和已卖出两部分；锁定的买入成本、买入手续费、卖出净额与卖出手续费都按数量分摊，最后一份吸收浮点尾差。
+- 部分卖出会把原 lot 拆为剩余持有和已卖出两部分；锁定的买入成本、成本调整、买入手续费、卖出净额与卖出手续费都按数量分摊，最后一份吸收浮点尾差。
 - 旧 v1 数组和旧 v2 文档仍可读；第一次通过新流程写入时会转为可读 v2 结构。
 - 旧历史记录若确实不计费，必须显式保留 `fees: { "buy": 0, "sell": 0 }`；不要通过删除字段来表示免费。
+
+### 从股票记录 Excel 更新
+
+`holdings.json` 可以从统一股票记录表重新生成，不需要逐条复制 JSON。首次使用先安装导入器依赖：
+
+```bash
+python3 -m pip install -r scripts/requirements.txt
+```
+
+然后运行：
+
+```bash
+python3 scripts/import_holdings_from_excel.py \
+  "/absolute/path/20261108股票记录.xlsx" \
+  --output holdings.json \
+  --additional-cost-cny 1000
+```
+
+导入器以 `全市场股票明细` 为 80 只股票的索引；A 股当前持仓以 `持仓估值` 为准，港美股当前成本和已实现盈亏以 `当前实盘持仓`、`人民币成本明细` 为准；A 股已清仓金额使用统一明细中的券商盈亏口径，能匹配到的日期再从 `成交原始记录` 补充。它会校验：
+
+- 股票总数为 80，只按规范化后的市场和代码去重；
+- 当前持仓为 31 只，其中 A 股 12、港股 7、美股 12；
+- 每只股票的 `¥1,000` 调整只出现一次，总调整为 `¥80,000`；
+- Excel 调整前累计盈亏约为 `-¥261,399.85`，调整后约为 `-¥341,399.85`；
+- 缺少原始买卖明细的记录会标记 `quality: "trade-details-missing"` 并保留说明，不会在页面上把内部占位值当成真实成交价展示。
+
+导入会覆盖目标 JSON，正式执行前应确保 Excel 确实是最新权威版本；页面后续通过“记录交易”写入仍使用同一套 v2 lot 和 GitHub 并发保护逻辑。
 
 ## 统一会计与汇率口径
 
