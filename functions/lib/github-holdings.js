@@ -1,3 +1,5 @@
+import "../../assets/holding-cost-policy.js";
+
 export class HoldingsSyncError extends Error {
   constructor(message, status = 400, code = "", details = null) {
     super(message);
@@ -43,9 +45,18 @@ function copyJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function checkedCostPolicy(policy) {
+  try {
+    return globalThis.PiggyHoldingCosts.validate(policy);
+  } catch (error) {
+    throw new HoldingsSyncError(error.message);
+  }
+}
+
 function rootMetadata(input) {
   if (!input || Array.isArray(input) || typeof input !== "object") return {};
   const metadata = {};
+  if (Object.hasOwn(input, "costPolicy")) metadata.costPolicy = checkedCostPolicy(input.costPolicy);
   for (const key of ["asOf", "valuationAsOf"]) {
     const value = String(input[key] || "").trim();
     if (value) metadata[key] = value;
@@ -79,7 +90,7 @@ function rowsFromInput(input) {
   return input.lots.flatMap((lot, index) => {
     if (!lot || typeof lot !== "object") throw new HoldingsSyncError("第 " + (index + 1) + " 条持仓格式不正确");
     const market = MARKET_NAMES[String(lot.market || "").trim().toUpperCase()] || String(lot.market || "").trim();
-    const code = String(lot.code || "").trim().toUpperCase();
+    const code = operationCode(MARKET_CODES[market], lot.code);
     const buy = lot.buy && typeof lot.buy === "object" ? lot.buy : {};
     const sell = lot.sell && typeof lot.sell === "object" ? lot.sell : null;
     const fees = lot.fees && typeof lot.fees === "object" ? lot.fees : {};
@@ -98,7 +109,7 @@ function rowsFromInput(input) {
       currency: currencyForMarket(market),
       sina: quoteCodeForMarket(market, code),
     };
-    const lotId = String(lot.id || "").trim();
+    const lotId = String(lot.id || (input.costPolicy ? "manual-" + (index + 1) : "")).trim();
     const parentLotId = String(lot.parentLotId || "").trim();
     const buyDate = String(buy.date || "").trim();
     const buyOperationId = String(buy.operationId || lot.operationId || "").trim();
@@ -168,7 +179,7 @@ function rowsFromInput(input) {
   });
 }
 
-export function sanitizeHoldings(input) {
+function baseHoldingRows(input) {
   const rows = rowsFromInput(input);
   if (rows.length > 500) throw new HoldingsSyncError("持仓数据格式不正确");
   return rows.map((item, index) => {
@@ -230,12 +241,20 @@ export function sanitizeHoldings(input) {
   });
 }
 
+export function sanitizeHoldings(input) {
+  const rows = baseHoldingRows(input);
+  const policy = rootMetadata(input).costPolicy;
+  return policy ? globalThis.PiggyHoldingCosts.apply(rows, policy) : rows;
+}
+
 export function createHoldingsDocument(input) {
   const metadata = rootMetadata(input);
-  const rows = sanitizeHoldings(input);
+  const rows = baseHoldingRows(input);
   return {
     version: 2,
-    guide: "日常新增只填 market、code、name 和 buy.date/price/qty；没有 sell 表示持有。purchaseCostCny 已包含 adjustmentCny 时请勿重复相加。",
+    guide: metadata.costPolicy
+      ? "调整每只股票的成本只需修改 costPolicy.buyCny、costPolicy.sellCny。lots 记录调整前的成交金额；日常买卖可在网站录入。"
+      : "日常新增只填 market、code、name 和 buy.date/price/qty；没有 sell 表示持有。purchaseCostCny 已包含 adjustmentCny 时请勿重复相加。",
     newTradeFeeUsd: { buy: DEFAULT_TRADE_FEE_USD, sell: DEFAULT_TRADE_FEE_USD },
     ...metadata,
     lots: rows.map((row) => {
@@ -308,7 +327,7 @@ function validOperationDate(value, label) {
 }
 
 function operationAlreadyApplied(document, operationId) {
-  return document.lots.some((lot) => (
+  return document.costPolicy?.lastOperationId === operationId || document.lots.some((lot) => (
     String(lot.operationId || "") === operationId
     || String(lot.buy && lot.buy.operationId || "") === operationId
     || String(lot.sell && lot.sell.operationId || "") === operationId
@@ -360,12 +379,29 @@ export function applyHoldingOperation(input, rawOperation) {
   if (!rawOperation || typeof rawOperation !== "object") throw new HoldingsSyncError("持仓操作格式不正确");
   const operation = rawOperation;
   const type = String(operation.type || operation.action || "").trim().toLowerCase();
-  if (type !== "buy" && type !== "sell") throw new HoldingsSyncError("持仓操作类型不正确");
+  if (!["buy", "sell", "cost-policy"].includes(type)) throw new HoldingsSyncError("持仓操作类型不正确");
   const operationId = String(operation.operationId || "").trim();
   if (!/^[A-Za-z0-9._:-]{1,128}$/.test(operationId)) throw new HoldingsSyncError("持仓操作 operationId 不正确");
 
   const document = ensureLotIds(createHoldingsDocument(input));
   if (operationAlreadyApplied(document, operationId)) return document;
+  if (type === "cost-policy") {
+    if (!document.costPolicy) {
+      // The 2026-11-08 import included the old marked surcharge in its cost.
+      // Strip it once before enabling the read-time policy on a legacy file.
+      for (const lot of document.lots) {
+        const old = lot.buy.adjustmentCny;
+        if (old === undefined) continue;
+        if (!Number.isFinite(lot.buy.purchaseCostCny) || lot.buy.purchaseCostCny < old) {
+          throw new HoldingsSyncError("旧批次缺少可核对的锁定买入成本");
+        }
+        lot.buy.purchaseCostCny -= old;
+        delete lot.buy.adjustmentCny;
+      }
+    }
+    document.costPolicy = checkedCostPolicy({ buyCny: operation.buyCny, sellCny: operation.sellCny, lastOperationId: operationId });
+    return createHoldingsDocument(document);
+  }
 
   const trade = operation[type] && typeof operation[type] === "object" ? operation[type] : null;
   const security = operation.security && typeof operation.security === "object" ? operation.security : {};
@@ -569,7 +605,7 @@ export async function readGitHubHoldings(config, fetcher = fetch) {
     fileSha: current.payload && current.payload.sha ? current.payload.sha : "",
     fileUrl: current.payload && current.payload.html_url ? current.payload.html_url : "",
     holdings,
-    document: createHoldingsDocument(holdings),
+    document: createHoldingsDocument(input),
   };
 }
 
@@ -589,6 +625,17 @@ export async function syncHoldingsToGitHub(holdings, config, fetcher = fetch) {
       fileUrl: current.payload.html_url || "",
       alreadyCurrent: true,
     };
+  }
+  if (current.response.ok) {
+    let previous;
+    try {
+      previous = JSON.parse(base64ToUtf8(current.payload?.content));
+    } catch {
+      throw new HoldingsSyncError("无法核对 GitHub 原文件，整表覆盖已停止", 409);
+    }
+    if (previous?.costPolicy || document.costPolicy) {
+      throw new HoldingsSyncError("当前文件使用按股票计费的成本规则，请通过单笔操作保存", 409);
+    }
   }
   const body = {
     message: "chore: update holdings from 猪猪存钱罐",

@@ -6,6 +6,7 @@ import {
   applyHoldingOperation,
   createHoldingsDocument,
   sanitizeHoldings,
+  syncHoldingsToGitHub,
 } from "../functions/lib/github-holdings.js";
 import { onRequestGet, onRequestPost } from "../functions/api/holdings-sync.js";
 
@@ -271,6 +272,133 @@ test("operations accept legacy v1 row arrays without losing the old position", (
   assert.equal(result.lots.length, 2);
   assert.deepEqual(result.lots.map((lot) => lot.buy.qty), [100, 50]);
   assert.equal(result.lots[0].id.startsWith("legacy-a-601138-"), true);
+});
+
+test("security costs follow the first acquisition through FIFO splits and only the first sale event", () => {
+  const source = startingDocument();
+  source.costPolicy = { buyCny: 2000, sellCny: 1000 };
+  const add = applyHoldingOperation(source, {
+    type: "buy", operationId: "buy-next", market: "US", code: "NVDA",
+    date: "2026-08-02", price: 110, qty: 2, purchaseCostCny: 1600,
+  });
+  const sell = {
+    type: "sell", operationId: "sell-first", market: "US", code: "NVDA",
+    date: "2026-08-04", price: 120, qty: 2, sellProceedsCny: 270,
+  };
+  const firstSale = applyHoldingOperation(add, sell);
+  const firstRows = sanitizeHoldings(firstSale);
+  assert.deepEqual(firstRows.map((row) => row.adjustmentCny), [1000, 1000, 0]);
+  assert.equal(firstRows.find((row) => row.status === "sold").sellProceedsCny, -730);
+  assert.deepEqual(applyHoldingOperation(firstSale, sell), firstSale);
+  const final = applyHoldingOperation(firstSale, {
+    ...sell, operationId: "sell-rest", date: "2026-08-05", qty: 4, sellProceedsCny: 2000,
+  });
+  const rows = sanitizeHoldings(final);
+  assert.equal(rows.reduce((sum, row) => sum + row.adjustmentCny, 0), 2000);
+  assert.equal(rows.reduce((sum, row) => sum + row.sellAdjustmentCny, 0), 1000);
+  assert.equal(rows.reduce((sum, row) => sum + row.purchaseCostCny, 0), 6620);
+  assert.equal(rows.reduce((sum, row) => sum + row.sellProceedsCny, 0), 1270);
+  assert.equal(final.lots.reduce((sum, lot) => sum + lot.buy.purchaseCostCny, 0), 4620);
+  assert.equal(final.lots.some((lot) => "adjustmentCny" in lot.buy), false);
+  assert.deepEqual(sanitizeHoldings(createHoldingsDocument(final)), rows);
+
+  final.costPolicy = { buyCny: 500, sellCny: 100 };
+  const repriced = sanitizeHoldings(final);
+  assert.equal(repriced.reduce((sum, row) => sum + row.purchaseCostCny, 0), 5120);
+  assert.equal(repriced.reduce((sum, row) => sum + row.sellProceedsCny, 0), 2170);
+});
+
+test("compact lots acquire a separate policy per normalized market and ticker", () => {
+  const doc = {
+    version: 2, costPolicy: { buyCny: 2000, sellCny: 1000 }, lots: [
+      { market: "HK", code: "700", buy: { qty: 2, price: 5 },
+        sell: { qty: 1, price: 4, date: "2026-08-05" }, fees: { buy: 0, sell: 0 } },
+      { market: "HK", code: "00700", buy: { qty: 1, price: 4 }, fees: { buy: 0 } },
+      { market: "US", code: "00700", buy: { qty: 2, price: 3 }, fees: { buy: 0 } },
+    ],
+  };
+  const rows = sanitizeHoldings(doc);
+  assert.deepEqual(rows.map((row) => row.adjustmentCny), [1000, 1000, 0, 2000]);
+  assert.equal(rows[1].sellProceedsCny, 4 * 0.92 - 1000);
+  assert.equal(rows[3].purchaseCostCny, 6 * 7.22 + 2000);
+  assert.deepEqual(sanitizeHoldings(createHoldingsDocument(doc)), rows);
+  assert.throws(() => sanitizeHoldings({ ...doc, costPolicy: { buyCny: -1, sellCny: 1000 } }), /成本规则/);
+});
+
+test("remote sync keeps raw base amounts, workbook metadata and the cost policy across a GitHub write", async () => {
+  const source = startingDocument();
+  source.costPolicy = { buyCny: 2000, sellCny: 1000 };
+  source.source = { file: "verified.xlsx" };
+  let remote = source;
+  const fetcher = async (_url, options) => {
+    if (options.method === "PUT") {
+      remote = JSON.parse(Buffer.from(JSON.parse(options.body).content, "base64").toString());
+      return Response.json({ commit: { sha: "new" }, content: { sha: "new-file" } });
+    }
+    return Response.json(githubFile(remote));
+  };
+  const response = await onRequestPost({
+    env: authEnv, fetcher,
+    request: new Request("https://example.test/api/holdings-sync", {
+      method: "POST", body: JSON.stringify({ expectedFileSha: "sha-before", operation: {
+        type: "sell", operationId: "sell-real", market: "US", code: "NVDA",
+        price: 120, qty: 4, date: "2026-08-08", sellProceedsCny: 3100,
+      } }),
+    }),
+  });
+  const result = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(remote.source, source.source);
+  assert.deepEqual(remote.costPolicy, source.costPolicy);
+  assert.equal(remote.lots[0].buy.purchaseCostCny, 3020);
+  assert.equal(remote.lots[0].sell.sellProceedsCny, 3100);
+  assert.equal(result.holdings[0].purchaseCostCny, 5020);
+  assert.equal(result.holdings[0].sellProceedsCny, 2100);
+});
+
+test("changing cost settings migrates old baked-in amounts once; retries with a stale SHA do not create another commit", async () => {
+  let remote = startingDocument();
+  remote.lots[0].buy.purchaseCostCny += 1000;
+  remote.lots[0].buy.adjustmentCny = 1000;
+  let sha = "original";
+  let writes = 0;
+  const fetcher = async (_url, options) => {
+    if (options.method === "PUT") {
+      writes++;
+      remote = JSON.parse(Buffer.from(JSON.parse(options.body).content, "base64").toString());
+      sha = "written-" + writes;
+      return Response.json({ commit: { sha: "commit-" + writes }, content: { sha } });
+    }
+    return Response.json(githubFile(remote, sha));
+  };
+  const operation = { type: "cost-policy", operationId: "policy-first", buyCny: 2000, sellCny: 1000 };
+  const post = (op, expected) => onRequestPost({ env: authEnv, fetcher,
+    request: new Request("https://example.test/api/holdings-sync", {
+      method: "POST", body: JSON.stringify({operation: op, expectedFileSha: expected}),
+    }),
+  });
+  const first = await (await post(operation, "original")).json();
+  assert.equal(first.holdings[0].purchaseCostCny, 5020);
+  assert.equal(remote.lots[0].buy.purchaseCostCny, 3020);
+  assert.equal(remote.costPolicy.lastOperationId, "policy-first");
+  const replay = await (await post(operation, "original")).json();
+  assert.equal(replay.alreadyCurrent, true);
+  assert.equal(writes, 1);
+  assert.equal((await post({ ...operation, operationId: "different" }, "original")).status, 409);
+  assert.equal((await post({ ...operation, operationId: "bad-policy", buyCny: -10 }, sha)).status, 400);
+  const changed = await (await post({ ...operation, operationId: "zero", buyCny: 0, sellCny: 0 }, sha)).json();
+  assert.equal(changed.holdings[0].purchaseCostCny, 3020);
+});
+
+test("legacy full-document writes cannot overwrite a policy file", async () => {
+  const current = startingDocument();
+  current.costPolicy = { buyCny: 2000, sellCny: 1000 };
+  const fetcher = async (_url, options) => {
+    assert.notEqual(options.method, "PUT");
+    return Response.json(githubFile(current));
+  };
+  await assert.rejects(syncHoldingsToGitHub([], { token: "test" }, fetcher),
+    (error) => error instanceof HoldingsSyncError && error.status === 409);
 });
 
 test("sell operations consume open lots FIFO and charge one 20 USD sell fee", () => {

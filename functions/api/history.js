@@ -142,88 +142,87 @@ async function fetchTencentKey(key, days, fetcher) {
   return parseTencentPayload(await response.json(), key, days);
 }
 
-async function fetchTencentHistory(symbol, days, fetcher) {
-  const keys = tencentKeysFor(symbol);
-  const sufficientLength = Math.min(days, 61);
-  let longest = [];
-
-  for (const key of keys) {
-    try {
-      const series = await fetchTencentKey(key, days, fetcher);
-      if (series.length > longest.length) longest = series;
-      if (series.length >= sufficientLength) return series;
-    } catch {
-      // Try the next exchange suffix. Tencent uses different suffixes for US listings.
-    }
-  }
-  return longest;
-}
-
 async function fetchYahooHistory(symbol, days, fetcher) {
   const mapped = yahooSymbol(symbol);
-  if (!mapped) return [];
-  const response = await fetcher(`${YAHOO_CHART_URL}${encodeURIComponent(mapped)}?range=6mo&interval=1d`, {
+  if (!mapped) return { series: [] };
+  const range = days > 500 ? "5y" : days > 120 ? "2y" : "6mo";
+  const response = await fetcher(`${YAHOO_CHART_URL}${encodeURIComponent(mapped)}?range=${range}&interval=1d`, {
     headers: { "User-Agent": "Mozilla/5.0" },
     cf: { cacheTtl: 0 },
   });
-  return parseYahooPayload(await response.json(), days);
+  const payload = await response.json();
+  return {
+    series: parseYahooPayload(payload, days),
+    firstTradeTime: payload?.chart?.result?.[0]?.meta?.firstTradeDate,
+  };
 }
 
-async function fetchHistory(symbol, days, fetcher) {
-  const sufficientLength = Math.min(days, 61);
-  let longest = [];
-  const remember = (series) => {
-    if (series.length > longest.length) longest = series;
-    return series.length >= sufficientLength;
-  };
+async function fetchEastmoneyHistory(secid, days, fetcher) {
+  const url = new URL(EASTMONEY_KLINE_URL);
+  for (const [key, value] of Object.entries({
+    secid, fields1: "f1,f2,f3,f4,f5", fields2: "f51,f52,f53,f54,f55",
+    klt: "101", fqt: "1", end: "20500101", lmt: String(Math.max(days + 10, 45)),
+  })) url.searchParams.set(key, value);
+  const response = await fetcher(url, { headers: { "User-Agent": "Mozilla/5.0" }, cf: { cacheTtl: 0 } });
+  return parseKlines(await response.json(), days);
+}
 
-  if (symbol.startsWith("gb_")) {
-    try {
-      const series = await fetchYahooHistory(symbol, days, fetcher);
-      if (remember(series)) return series;
-    } catch {
-      // Fall through to Eastmoney.
-    }
-  }
-
-  const limit = Math.max(days + 10, 45);
-  for (const secid of secidsFor(symbol)) {
-    try {
-      const url = new URL(EASTMONEY_KLINE_URL);
-      url.searchParams.set("secid", secid);
-      url.searchParams.set("fields1", "f1,f2,f3,f4,f5");
-      url.searchParams.set("fields2", "f51,f52,f53,f54,f55");
-      url.searchParams.set("klt", "101");
-      url.searchParams.set("fqt", "1");
-      url.searchParams.set("end", "20500101");
-      url.searchParams.set("lmt", String(limit));
-      const response = await fetcher(url, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        cf: { cacheTtl: 0 },
-      });
-      const series = parseKlines(await response.json(), days);
-      if (remember(series)) return series;
-    } catch {
-      continue;
-    }
-  }
-
-  if (!symbol.startsWith("gb_")) {
-    try {
-      const series = await fetchYahooHistory(symbol, days, fetcher);
-      if (remember(series)) return series;
-    } catch {
-      // Fall through to Tencent.
-    }
-  }
-
+async function timedHistory(provider, fetcher, timeout) {
+  const controller = new AbortController();
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => { controller.abort(); reject(new Error("History provider timed out")); }, timeout);
+  });
   try {
-    const series = await fetchTencentHistory(symbol, days, fetcher);
-    if (series.length > longest.length) longest = series;
-  } catch {
-    // No history fallback left.
+    return await Promise.race([expired, provider((url, options) => fetcher(url, { ...options, signal: controller.signal }))]);
+  } finally {
+    clearTimeout(timer);
   }
-  return longest;
+}
+
+async function fetchHistory(symbol, days, fetcher, startDate) {
+  const yahoo = (fetch) => fetchYahooHistory(symbol, days, fetch);
+  const eastmoney = secidsFor(symbol).map(secid => fetch => fetchEastmoneyHistory(secid, days, fetch));
+  const providers = symbol.startsWith("gb_") ? [yahoo, ...eastmoney] : [...eastmoney, yahoo];
+  providers.push(...tencentKeysFor(symbol).map(key => fetch => fetchTencentKey(key, days, fetch)));
+  const now = Date.now();
+  const deadline = now + 18000;
+  const today = new Date(now).toISOString().slice(0, 10);
+  const recent = new Date(now - 10 * 86400000).toISOString().slice(0, 10);
+  let best = [];
+  let bestScore = 0;
+
+  for (const provider of providers) {
+    try {
+      const remaining = deadline - Date.now();
+      if (startDate && remaining <= 0) break;
+      const result = startDate ? await timedHistory(provider, fetcher, Math.min(4000, remaining)) : await provider(fetcher);
+      const bars = Array.isArray(result) ? result : result.series;
+      if (!startDate) {
+        if (bars.length >= Math.min(days, 61)) return bars;
+        if (bars.length > best.length) best = bars;
+        continue;
+      }
+      const series = bars.filter(bar => bar.date <= today && Number.isFinite(Date.parse(bar.date)) && bar.close > 0)
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const last = series.at(-1)?.date;
+      if (!last || last < startDate) continue;
+      const fresh = last >= recent;
+      const coverage = series.filter(bar => bar.date >= startDate).length;
+      const score = (fresh ? days + 1 : 0) + coverage;
+      if (score > bestScore || (score === bestScore && last > best.at(-1)?.date)) {
+        best = series;
+        bestScore = score;
+      }
+      const inception = Number(result.firstTradeTime) * 1000;
+      const coversListing = inception > Date.parse(startDate) && inception <= now
+        && Math.abs(Date.parse(series[0].date) - inception) <= 7 * 86400000;
+      if (fresh && (series[0].date <= startDate || coversListing)) return series;
+    } catch {
+      // Keep other providers and the best usable series within the time budget.
+    }
+  }
+  return best;
 }
 
 export async function onRequestGet({ request, fetcher = fetch }) {
@@ -233,12 +232,17 @@ export async function onRequestGet({ request, fetcher = fetch }) {
     .map((symbol) => symbol.trim())
     .filter((symbol) => isIndexAlias(symbol) || /^(sh|sz|hk|gb_)[A-Za-z0-9_]+$/.test(symbol));
   const requestedDays = Number.parseInt(url.searchParams.get("days") || "30", 10);
-  const days = Math.max(5, Math.min(Number.isFinite(requestedDays) ? requestedDays : 30, 120));
+  const window = Number(url.searchParams.get("window"));
+  const longWindow = window === 365 || window === 1095;
+  if (longWindow && symbols.length > 4) return Response.json({ error: "每次最多查询四只股票的长期日线" }, { status: 400 });
+  // Fetch enough trading bars for the calendar window and a prior close for holidays.
+  const days = longWindow ? Math.ceil(window * 5 / 7) + 12 : Math.max(5, Math.min(Number.isFinite(requestedDays) ? requestedDays : 30, 120));
+  const startDate = longWindow ? new Date(Date.now() - (window - 1) * 86400000).toISOString().slice(0, 10) : null;
   const histories = {};
 
   await Promise.all(symbols.map(async (symbol) => {
-    const series = await fetchHistory(symbol, days, fetcher);
-    if (series.length) histories[symbol] = series;
+    const series = await fetchHistory(symbol, days, fetcher, startDate);
+    if (series.length) histories[symbol] = longWindow ? series.map(({ date, close }) => ({ date, close })) : series;
   }));
 
   return Response.json(

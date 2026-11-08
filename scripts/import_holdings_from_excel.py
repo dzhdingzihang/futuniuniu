@@ -3,8 +3,8 @@
 
 The workbook is the accounting source of truth.  The generated JSON keeps
 native prices for display, while ``purchaseCostCny`` and ``sellProceedsCny``
-lock the historical RMB accounting amounts.  ``adjustmentCny`` is descriptive:
-it is already included in ``purchaseCostCny`` and must never be added again.
+lock the workbook's original RMB amounts. Per-security buy and sale costs are
+stored once in the root costPolicy and applied by the application at read time.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import json
 import math
 import re
 import sys
+import tempfile
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -23,8 +24,6 @@ from typing import Any, Iterable
 from openpyxl import load_workbook
 
 
-EXPECTED_SECURITY_COUNT = 80
-EXPECTED_OPEN_COUNTS = {"A": 12, "HK": 7, "US": 12}
 MARKET_ORDER = {"A": 0, "HK": 1, "US": 2}
 FUTURE_TRADE_FEE_USD = 20
 FALLBACK_A_SOLD_AS_OF = "2026-11-05"
@@ -293,16 +292,10 @@ def locked_fees(*, sold: bool) -> dict[str, int]:
     return fees
 
 
-def add_adjustment(buy: dict[str, Any], amount: float) -> None:
-    buy["purchaseCostCny"] = rounded(number(buy["purchaseCostCny"], field="purchaseCostCny") + amount, 2)
-    buy["adjustmentCny"] = rounded(amount, 2)
-
-
 def build_hk_us_lots(
     master: MasterSecurity,
     events: list[dict[str, Any]],
     current_row: dict[str, Any] | None,
-    adjustment: float,
 ) -> tuple[list[dict[str, Any]], float]:
     if not events:
         raise ImportContractError(f"{master.key} 缺少人民币成本明细")
@@ -312,7 +305,6 @@ def build_hk_us_lots(
     sold_proceeds = sum_field(events, "卖出", "折合人民币净额")
     remaining_cost = sum_field(events, "期末估值", "剩余成本 CNY")
     valuation_cny = sum_field(events, "期末估值", "折合人民币净额")
-    assigned_adjustment = 0.0
 
     if master.is_open:
         if current_row is None:
@@ -328,8 +320,6 @@ def build_hk_us_lots(
         }
         if buy_date:
             open_lot["buy"]["date"] = buy_date
-        add_adjustment(open_lot["buy"], adjustment)
-        assigned_adjustment = adjustment
         open_lot["fees"] = locked_fees(sold=False)
         lots.append(open_lot)
     elif remaining_cost or valuation_cny:
@@ -348,9 +338,6 @@ def build_hk_us_lots(
         }
         if buy_date:
             sold_lot["buy"]["date"] = buy_date
-        if not master.is_open:
-            add_adjustment(sold_lot["buy"], adjustment)
-            assigned_adjustment = adjustment
         sell_date = last_ledger_sale_date(events)
         if not sell_date:
             raise ImportContractError(f"{master.key} 缺少卖出日期")
@@ -365,36 +352,60 @@ def build_hk_us_lots(
     elif not master.is_open:
         raise ImportContractError(f"{master.key} 已清仓但没有卖出数量")
 
-    if not math.isclose(assigned_adjustment, adjustment, abs_tol=1e-6):
-        raise ImportContractError(f"{master.key} 未能分配一次成本调整")
-    generated_pnl = sold_proceeds - sold_cost + valuation_cny - remaining_cost - adjustment
+    generated_pnl = sold_proceeds - sold_cost + valuation_cny - remaining_cost
     return lots, generated_pnl
 
 
-def build_a_open_lot(
+def build_a_open_lots(
     master: MasterSecurity,
     valuation_row: dict[str, Any],
     dates: dict[str, list[str]],
-    adjustment: float,
-) -> tuple[dict[str, Any], float]:
+) -> tuple[list[dict[str, Any]], float]:
     qty = quantity(valuation_row.get("持仓数量（股）"), field=f"{master.key} 持仓数量")
     if not math.isclose(float(qty), master.current_qty, abs_tol=1e-6):
         raise ImportContractError(f"{master.key} A 股持仓数量不一致：{qty} != {master.current_qty}")
     market_value = number(valuation_row.get("最新市值（元）"), field=f"{master.key} 最新市值")
     pnl = number(valuation_row.get("最新盈亏（元）"), field=f"{master.key} 最新盈亏")
-    base_cost = market_value - pnl
+    net_investment = market_value - pnl
+    broker_unit_cost = native_number(valuation_row.get("券商成本价（元）"), field=f"{master.key} 券商成本价")
     buy = {
-        "price": native_number(valuation_row.get("券商成本价（元）"), field=f"{master.key} 券商成本价"),
+        "price": broker_unit_cost,
         "qty": qty,
-        "purchaseCostCny": rounded(base_cost, 2),
+        "purchaseCostCny": rounded(net_investment, 2),
     }
     if dates["buy"]:
         buy["date"] = min(dates["buy"])
-    add_adjustment(buy, adjustment)
     lot = lot_common(master, "open", "broker-position", master.note)
     lot["buy"] = buy
     lot["fees"] = locked_fees(sold=False)
-    return lot, market_value - base_cost - adjustment
+    if not master.sell_qty:
+        return [lot], market_value - buy["purchaseCostCny"]
+
+    # The broker position sheet supplies a per-share cost for the shares still
+    # held. Its P&L already incorporates past sales. Split that P&L explicitly
+    # between the remaining shares and the observed sale without adding it twice.
+    if not dates["sell"] or not master.buy_avg or not master.sell_avg or not master.cumulative_sell_native:
+        raise ImportContractError(f"{master.key} 缺少部分卖出的日期、均价或成交金额")
+    open_cost = rounded(float(qty) * broker_unit_cost, 2)
+    proceeds = rounded(master.cumulative_sell_native, 2)
+    sold_cost = rounded(net_investment - open_cost + proceeds, 2)
+    if sold_cost <= 0:
+        raise ImportContractError(f"{master.key} 券商盈亏推导的已卖成本不正确：{sold_cost}")
+    buy["purchaseCostCny"] = open_cost
+    note = "剩余成本按券商持仓成本价×剩余股数；卖出按可见成交总额，已卖成本按券商盈亏反推，未单列历史费用。"
+    lot["note"] = combine_notes(master.note, note)
+    sold = lot_common(master, "sold", "broker-partial-reconciled", note)
+    sold["buy"] = {"price": master.buy_avg, "qty": master.sell_qty, "purchaseCostCny": sold_cost}
+    if dates["buy"]:
+        sold["buy"]["date"] = min(dates["buy"])
+    sold["sell"] = {
+        "price": master.sell_avg,
+        "qty": master.sell_qty,
+        "date": max(dates["sell"]),
+        "sellProceedsCny": proceeds,
+    }
+    sold["fees"] = locked_fees(sold=True)
+    return [lot, sold], market_value - open_cost + proceeds - sold_cost
 
 
 def implied_a_sold_cost(master: MasterSecurity) -> float:
@@ -414,7 +425,6 @@ def implied_a_sold_cost(master: MasterSecurity) -> float:
 def build_a_sold_lot(
     master: MasterSecurity,
     dates: dict[str, list[str]],
-    adjustment: float,
 ) -> tuple[dict[str, Any], float]:
     base_cost = implied_a_sold_cost(master)
     proceeds = base_cost + master.pnl_cny
@@ -446,7 +456,6 @@ def build_a_sold_lot(
     }
     if dates["buy"]:
         buy["date"] = min(dates["buy"])
-    add_adjustment(buy, adjustment)
     lot["buy"] = buy
     lot["sell"] = {
         "price": rounded(sell_price, 6),
@@ -455,7 +464,7 @@ def build_a_sold_lot(
         "sellProceedsCny": rounded(proceeds, 2),
     }
     lot["fees"] = locked_fees(sold=True)
-    return lot, proceeds - base_cost - adjustment
+    return lot, proceeds - base_cost
 
 
 def workbook_date_from_name(path: Path) -> str:
@@ -465,7 +474,7 @@ def workbook_date_from_name(path: Path) -> str:
     return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
 
 
-def build_document(workbook_path: Path, adjustment: float) -> tuple[dict[str, Any], dict[str, Any]]:
+def build_document(workbook_path: Path, buy_cny: float, sell_cny: float) -> tuple[dict[str, Any], dict[str, Any]]:
     workbook = load_workbook(workbook_path, data_only=True, read_only=True)
     required_sheets = {
         "全市场股票明细",
@@ -480,8 +489,8 @@ def build_document(workbook_path: Path, adjustment: float) -> tuple[dict[str, An
         raise ImportContractError("工作簿缺少工作表：" + "、".join(missing))
 
     masters = parse_master(table_rows(workbook["全市场股票明细"], 5))
-    if len(masters) != EXPECTED_SECURITY_COUNT:
-        raise ImportContractError(f"股票数量应为 {EXPECTED_SECURITY_COUNT}，实际为 {len(masters)}")
+    if not masters:
+        raise ImportContractError("全市场股票明细中没有可导入的证券")
 
     current_hk_us: dict[str, dict[str, Any]] = {}
     for row in table_rows(workbook["当前实盘持仓"], 5):
@@ -522,29 +531,28 @@ def build_document(workbook_path: Path, adjustment: float) -> tuple[dict[str, An
                 master,
                 ledgers.get(master.key, []),
                 current_hk_us.get(master.key),
-                adjustment,
             )
-            lots.extend(created)
-            generated_pnl += pnl
         elif master.is_open:
             valuation = current_a.get(master.key)
             if valuation is None:
                 raise ImportContractError(f"{master.key} 缺少 A 股持仓估值")
-            created, pnl = build_a_open_lot(master, valuation, a_dates[master.code], adjustment)
-            lots.append(created)
-            generated_pnl += pnl
+            created, pnl = build_a_open_lots(master, valuation, a_dates[master.code])
         else:
-            created, pnl = build_a_sold_lot(master, a_dates[master.code], adjustment)
-            lots.append(created)
-            generated_pnl += pnl
+            sold_lot, pnl = build_a_sold_lot(master, a_dates[master.code])
+            created = [sold_lot]
+        if not math.isclose(pnl, master.pnl_cny, abs_tol=1.0):
+            raise ImportContractError(f"{master.key} 锁定盈亏与来源不一致：{pnl:.2f} != {master.pnl_cny:.2f}")
+        lots.extend(created)
+        generated_pnl += pnl
 
     as_of = workbook_date_from_name(workbook_path)
     valuation_as_of = max(source_valuation_dates) if source_valuation_dates else ""
     document = {
         "version": 2,
+        "costPolicy": {"buyCny": buy_cny, "sellCny": sell_cny},
         "guide": (
-            "日常新增只填 market、code、name 和 buy.date/price/qty；没有 sell 表示持有。"
-            "导入记录的 purchaseCostCny 已锁定人民币成本，且已包含 adjustmentCny，请勿重复相加。"
+            "统一调整人民币买卖成本只改 costPolicy 的 buyCny、sellCny，每只股票分别计一次。"
+            "lots 保存调整前的成交数据；日常买卖请使用网页上的「记录交易」。"
         ),
         "source": {
             "type": "excel",
@@ -560,24 +568,18 @@ def build_document(workbook_path: Path, adjustment: float) -> tuple[dict[str, An
                 "人民币成本明细",
                 "成交原始记录",
             ],
-            "costAdjustment": {
-                "amountCny": rounded(adjustment, 2),
-                "scope": "每个唯一 market+code 一次",
-                "includedInPurchaseCostCny": True,
-            },
             "reconciliation": {
                 "securityCount": len(masters),
                 "openSecurityCount": len([master for master in masters if master.is_open]),
                 "closedSecurityCount": len([master for master in masters if not master.is_open]),
+                "soldSecurityCount": len({security_key(lot["market"], lot["code"]) for lot in lots if lot.get("sell")}),
                 "sourcePnlCny": rounded(source_pnl, 2),
-                "adjustmentTotalCny": rounded(adjustment * len(masters), 2),
-                "adjustedPnlCny": rounded(source_pnl - adjustment * len(masters), 2),
             },
         },
         "newTradeFeeUsd": {"buy": FUTURE_TRADE_FEE_USD, "sell": FUTURE_TRADE_FEE_USD},
         "lots": lots,
     }
-    summary = validate_document(document, masters, source_pnl, generated_pnl, adjustment)
+    summary = validate_document(document, masters, source_pnl, generated_pnl)
     return document, summary
 
 
@@ -586,7 +588,6 @@ def validate_document(
     masters: list[MasterSecurity],
     source_pnl: float,
     generated_pnl: float,
-    adjustment: float,
 ) -> dict[str, Any]:
     lots = document["lots"]
     ids = [clean_text(lot.get("id")) for lot in lots]
@@ -610,65 +611,84 @@ def validate_document(
         raise ImportContractError("生成持仓集合与全市场股票明细不一致")
     open_counts = {
         market: len([key for key in open_keys if key.startswith(market + ":")])
-        for market in EXPECTED_OPEN_COUNTS
+        for market in MARKET_ORDER
     }
-    if open_counts != EXPECTED_OPEN_COUNTS:
-        raise ImportContractError(f"持仓市场数量不正确：{open_counts}")
 
-    adjustment_by_key: dict[str, float] = defaultdict(float)
     for lot in lots:
         buy = lot.get("buy") or {}
         key = security_key(lot["market"], lot["code"])
-        adjustment_by_key[key] += float(buy.get("adjustmentCny") or 0)
         cost = number(buy.get("purchaseCostCny"), field=f"{key} purchaseCostCny")
-        if cost < float(buy.get("adjustmentCny") or 0):
-            raise ImportContractError(f"{key} purchaseCostCny 小于 adjustmentCny")
+        if cost < 0:
+            raise ImportContractError(f"{key} purchaseCostCny 小于零")
         if not is_number(buy.get("price")) or float(buy["price"]) <= 0:
             raise ImportContractError(f"{key} 缺少兼容格式所需的正数买入价")
         if not is_number(buy.get("qty")) or float(buy["qty"]) <= 0:
             raise ImportContractError(f"{key} 缺少兼容格式所需的正数数量")
-    bad_adjustments = {
-        key: amount
-        for key, amount in adjustment_by_key.items()
-        if not math.isclose(amount, adjustment, abs_tol=0.01)
-    }
-    if bad_adjustments:
-        raise ImportContractError(f"成本调整没有按每只股票一次分配：{bad_adjustments}")
-
-    adjustment_total = sum(adjustment_by_key.values())
-    expected_adjusted_pnl = source_pnl - adjustment_total
-    if not math.isclose(generated_pnl, expected_adjusted_pnl, abs_tol=1.0):
+    sold_keys = {security_key(lot["market"], lot["code"]) for lot in lots if lot.get("sell")}
+    expected_sold = {m.key for m in masters if not m.is_open or (m.sell_qty or 0) > 0}
+    if sold_keys != expected_sold:
+        raise ImportContractError(f"生成卖出集合与全市场股票明细不一致：{sorted(sold_keys ^ expected_sold)}")
+    if not math.isclose(generated_pnl, source_pnl, abs_tol=1.0):
         raise ImportContractError(
-            f"生成锁定盈亏不平：{generated_pnl:.2f} != {expected_adjusted_pnl:.2f}"
+            f"生成锁定盈亏不平：{generated_pnl:.2f} != {source_pnl:.2f}"
         )
-
     closed_count = len(source_keys - open_keys)
-    if closed_count != EXPECTED_SECURITY_COUNT - sum(EXPECTED_OPEN_COUNTS.values()):
-        raise ImportContractError(f"已清仓股票数量不正确：{closed_count}")
+    buy_total = len(source_keys) * document["costPolicy"]["buyCny"]
+    sell_total = len(sold_keys) * document["costPolicy"]["sellCny"]
     return {
         "securityCount": len(source_keys),
         "lotCount": len(lots),
         "openSecurityCount": len(open_keys),
         "closedSecurityCount": closed_count,
         "openByMarket": open_counts,
-        "adjustedSecurityCount": len(adjustment_by_key),
-        "adjustmentTotalCny": rounded(adjustment_total, 2),
+        "soldSecurityCount": len(sold_keys),
+        "buyAdjustmentTotalCny": rounded(buy_total, 2),
+        "sellAdjustmentTotalCny": rounded(sell_total, 2),
+        "adjustmentTotalCny": rounded(buy_total + sell_total, 2),
         "sourcePnlCny": rounded(source_pnl, 2),
-        "adjustedPnlCny": rounded(generated_pnl, 2),
+        "adjustedPnlCny": rounded(source_pnl - buy_total - sell_total, 2),
         "missingTradeDetailLots": len([lot for lot in lots if lot.get("quality") == "trade-details-missing"]),
     }
 
 
 def write_json(path: Path, document: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    with tempfile.TemporaryDirectory(dir=path.parent) as temp_dir:
+        temp_path = Path(temp_dir) / "holdings.json"
+        temp_path.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temp_path.replace(path)
+
+
+def read_target(path: Path | None) -> tuple[dict[str, Any], bool]:
+    if path is None or not path.exists():
+        return {}, False
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ImportContractError(f"无法读取已有输出 {path}：{error}") from error
+    # Legacy arrays and manually appended lots have no Excel import ID.
+    if not isinstance(existing, dict) or not isinstance(existing.get("lots"), list):
+        return {}, True
+
+    def is_manual(lot: Any) -> bool:
+        if not isinstance(lot, dict) or not str(lot.get("id", "")).startswith("excel-"):
+            return True
+        return any(isinstance(item, dict) and item.get("operationId")
+                   for item in (lot, lot.get("buy"), lot.get("sell")))
+
+    policy = existing.get("costPolicy", {})
+    if not isinstance(policy, dict):
+        raise ImportContractError("已有文件的 costPolicy 格式不正确")
+    return policy, any(is_manual(lot) for lot in existing["lots"])
 
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="从股票记录 Excel 生成网站 holdings.json")
     result.add_argument("workbook", type=Path, help="20261108股票记录.xlsx 路径")
     result.add_argument("--output", type=Path, help="输出 JSON 路径；非 dry-run 时必填")
-    result.add_argument("--additional-cost-cny", type=float, default=1000, help="每个唯一股票增加一次的人民币成本")
+    result.add_argument("--buy-cost-cny", "--additional-cost-cny", type=float, help="每只股票一次的买入成本；默认沿用输出文件，首次为 2000")
+    result.add_argument("--sell-cost-cny", type=float, help="每只卖出股票一次的卖出成本；默认沿用输出文件，首次为 1000")
+    result.add_argument("--replace-trades", action="store_true", help="明确以工作簿替换已有输出中的网站交易或手工记录")
     result.add_argument("--dry-run", action="store_true", help="只校验和打印摘要，不写文件")
     return result
 
@@ -678,14 +698,18 @@ def main(argv: list[str] | None = None) -> int:
     if not args.workbook.is_file():
         print(f"错误：工作簿不存在：{args.workbook}", file=sys.stderr)
         return 2
-    if args.additional_cost_cny < 0 or not math.isfinite(args.additional_cost_cny):
-        print("错误：additional-cost-cny 必须是非负数", file=sys.stderr)
-        return 2
     if not args.dry_run and args.output is None:
         print("错误：非 dry-run 模式必须提供 --output", file=sys.stderr)
         return 2
     try:
-        document, summary = build_document(args.workbook, args.additional_cost_cny)
+        policy, manual_trades = read_target(args.output)
+        if manual_trades and not args.dry_run and not args.replace_trades:
+            raise ImportContractError("输出文件含网站录入或手工交易。请先导入新文件核对；确认以该工作簿完全替换时使用 --replace-trades。")
+        buy_cny = policy.get("buyCny", 2000) if args.buy_cost_cny is None else args.buy_cost_cny
+        sell_cny = policy.get("sellCny", 1000) if args.sell_cost_cny is None else args.sell_cost_cny
+        if any(not is_number(amount) or amount < 0 or round(amount, 2) != amount for amount in (buy_cny, sell_cny)):
+            raise ImportContractError("买卖成本必须是非负人民币金额，最多保留两位小数")
+        document, summary = build_document(args.workbook, rounded(buy_cny, 2), rounded(sell_cny, 2))
         if not args.dry_run and args.output is not None:
             write_json(args.output, document)
             summary["output"] = str(args.output.resolve())

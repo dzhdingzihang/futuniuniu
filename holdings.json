@@ -1,6 +1,10 @@
 {
   "version": 2,
-  "guide": "日常新增只填 market、code、name 和 buy.date/price/qty；没有 sell 表示持有。导入记录的 purchaseCostCny 已锁定人民币成本，且已包含 adjustmentCny，请勿重复相加。",
+  "costPolicy": {
+    "buyCny": 2000,
+    "sellCny": 1000
+  },
+  "guide": "统一调整人民币买卖成本只改 costPolicy 的 buyCny、sellCny，每只股票分别计一次。lots 保存调整前的成交数据；日常买卖请使用网页上的「记录交易」。",
   "source": {
     "type": "excel",
     "file": "20261108股票记录.xlsx",
@@ -20,18 +24,12 @@
       "人民币成本明细",
       "成交原始记录"
     ],
-    "costAdjustment": {
-      "amountCny": 1000,
-      "scope": "每个唯一 market+code 一次",
-      "includedInPurchaseCostCny": true
-    },
     "reconciliation": {
       "securityCount": 80,
       "openSecurityCount": 31,
       "closedSecurityCount": 49,
-      "sourcePnlCny": -261399.85,
-      "adjustmentTotalCny": 80000,
-      "adjustedPnlCny": -341399.85
+      "soldSecurityCount": 63,
+      "sourcePnlCny": -261399.85
     }
   },
   "newTradeFeeUsd": {
@@ -49,9 +47,8 @@
       "buy": {
         "price": 201.836,
         "qty": 400,
-        "purchaseCostCny": 81755.4,
-        "date": "2026-07-01",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 80755.4,
+        "date": "2026-07-01"
       },
       "fees": {
         "buy": 0
@@ -67,9 +64,8 @@
       "buy": {
         "price": 62.621,
         "qty": 300,
-        "purchaseCostCny": 19602.42,
-        "date": "2026-04-13",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 18602.42,
+        "date": "2026-04-13"
       },
       "fees": {
         "buy": 0
@@ -85,9 +81,8 @@
       "buy": {
         "price": 125.05,
         "qty": 100,
-        "purchaseCostCny": 13513.66,
-        "date": "2026-08-18",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 12513.66,
+        "date": "2026-08-18"
       },
       "fees": {
         "buy": 0
@@ -103,9 +98,8 @@
       "buy": {
         "price": 6.993,
         "qty": 3000,
-        "purchaseCostCny": 21812.34,
-        "date": "2026-06-24",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 20812.34,
+        "date": "2026-06-24"
       },
       "fees": {
         "buy": 0
@@ -121,9 +115,8 @@
       "buy": {
         "price": 24.113,
         "qty": 400,
-        "purchaseCostCny": 10646.69,
-        "date": "2026-07-08",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 9646.69,
+        "date": "2026-07-08"
       },
       "fees": {
         "buy": 0
@@ -139,8 +132,7 @@
       "buy": {
         "price": 15.87,
         "qty": 500,
-        "purchaseCostCny": 8888.41,
-        "adjustmentCny": 1000
+        "purchaseCostCny": 7888.41
       },
       "fees": {
         "buy": 0
@@ -156,9 +148,8 @@
       "buy": {
         "price": 7.786,
         "qty": 800,
-        "purchaseCostCny": 7235.94,
-        "date": "2026-05-08",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 6235.94,
+        "date": "2026-05-08"
       },
       "fees": {
         "buy": 0
@@ -174,9 +165,8 @@
       "buy": {
         "price": 21.798,
         "qty": 100,
-        "purchaseCostCny": 6948.29,
-        "date": "2026-03-06",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 5948.29,
+        "date": "2026-03-06"
       },
       "fees": {
         "buy": 0
@@ -192,9 +182,8 @@
       "buy": {
         "price": 20.368,
         "qty": 100,
-        "purchaseCostCny": 6244.09,
-        "date": "2026-01-13",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 5244.09,
+        "date": "2026-01-13"
       },
       "fees": {
         "buy": 0
@@ -206,16 +195,39 @@
       "code": "600869",
       "name": "远东股份",
       "quality": "broker-position",
-      "note": "股数相符 · 券商持仓盈亏 · 估值日期见持仓页",
+      "note": "股数相符 · 券商持仓盈亏 · 估值日期见持仓页；剩余成本按券商持仓成本价×剩余股数；卖出按可见成交总额，已卖成本按券商盈亏反推，未单列历史费用。",
       "buy": {
         "price": 22.075,
         "qty": 100,
-        "purchaseCostCny": 3015.99,
-        "date": "2026-05-14",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 2207.5,
+        "date": "2026-05-14"
       },
       "fees": {
         "buy": 0
+      }
+    },
+    {
+      "id": "excel-a-600869-sold",
+      "market": "A",
+      "code": "600869",
+      "name": "远东股份",
+      "quality": "broker-partial-reconciled",
+      "note": "剩余成本按券商持仓成本价×剩余股数；卖出按可见成交总额，已卖成本按券商盈亏反推，未单列历史费用。",
+      "buy": {
+        "price": 22.05,
+        "qty": 100.0,
+        "purchaseCostCny": 2218.49,
+        "date": "2026-05-14"
+      },
+      "sell": {
+        "price": 24.1,
+        "qty": 100.0,
+        "date": "2026-05-29",
+        "sellProceedsCny": 2410
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
       }
     },
     {
@@ -228,9 +240,8 @@
       "buy": {
         "price": 14.485,
         "qty": 200,
-        "purchaseCostCny": 3902.94,
-        "date": "2026-03-05",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 2902.94,
+        "date": "2026-03-05"
       },
       "fees": {
         "buy": 0
@@ -246,9 +257,8 @@
       "buy": {
         "price": 3.59,
         "qty": 100,
-        "purchaseCostCny": 4475.71,
-        "date": "2026-05-11",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 3475.71,
+        "date": "2026-05-11"
       },
       "fees": {
         "buy": 0
@@ -264,8 +274,7 @@
       "buy": {
         "price": 21552.396916,
         "qty": 1,
-        "purchaseCostCny": 22552.4,
-        "adjustmentCny": 1000
+        "purchaseCostCny": 21552.4
       },
       "sell": {
         "price": 27981.476916,
@@ -288,9 +297,8 @@
       "buy": {
         "price": 6.78,
         "qty": 4500,
-        "purchaseCostCny": 31510,
-        "date": "2025-02-07",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 30510,
+        "date": "2025-02-07"
       },
       "sell": {
         "price": 8.2,
@@ -313,9 +321,8 @@
       "buy": {
         "price": 68.4,
         "qty": 200,
-        "purchaseCostCny": 14680,
-        "date": "2025-05-07",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 13680,
+        "date": "2025-05-07"
       },
       "sell": {
         "price": 79.15,
@@ -338,8 +345,7 @@
       "buy": {
         "price": 26923.571429,
         "qty": 1,
-        "purchaseCostCny": 27923.57,
-        "adjustmentCny": 1000
+        "purchaseCostCny": 26923.57
       },
       "sell": {
         "price": 28431.291429,
@@ -362,9 +368,8 @@
       "buy": {
         "price": 42.27,
         "qty": 300,
-        "purchaseCostCny": 13681,
-        "date": "2025-02-13",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 12681,
+        "date": "2025-02-13"
       },
       "sell": {
         "price": 46.9,
@@ -387,8 +392,7 @@
       "buy": {
         "price": 48.669939,
         "qty": 100,
-        "purchaseCostCny": 5866.99,
-        "adjustmentCny": 1000
+        "purchaseCostCny": 4866.99
       },
       "sell": {
         "price": 57.1,
@@ -411,9 +415,8 @@
       "buy": {
         "price": 171,
         "qty": 100,
-        "purchaseCostCny": 18100,
-        "date": "2026-05-26",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 17100,
+        "date": "2026-05-26"
       },
       "sell": {
         "price": 180.01,
@@ -436,9 +439,8 @@
       "buy": {
         "price": 46.48,
         "qty": 200,
-        "purchaseCostCny": 10296,
-        "date": "2024-10-08",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 9296,
+        "date": "2024-10-08"
       },
       "sell": {
         "price": 48.94,
@@ -461,9 +463,8 @@
       "buy": {
         "price": 58.43,
         "qty": 100,
-        "purchaseCostCny": 6843,
-        "date": "2025-10-10",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 5843,
+        "date": "2025-10-10"
       },
       "sell": {
         "price": 60.15,
@@ -486,9 +487,8 @@
       "buy": {
         "price": 8.18,
         "qty": 600,
-        "purchaseCostCny": 5908,
-        "date": "2026-03-02",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 4908,
+        "date": "2026-03-02"
       },
       "sell": {
         "price": 8.52,
@@ -511,9 +511,8 @@
       "buy": {
         "price": 5.1,
         "qty": 1000,
-        "purchaseCostCny": 6100,
-        "date": "2024-10-08",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 5100,
+        "date": "2024-10-08"
       },
       "sell": {
         "price": 4.51,
@@ -536,9 +535,8 @@
       "buy": {
         "price": 57.6,
         "qty": 200,
-        "purchaseCostCny": 12520,
-        "date": "2024-10-08",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 11520,
+        "date": "2024-10-08"
       },
       "sell": {
         "price": 53.04,
@@ -561,9 +559,8 @@
       "buy": {
         "price": 20.58,
         "qty": 500,
-        "purchaseCostCny": 11290,
-        "date": "2024-12-10",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 10290,
+        "date": "2024-12-10"
       },
       "sell": {
         "price": 18.04,
@@ -586,8 +583,7 @@
       "buy": {
         "price": 7819.364059,
         "qty": 1,
-        "purchaseCostCny": 8819.36,
-        "adjustmentCny": 1000
+        "purchaseCostCny": 7819.36
       },
       "sell": {
         "price": 5630.724059,
@@ -610,8 +606,7 @@
       "buy": {
         "price": 6814.25166,
         "qty": 1,
-        "purchaseCostCny": 7814.25,
-        "adjustmentCny": 1000
+        "purchaseCostCny": 6814.25
       },
       "sell": {
         "price": 2812.24166,
@@ -634,9 +629,8 @@
       "buy": {
         "price": 3.853333,
         "qty": 3000,
-        "purchaseCostCny": 12560,
-        "date": "2025-02-06",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 11560,
+        "date": "2025-02-06"
       },
       "sell": {
         "price": 3.21,
@@ -659,9 +653,8 @@
       "buy": {
         "price": 45.98,
         "qty": 300,
-        "purchaseCostCny": 13213.8,
-        "date": "2021-04-30",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 12213.8,
+        "date": "2021-04-30"
       },
       "fees": {
         "buy": 0
@@ -701,9 +694,8 @@
       "buy": {
         "price": 36.333,
         "qty": 2900,
-        "purchaseCostCny": 91750.11,
-        "date": "2026-04-15",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 90750.11,
+        "date": "2026-04-15"
       },
       "fees": {
         "buy": 0
@@ -743,9 +735,8 @@
       "buy": {
         "price": 16.819,
         "qty": 1600,
-        "purchaseCostCny": 24859.09,
-        "date": "2026-01-12",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 23859.09,
+        "date": "2026-01-12"
       },
       "fees": {
         "buy": 0
@@ -761,9 +752,8 @@
       "buy": {
         "price": 30.48,
         "qty": 400,
-        "purchaseCostCny": 11923.13,
-        "date": "2026-01-13",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 10923.13,
+        "date": "2026-01-13"
       },
       "fees": {
         "buy": 0
@@ -803,9 +793,8 @@
       "buy": {
         "price": 77.4,
         "qty": 500,
-        "purchaseCostCny": 34497.08,
-        "date": "2021-01-07",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 33497.08,
+        "date": "2021-01-07"
       },
       "fees": {
         "buy": 0
@@ -845,9 +834,8 @@
       "buy": {
         "price": 42.113,
         "qty": 600,
-        "purchaseCostCny": 22812.72,
-        "date": "2025-10-10",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 21812.72,
+        "date": "2025-10-10"
       },
       "fees": {
         "buy": 0
@@ -887,9 +875,8 @@
       "buy": {
         "price": 33.908,
         "qty": 1600,
-        "purchaseCostCny": 49384.41,
-        "date": "2018-06-27",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 48384.41,
+        "date": "2018-06-27"
       },
       "fees": {
         "buy": 0
@@ -929,9 +916,8 @@
       "buy": {
         "price": 16.561111,
         "qty": 4500,
-        "purchaseCostCny": 63314.44,
-        "date": "2021-01-19",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 62314.44,
+        "date": "2021-01-19"
       },
       "sell": {
         "price": 9.17,
@@ -954,9 +940,8 @@
       "buy": {
         "price": 716,
         "qty": 20,
-        "purchaseCostCny": 12933.44,
-        "date": "2021-07-29",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 11933.44,
+        "date": "2021-07-29"
       },
       "sell": {
         "price": 111,
@@ -979,9 +964,8 @@
       "buy": {
         "price": 6.423425,
         "qty": 7300,
-        "purchaseCostCny": 44831.28,
-        "date": "2025-02-12",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 43831.28,
+        "date": "2025-02-12"
       },
       "sell": {
         "price": 5.085,
@@ -1004,9 +988,8 @@
       "buy": {
         "price": 989.8832,
         "qty": 50,
-        "purchaseCostCny": 43702.35,
-        "date": "2026-07-27",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 42702.35,
+        "date": "2026-07-27"
       },
       "sell": {
         "price": 892,
@@ -1029,9 +1012,8 @@
       "buy": {
         "price": 6.705,
         "qty": 1000,
-        "purchaseCostCny": 6807.49,
-        "date": "2018-07-16",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 5807.49,
+        "date": "2018-07-16"
       },
       "sell": {
         "price": 1.83,
@@ -1054,9 +1036,8 @@
       "buy": {
         "price": 18.52,
         "qty": 1500,
-        "purchaseCostCny": 26285.32,
-        "date": "2024-10-08",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 25285.32,
+        "date": "2024-10-08"
       },
       "sell": {
         "price": 16.46,
@@ -1079,9 +1060,8 @@
       "buy": {
         "price": 767.5,
         "qty": 20,
-        "purchaseCostCny": 14368.9,
-        "date": "2026-05-08",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 13368.9,
+        "date": "2026-05-08"
       },
       "sell": {
         "price": 718,
@@ -1104,9 +1084,8 @@
       "buy": {
         "price": 4.92918,
         "qty": 500,
-        "purchaseCostCny": 3096.05,
-        "date": "2021-06-21",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 2096.05,
+        "date": "2021-06-21"
       },
       "sell": {
         "price": 3,
@@ -1129,9 +1108,8 @@
       "buy": {
         "price": 7.2625,
         "qty": 400,
-        "purchaseCostCny": 3683.66,
-        "date": "2025-05-13",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 2683.66,
+        "date": "2025-05-13"
       },
       "sell": {
         "price": 6.22,
@@ -1154,9 +1132,8 @@
       "buy": {
         "price": 7.93,
         "qty": 2000,
-        "purchaseCostCny": 14721.59,
-        "date": "2026-06-18",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 13721.59,
+        "date": "2026-06-18"
       },
       "sell": {
         "price": 8,
@@ -1179,9 +1156,8 @@
       "buy": {
         "price": 13.54,
         "qty": 500,
-        "purchaseCostCny": 7166.86,
-        "date": "2024-10-08",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 6166.86,
+        "date": "2024-10-08"
       },
       "sell": {
         "price": 14.4,
@@ -1204,9 +1180,8 @@
       "buy": {
         "price": 7.75,
         "qty": 1000,
-        "purchaseCostCny": 7545.33,
-        "date": "2021-03-09",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 6545.33,
+        "date": "2021-03-09"
       },
       "sell": {
         "price": 8.24,
@@ -1229,9 +1204,8 @@
       "buy": {
         "price": 374.8,
         "qty": 200,
-        "purchaseCostCny": 65612.03,
-        "date": "2018-07-11",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 64612.03,
+        "date": "2018-07-11"
       },
       "sell": {
         "price": 381.4,
@@ -1254,9 +1228,8 @@
       "buy": {
         "price": 177.7736,
         "qty": 100,
-        "purchaseCostCny": 17022.16,
-        "date": "2019-11-20",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 16022.16,
+        "date": "2019-11-20"
       },
       "sell": {
         "price": 221,
@@ -1279,9 +1252,8 @@
       "buy": {
         "price": 270.7006,
         "qty": 50,
-        "purchaseCostCny": 12455.54,
-        "date": "2021-04-13",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 11455.54,
+        "date": "2021-04-13"
       },
       "sell": {
         "price": 362.8,
@@ -1304,9 +1276,8 @@
       "buy": {
         "price": 202.85,
         "qty": 200,
-        "purchaseCostCny": 35742.7,
-        "date": "2019-12-23",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 34742.7,
+        "date": "2019-12-23"
       },
       "sell": {
         "price": 305,
@@ -1329,9 +1300,8 @@
       "buy": {
         "price": 32.81,
         "qty": 1000,
-        "purchaseCostCny": 30001.19,
-        "date": "2020-09-08",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 29001.19,
+        "date": "2020-09-08"
       },
       "sell": {
         "price": 53.3,
@@ -1354,9 +1324,8 @@
       "buy": {
         "price": 35.062857,
         "qty": 3500,
-        "purchaseCostCny": 113634.57,
-        "date": "2025-11-03",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 112634.57,
+        "date": "2025-11-03"
       },
       "sell": {
         "price": 42,
@@ -1379,9 +1348,8 @@
       "buy": {
         "price": 100,
         "qty": 100,
-        "purchaseCostCny": 10151.18,
-        "date": "2025-09-21",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 9151.18,
+        "date": "2025-09-21"
       },
       "sell": {
         "price": 92.8,
@@ -1404,9 +1372,8 @@
       "buy": {
         "price": 24.338,
         "qty": 140,
-        "purchaseCostCny": 24138.51,
-        "date": "2026-05-22",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 23138.51,
+        "date": "2026-05-22"
       },
       "fees": {
         "buy": 0
@@ -1446,9 +1413,8 @@
       "buy": {
         "price": 13.459,
         "qty": 400,
-        "purchaseCostCny": 37495.97,
-        "date": "2026-05-26",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 36495.97,
+        "date": "2026-05-26"
       },
       "fees": {
         "buy": 0
@@ -1464,9 +1430,8 @@
       "buy": {
         "price": 13.829,
         "qty": 250,
-        "purchaseCostCny": 24073.48,
-        "date": "2026-10-29",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 23073.48,
+        "date": "2026-10-29"
       },
       "fees": {
         "buy": 0
@@ -1506,9 +1471,8 @@
       "buy": {
         "price": 175.373,
         "qty": 30,
-        "purchaseCostCny": 36750.89,
-        "date": "2026-05-06",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 35750.89,
+        "date": "2026-05-06"
       },
       "fees": {
         "buy": 0
@@ -1548,9 +1512,8 @@
       "buy": {
         "price": 33.055,
         "qty": 40,
-        "purchaseCostCny": 9985.03,
-        "date": "2026-05-29",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 8985.03,
+        "date": "2026-05-29"
       },
       "fees": {
         "buy": 0
@@ -1590,9 +1553,8 @@
       "buy": {
         "price": 40.89,
         "qty": 10,
-        "purchaseCostCny": 3776.79,
-        "date": "2026-05-11",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 2776.79,
+        "date": "2026-05-11"
       },
       "fees": {
         "buy": 0
@@ -1632,9 +1594,8 @@
       "buy": {
         "price": 52.222,
         "qty": 130,
-        "purchaseCostCny": 47027.95,
-        "date": "2026-05-11",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 46027.95,
+        "date": "2026-05-11"
       },
       "fees": {
         "buy": 0
@@ -1674,9 +1635,8 @@
       "buy": {
         "price": 3.014,
         "qty": 190,
-        "purchaseCostCny": 4897.83,
-        "date": "2026-08-17",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 3897.83,
+        "date": "2026-08-17"
       },
       "fees": {
         "buy": 0
@@ -1692,9 +1652,8 @@
       "buy": {
         "price": 10.576,
         "qty": 250,
-        "purchaseCostCny": 18960.63,
-        "date": "2026-05-15",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 17960.63,
+        "date": "2026-05-15"
       },
       "fees": {
         "buy": 0
@@ -1734,9 +1693,8 @@
       "buy": {
         "price": 7.55,
         "qty": 50,
-        "purchaseCostCny": 3551.77,
-        "date": "2026-09-02",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 2551.77,
+        "date": "2026-09-02"
       },
       "fees": {
         "buy": 0
@@ -1752,9 +1710,8 @@
       "buy": {
         "price": 7.659,
         "qty": 100,
-        "purchaseCostCny": 6110.48,
-        "date": "2026-10-30",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 5110.48,
+        "date": "2026-10-30"
       },
       "fees": {
         "buy": 0
@@ -1770,9 +1727,8 @@
       "buy": {
         "price": 47.96,
         "qty": 50,
-        "purchaseCostCny": 16988.86,
-        "date": "2026-10-29",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 15988.86,
+        "date": "2026-10-29"
       },
       "fees": {
         "buy": 0
@@ -1788,9 +1744,8 @@
       "buy": {
         "price": 33.5,
         "qty": 70,
-        "purchaseCostCny": 16891.2,
-        "date": "2026-07-23",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 15891.2,
+        "date": "2026-07-23"
       },
       "sell": {
         "price": 18.542857,
@@ -1813,9 +1768,8 @@
       "buy": {
         "price": 83.771429,
         "qty": 7,
-        "purchaseCostCny": 5290.11,
-        "date": "2024-05-17",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 4290.11,
+        "date": "2024-05-17"
       },
       "sell": {
         "price": 2.1,
@@ -1838,9 +1792,8 @@
       "buy": {
         "price": 105.23,
         "qty": 26,
-        "purchaseCostCny": 19891.18,
-        "date": "2026-03-25",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 18891.18,
+        "date": "2026-03-25"
       },
       "sell": {
         "price": 97.22,
@@ -1863,9 +1816,8 @@
       "buy": {
         "price": 8.52,
         "qty": 50,
-        "purchaseCostCny": 4110.17,
-        "date": "2024-12-09",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 3110.17,
+        "date": "2024-12-09"
       },
       "sell": {
         "price": 6.2,
@@ -1888,9 +1840,8 @@
       "buy": {
         "price": 5.570402,
         "qty": 498,
-        "purchaseCostCny": 20777.12,
-        "date": "2025-09-08",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 19777.12,
+        "date": "2025-09-08"
       },
       "sell": {
         "price": 5.58,
@@ -1913,9 +1864,8 @@
       "buy": {
         "price": 21.8,
         "qty": 20,
-        "purchaseCostCny": 3963.44,
-        "date": "2026-06-01",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 2963.44,
+        "date": "2026-06-01"
       },
       "sell": {
         "price": 21.8,
@@ -1938,9 +1888,8 @@
       "buy": {
         "price": 56.7,
         "qty": 20,
-        "purchaseCostCny": 8725.78,
-        "date": "2026-05-11",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 7725.78,
+        "date": "2026-05-11"
       },
       "sell": {
         "price": 57.4,
@@ -1963,9 +1912,8 @@
       "buy": {
         "price": 750.5,
         "qty": 4,
-        "purchaseCostCny": 21407.78,
-        "date": "2026-07-02",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 20407.78,
+        "date": "2026-07-02"
       },
       "sell": {
         "price": 770.4875,
@@ -1988,9 +1936,8 @@
       "buy": {
         "price": 57,
         "qty": 90,
-        "purchaseCostCny": 38136.67,
-        "date": "2024-04-02",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 37136.67,
+        "date": "2024-04-02"
       },
       "sell": {
         "price": 58.5,
@@ -2013,9 +1960,8 @@
       "buy": {
         "price": 236.2,
         "qty": 20,
-        "purchaseCostCny": 35238.45,
-        "date": "2025-03-20",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 34238.45,
+        "date": "2025-03-20"
       },
       "sell": {
         "price": 247.2,
@@ -2038,9 +1984,8 @@
       "buy": {
         "price": 14.16,
         "qty": 100,
-        "purchaseCostCny": 11265.12,
-        "date": "2025-05-08",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 10265.12,
+        "date": "2025-05-08"
       },
       "sell": {
         "price": 17.78,
@@ -2063,9 +2008,8 @@
       "buy": {
         "price": 26.87,
         "qty": 77,
-        "purchaseCostCny": 15863.44,
-        "date": "2025-06-12",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 14863.44,
+        "date": "2025-06-12"
       },
       "sell": {
         "price": 35.8,
@@ -2088,9 +2032,8 @@
       "buy": {
         "price": 40.34,
         "qty": 150,
-        "purchaseCostCny": 44058.47,
-        "date": "2024-10-16",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 43058.47,
+        "date": "2024-10-16"
       },
       "sell": {
         "price": 46.2,
@@ -2113,9 +2056,8 @@
       "buy": {
         "price": 84.6,
         "qty": 60,
-        "purchaseCostCny": 37737.35,
-        "date": "2024-05-13",
-        "adjustmentCny": 1000
+        "purchaseCostCny": 36737.35,
+        "date": "2024-05-13"
       },
       "sell": {
         "price": 111,

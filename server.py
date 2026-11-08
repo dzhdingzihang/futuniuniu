@@ -4,12 +4,13 @@ from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import json
 import os
 import re
 import sys
+import time
 
 
 ROOT = Path(__file__).resolve().parent
@@ -273,8 +274,66 @@ def fetch_yahoo_history(symbol, days, range_value="6mo", interval="1d"):
     if not mapped:
         return []
     include = "&includePrePost=true" if interval != "1d" else ""
+    if interval == "1d" and days > 120:
+        range_value = "5y" if days > 500 else "2y"
     payload = fetch_json(YAHOO_CHART_URL.format(symbol=mapped, range=range_value, interval=interval) + include, timeout=8)
     return parse_yahoo_payload(payload)[-days:]
+
+
+def long_history_sources(symbol, days):
+    limit = max(days + 10, 45)
+    eastmoney = [("eastmoney", EASTMONEY_KLINE_URL.format(secid=secid, limit=limit), None)
+                 for secid in eastmoney_secids(symbol)]
+    ticker = yahoo_symbol(symbol)
+    yahoo = [("yahoo", YAHOO_CHART_URL.format(symbol=ticker, range="5y" if days > 500 else "2y", interval="1d"), None)] if ticker else []
+    providers = yahoo + eastmoney if symbol.startswith("gb_") else eastmoney + yahoo
+    if symbol.startswith("gb_"):
+        keys = ["us" + symbol[3:].upper() + suffix for suffix in [".OQ", ".N", ".A"]]
+    else:
+        keys = [symbol] if symbol.startswith(("sh", "sz", "hk")) else []
+    return providers + [("tencent", f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={key},day,,,{limit},qfq", key) for key in keys]
+
+
+def fetch_long_history(symbol, days, start):
+    today = datetime.now(timezone.utc).date()
+    recent = (today - timedelta(days=10)).isoformat()
+    deadline = time.monotonic() + 18
+    best, best_rank = [], (False, 0, "")
+    for provider, url, key in long_history_sources(symbol, days):
+        budget = deadline - time.monotonic()
+        if budget <= 0:
+            break
+        try:
+            payload = fetch_json(url, timeout=min(4, budget))
+            inception = None
+            if provider == "eastmoney":
+                bars = parse_kline_payload(payload)
+            elif provider == "yahoo":
+                bars = parse_yahoo_payload(payload)
+                result = (payload.get("chart", {}).get("result") or [{}])[0]
+                ts = result.get("meta", {}).get("firstTradeDate")
+                if isinstance(ts, (int, float)):
+                    inception = datetime.fromtimestamp(ts, timezone.utc).date()
+            else:
+                security = payload.get("data", {}).get(key, {})
+                bars = [{"date": row[0], "close": float(row[2])} for row in (security.get("qfqday") or security.get("day") or [])
+                        if len(row) >= 5 and to_float(row, 2) is not None]
+            bars = sorted((bar for bar in bars if re.fullmatch(r"\d{4}-\d{2}-\d{2}", bar["date"])
+                           and bar["date"] <= today.isoformat() and bar["close"] > 0),
+                          key=lambda bar: bar["date"])[-days:]
+            if not bars or bars[-1]["date"] < start:
+                continue
+            fresh = bars[-1]["date"] >= recent
+            rank = fresh, sum(bar["date"] >= start for bar in bars), bars[-1]["date"]
+            if rank > best_rank:
+                best, best_rank = bars, rank
+            first = datetime.strptime(bars[0]["date"], "%Y-%m-%d").date()
+            covers_listing = inception and start < inception.isoformat() <= today.isoformat() and abs((first - inception).days) <= 7
+            if fresh and (bars[0]["date"] <= start or covers_listing):
+                return bars
+        except (ValueError, TypeError, OSError, KeyError, AttributeError, IndexError):
+            continue
+    return best
 
 
 def parse_kline_payload(payload):
@@ -320,23 +379,32 @@ def fetch_history_for_symbol(symbol, days):
     return []
 
 
-def handle_history(symbols, days):
+def handle_history(symbols, days, window=0):
     safe_symbols = [
         symbol
         for symbol in symbols.split(",")
         if symbol in INDEX_ALIASES or re.fullmatch(r"(sh|sz|hk|gb_)[A-Za-z0-9_]+", symbol)
     ]
     days = max(5, min(days, 120))
+    if window in (365, 1095):
+        if len(safe_symbols) > 4:
+            raise ValueError("每次最多查询四只股票的长期日线")
+        days = (window * 5 + 6) // 7 + 12
     histories = {}
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(fetch_history_for_symbol, symbol, days): symbol for symbol in safe_symbols}
+        if window in (365, 1095):
+            start = (datetime.now(timezone.utc).date() - timedelta(days=window - 1)).isoformat()
+            futures = {executor.submit(fetch_long_history, symbol, days, start): symbol for symbol in safe_symbols}
+        else:
+            futures = {executor.submit(fetch_history_for_symbol, symbol, days): symbol for symbol in safe_symbols}
         for future in as_completed(futures):
             symbol = futures[future]
             try:
                 series = future.result()
                 if series:
-                    histories[symbol] = series
+                    histories[symbol] = ([{"date": row["date"], "close": row["close"]} for row in series]
+                                         if window in (365, 1095) else series)
             except Exception:
                 continue
 
@@ -449,7 +517,7 @@ class Handler(SimpleHTTPRequestHandler):
             except ValueError:
                 days = 30
             try:
-                self.send_json(handle_history(symbols, days))
+                self.send_json(handle_history(symbols, days, int(parse_qs(parsed.query).get("window", ["0"])[0])))
             except Exception as error:
                 self.send_json({"histories": {}, "error": str(error)}, 502)
             return

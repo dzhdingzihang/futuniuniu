@@ -507,7 +507,7 @@ test("updates GitHub using the current file SHA", async () => {
   const calls = [];
   const result = await syncHoldingsToGitHub([holding], { token: "test-token", owner: "example", repo: "piggy" }, async (url, options) => {
     calls.push({ url, options });
-    if (!options.method) return Response.json({ sha: "old-sha" });
+    if (!options.method) return Response.json({ sha: "old-sha", encoding: "base64", content: Buffer.from("[]").toString("base64") });
     return Response.json({ commit: { sha: "commit-sha" }, content: { sha: "file-sha", html_url: "https://example.test/holdings.json" } });
   });
   assert.equal(calls.length, 2);
@@ -760,7 +760,8 @@ test("client submits one idempotent operation and adopts only the authoritative 
   const localIndex = source.indexOf("applySuccessfulHoldingSync(result, operation", syncIndex);
   assert.ok(syncIndex > 0);
   assert.ok(localIndex > syncIndex);
-  assert.match(source, /expectedFileSha: state\.holdingsFileSha \|\| "", operation: operation/);
+  assert.match(source, /syncHoldingsToGitHubClient\(operation, expectedFileSha = state\.holdingsFileSha\)/);
+  assert.match(source, /expectedFileSha: expectedFileSha \|\| "", operation: operation/);
   assert.match(source, /state\.holdingPendingOperation \|\| holdingOperationFromDraft/);
   assert.match(source, /holdingOperationInDocument\(latest\.document, operation\.operationId\)/);
 });
@@ -788,6 +789,69 @@ test("startup paints local holdings before background authority checks", async (
   assert.match(source, /readMarketCache\(\);\s+readRadarCache\(\);\s+rebuildRows\(\);/);
   assert.match(source, /const historyRequest = getJson\("\/api\/history/);
   assert.ok(source.indexOf("const historyRequest = getJson") < source.indexOf("const result = await Promise.all"));
+});
+
+test("client applies the global RMB policy once, exports raw costs and previews changes", async () => {
+  const [app, policyCode] = await Promise.all(["app.js", "holding-cost-policy.js"].map(
+    (name) => readFile(new URL("../assets/" + name, import.meta.url), "utf8")
+  ));
+  const context = vm.createContext({ location: { hash: "" }, localStorage: { getItem: () => null } });
+  new vm.Script(policyCode).runInContext(context);
+  new vm.Script(app.slice(0, app.lastIndexOf("\nstart().catch"))).runInContext(context);
+  const result = JSON.parse(JSON.stringify(vm.runInContext(`(() => {
+    const doc = {version: 2, costPolicy: {buyCny: 2000, sellCny: 1000}, newTradeFeeUsd: {buy: 0, sell: 0}, lots: [
+      {market: "HK", code: "700", buy: {price: 10, qty: 10, purchaseCostCny: 100}, sell: {price: 20, qty: 4, date:"2026-01-01", sellProceedsCny: 80}},
+      {market: "HK", code: "00700", buy: {price: 20, qty: 2, purchaseCostCny: 40}}
+    ]};
+    const rows = holdingsFromDocument(doc);
+    const editor = {buy:"2250", sell:"500"};
+    loadPolicyBaseline(editor, {document:doc, fileSha:"sha"}, false);
+    return {cost: rows.reduce((sum,r) => sum + fixedPurchaseCost(r), 0),
+      proceeds: fixedSaleProceeds(rows.find(r => r.status === "sold")),
+      buyShares: rows.map(r => r.adjustmentCny), exported: readableHoldingsDocument(rows, doc),
+      preview: policyPreview(editor), cnyNative: tradingPnlNative({currency:"CNY", pnlCny:-2050}),
+      usdNative: tradingPnlNative({currency:"USD", status:"sold", cost:10, sellPrice:15, qty:2, pnlCny:-1234})};
+  })()`, context)));
+  assert.equal(result.cost, 2140);
+  assert.equal(result.proceeds, -920);
+  assert.deepEqual(result.buyShares, [1200, 800, 0]);
+  assert.equal(result.exported.lots[0].buy.purchaseCostCny, 100);
+  assert.equal(result.cnyNative, -2050);
+  assert.equal(result.usdNative, 10);
+  assert.match(result.preview, /1 只买入、1 只卖出/);
+  assert.match(result.preview, /增加 ¥250.00/);
+  context.document = { querySelector: () => null };
+  const flow = JSON.parse(JSON.stringify(await vm.runInContext(`(async () => {
+    const canonical = (buyCny, lastOperationId) => ({
+      version: 2, lots: [], costPolicy: {buyCny, sellCny: 1000, lastOperationId}
+    });
+    const editor = { buy:"2500", sell:"1000", operation:null, status:"ready" };
+    loadPolicyBaseline(editor, {document:canonical(2000), fileSha:"before"}, false);
+    state.costPolicyEditor = editor;
+    let committed, timeoutOperationId;
+    const attempts = [];
+    createHoldingOperationId = () => "settings-test";
+    render = () => {};
+    showToast = () => {};
+    adoptConfirmedHoldings = (result) => { committed = result; };
+    syncHoldingsToGitHubClient = async (operation, sha) => {
+      attempts.push(sha);
+      if (sha === "before") throw Object.assign(new Error("文件已更新"), {
+        status:409, payload:{document:canonical(1500),fileSha:"newer"}
+      });
+      timeoutOperationId = operation.operationId;
+      throw Object.assign(new Error("超时"), {uncertain:true});
+    };
+    fetchAuthoritativeHoldings = async () => ({document:canonical(2500,timeoutOperationId),fileSha:"committed"});
+    await saveCostPolicyEditor();
+    const conflict = {latest:editor.policy.buyCny, intended:editor.buy, status:editor.status};
+    await saveCostPolicyEditor();
+    return {conflict, attempts, saved:committed.document.costPolicy, closed:state.costPolicyEditor === null};
+  })()`, context)));
+  assert.deepEqual(flow.conflict, {latest:1500, intended:"2500", status:"error"});
+  assert.deepEqual(flow.attempts, ["before", "newer"]);
+  assert.deepEqual(flow.saved, {buyCny:2500,sellCny:1000,lastOperationId:"settings-test"});
+  assert.equal(flow.closed, true);
 });
 
 test("overview client uses consistent fees, return ratios, 90-day history, and market ranking", async () => {
@@ -874,7 +938,7 @@ test("overview client uses consistent fees, return ratios, 90-day history, and m
   assert.equal(staleAction.action, "等待行情");
   assert.match(staleAction.text, /等待当前或最近有效行情/);
   assert.match(source, /\/api\/history\?symbols=.*&days=90/);
-  assert.match(source, /\[7, 30, 90\]/);
+  assert.match(source, /\[7, 30, 90, 365, 1095\]/);
   assert.match(source, /data-rank-market/);
   assert.match(source, /new Map\(\[\]\.concat\(Array\.from\(state\.quotes\.entries\(\)\), quoteEntries\)\)/);
   assert.match(source, /state\.quoteMeta\[entry\[0\]\] = fetchedAt/);

@@ -775,6 +775,12 @@ body.modal-open { overflow: hidden; }
 .account-metric-rate { flex: 0 0 auto; font-size: 12px; font-weight: 850; white-space: nowrap; }
 .account-metric-card p { margin: auto 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .fee-policy-note { margin: 8px 2px 0; color: #7b8498; font-size: 11px; }
+.cost-policy-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.cost-policy-form { margin-top: 18px; max-width: 640px; padding: 18px; border: 1px solid var(--line-strong); border-radius: 14px; }
+.cost-policy-form h2 { margin: 0; font-size: 17px; }
+.cost-policy-form p { margin: 8px 0; line-height: 1.6; }
+.cost-policy-form .holding-number-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); margin: 14px 0; }
+.cost-policy-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .info-tip { position: relative; display: inline-flex; margin-left: 5px; vertical-align: 1px; outline: none; }
 .info-icon { display: inline-grid; width: 15px; height: 15px; place-items: center; border: 1px solid #aeb8c9; border-radius: 50%; color: #7f8ba0; font-family: Georgia, serif; font-size: 10px; font-style: italic; font-weight: 700; line-height: 1; }
@@ -809,6 +815,7 @@ body.modal-open { overflow: hidden; }
 .overview-canvas-wrap { height: 270px; margin-top: 10px; }
 .chart-estimate-note { color: #8a94a8; }
 .trend-segmented { flex: 0 0 auto; }
+.chart-window-note { margin: 12px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .trend-segmented button { min-width: 58px; min-height: 36px; font-size: 13px; }
 
 .market-badge { display: inline-grid; min-width: 39px; min-height: 28px; place-items: center; padding: 0 7px; border-radius: 7px; background: var(--blue-soft); color: var(--blue); font-size: 12px; font-weight: 900; }
@@ -1600,6 +1607,7 @@ details.radar-detail { padding-top: 0; }
   .overview-chart-card .chart-legend { gap: 9px 14px; font-size: 12px; }
   .chart-estimate-note { flex-basis: 100%; }
   .trend-segmented { align-self: flex-end; }
+  .trend-segmented button { flex: 1; min-width: 0; padding: 0 4px; }
   .overview-canvas-wrap { height: 285px; margin-top: 12px; }
   .overview-ranking-card { padding: 18px 14px; }
   .ranking-heading { align-items: flex-start; flex-direction: column; }
