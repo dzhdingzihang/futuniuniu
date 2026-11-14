@@ -1,8 +1,9 @@
 import { readRadarSnapshotEnvelope } from "../lib/radar-snapshot.js";
+import "../../assets/radar-risk-policy.js";
 
 const EASTMONEY_RADAR_URL = "https://push2delay.eastmoney.com/api/qt/clist/get";
 
-export const RADAR_MODEL_VERSION = "radar-v1.1";
+export const RADAR_MODEL_VERSION = "radar-v1.2";
 export const RADAR_SOURCE = "东方财富行情中心";
 export const RADAR_PAGE_SIZE = 100;
 export const RADAR_PAGE_COUNT = 5;
@@ -161,7 +162,7 @@ function reasonsFor(candidate) {
   else if (Number.isFinite(candidate.metrics.return60d) && candidate.metrics.return60d >= -10 && candidate.metrics.return60d <= 30) reasons.push("60日趋势处于可继续研究区间");
   if (candidate.components.risk >= 14) reasons.push("最近交易日振幅与涨跌速度相对可控");
   if (candidate.components.quality >= 10) reasons.push("估值指标在本市场具有相对可比性");
-  if (!reasons.length) reasons.push("核心行情数据完整，可纳入后续研究");
+  if (!reasons.length) reasons.push("成交额与市值达到候选池筛选条件");
   return reasons.slice(0, 3);
 }
 
@@ -190,7 +191,9 @@ export function scoreRadarCandidates(input) {
   const amounts = sortedMetric(candidates, (item) => Math.log10(item.metrics.amount));
   const marketCaps = sortedMetric(candidates, (item) => Math.log10(item.metrics.marketCap));
   const amplitudes = sortedMetric(candidates, (item) => item.metrics.amplitude, (value) => Number.isFinite(value) && value >= 0);
-  const absoluteChanges = sortedMetric(candidates, (item) => Math.abs(item.metrics.changePct));
+  const absoluteChanges = sortedMetric(candidates, (item) => (
+    Number.isFinite(item.metrics.changePct) ? Math.abs(item.metrics.changePct) : null
+  ));
   const positivePe = sortedMetric(candidates, (item) => item.metrics.pe, (value) => Number.isFinite(value) && value > 0);
   const positivePb = sortedMetric(candidates, (item) => item.metrics.pb, (value) => Number.isFinite(value) && value > 0);
 
@@ -217,13 +220,10 @@ export function scoreRadarCandidates(input) {
       ? 1 - percentile(candidate.metrics.pb, positivePb)
       : 0;
     const quality = round1(peScore * 9 + pbScore * 6);
-    const components = { trend, liquidity, risk, quality };
-    const score = round1(trend + liquidity + risk + quality);
+    const assessed = globalThis.PiggyRadarRisk.assess(candidate.metrics, { trend, liquidity, risk, quality });
     const scored = {
       ...candidate,
-      score,
-      band: score >= 70 ? "priority" : score >= 55 ? "watch" : "reserve",
-      components,
+      ...assessed,
     };
     return { ...scored, reasons: reasonsFor(scored), risks: risksFor(scored) };
   }).sort((left, right) => (
@@ -263,17 +263,37 @@ async function fetchRadarPage(market, page, fetcher, timeoutMs) {
       cf: { cacheTtl: 0 },
       signal: controller.signal,
     });
-    if (!response.ok) throw new RadarError(`东方财富第 ${page} 页返回 HTTP ${response.status}`);
+    if (!response.ok) {
+      const error = new RadarError(`东方财富第 ${page} 页返回 HTTP ${response.status}`);
+      error.retryable = [408, 500, 502, 503, 504].includes(response.status);
+      await response.body?.cancel();
+      throw error;
+    }
     const payload = await response.json();
     if (payload?.rc !== undefined && payload.rc !== 0) throw new RadarError(`东方财富第 ${page} 页返回错误 ${payload.rc}`);
     const diff = payload?.data?.diff;
     if (!diff || typeof diff !== "object") throw new RadarError(`东方财富第 ${page} 页数据缺失`);
     return Array.isArray(diff) ? diff : Object.values(diff);
   } catch (error) {
-    if (error?.name === "AbortError") throw new RadarError(`东方财富第 ${page} 页请求超过 ${timeoutMs}ms`);
+    if (controller.signal.aborted || error?.name === "AbortError") {
+      const timeoutError = new RadarError(`东方财富第 ${page} 页请求超过 ${timeoutMs}ms`);
+      timeoutError.retryable = true;
+      throw timeoutError;
+    }
     throw error;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function fetchRadarPageWithRetry(market, page, fetcher, timeoutMs) {
+  try {
+    return await fetchRadarPage(market, page, fetcher, timeoutMs);
+  } catch (error) {
+    // Retry only this page. Keep the whole scan below the browser's 14s deadline.
+    if (!error?.retryable && !(error instanceof TypeError)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return fetchRadarPage(market, page, fetcher, Math.min(timeoutMs, 4000));
   }
 }
 
@@ -281,7 +301,7 @@ export async function scanRadarMarket({ market, fetcher = fetch, now = () => new
   if (!RADAR_MARKETS[market]) throw new RadarError("请选择 A股、港股或美股", "INVALID_MARKET", 400);
   const pages = await Promise.all(Array.from(
     { length: RADAR_PAGE_COUNT },
-    (_, index) => fetchRadarPage(market, index + 1, fetcher, timeoutMs),
+    (_, index) => fetchRadarPageWithRetry(market, index + 1, fetcher, timeoutMs),
   ));
   const rawRows = pages.flat();
   const byId = new Map();

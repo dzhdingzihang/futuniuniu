@@ -4,7 +4,7 @@
   "main": "index.js",
   "compatibility_date": "2026-08-30",
   "triggers": {
-    "crons": ["10 0 * * *"]
+    "crons": ["10 0 * * *", "40 0 * * *"]
   },
   "kv_namespaces": [
     {

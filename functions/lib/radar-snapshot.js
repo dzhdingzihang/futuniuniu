@@ -15,23 +15,25 @@ function isRecord(value) {
 export function isRadarSnapshotEnvelope(value) {
   return isRecord(value)
     && value.schema === RADAR_SNAPSHOT_SCHEMA
-    && typeof value.publishedAt === "string"
-    && typeof value.attemptedAt === "string"
     && isRecord(value.markets)
+    && (Number.isFinite(Date.parse(value.publishedAt))
+      || (value.publishedAt === null && !Object.keys(value.markets).length))
+    && Number.isFinite(Date.parse(value.attemptedAt))
     && isRecord(value.status)
     && Array.isArray(value.status.freshMarkets)
     && Array.isArray(value.status.staleMarkets)
     && Array.isArray(value.status.unavailableMarkets);
 }
 
-export async function readRadarSnapshotEnvelope(kv) {
+export async function readRadarSnapshotEnvelope(kv, { throwOnError = false } = {}) {
   if (!kv || typeof kv.get !== "function") return null;
   try {
     const stored = await kv.get(RADAR_SNAPSHOT_KEY);
     if (stored === null || stored === undefined || stored === "") return null;
     const value = typeof stored === "string" ? JSON.parse(stored) : stored;
     return isRadarSnapshotEnvelope(value) ? value : null;
-  } catch (_error) {
+  } catch (error) {
+    if (throwOnError) throw error;
     return null;
   }
 }
@@ -62,32 +64,50 @@ function staleSnapshot(snapshot, error, attemptedAt) {
   };
 }
 
-export async function refreshRadarSnapshots({ kv, scanMarket, now = () => new Date() }) {
+function isCurrentMarket(snapshot, attemptedAt) {
+  if (!snapshot || snapshot.loadState !== "fresh" || snapshot.stale || !snapshot.candidates?.length) return false;
+  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" });
+  const scanned = Date.parse(snapshot.fetchedAt);
+  return Number.isFinite(scanned) && date.format(scanned) === date.format(Date.parse(attemptedAt));
+}
+
+export async function refreshRadarSnapshots({ kv, scanMarket, now = () => new Date(), recoveryOnly = false }) {
   if (!kv || typeof kv.get !== "function" || typeof kv.put !== "function") {
     throw new TypeError("缺少 RADAR_SNAPSHOTS KV 绑定");
   }
   if (typeof scanMarket !== "function") throw new TypeError("缺少机会雷达市场扫描函数");
 
-  const previous = await readRadarSnapshotEnvelope(kv);
+  const previous = await readRadarSnapshotEnvelope(kv, { throwOnError: true });
   const attemptedAt = isoTimestamp(now());
+  if (previous && Date.parse(previous.attemptedAt) > Date.parse(attemptedAt)) {
+    return { written: false, envelope: previous, failedMarkets: [], failures: {} };
+  }
   const markets = {};
   const freshMarkets = [];
   const staleMarkets = [];
   const unavailableMarkets = [];
   const failures = {};
+  let scanned = 0;
 
   for (const market of RADAR_SNAPSHOT_MARKETS) {
+    const inherited = previous?.markets?.[market];
+    if (recoveryOnly && isCurrentMarket(inherited, attemptedAt)) {
+      markets[market] = inherited;
+      freshMarkets.push(market);
+      continue;
+    }
+    scanned++;
     try {
       const snapshot = await scanMarket(market);
-      if (!isRecord(snapshot) || snapshot.market !== market || !Array.isArray(snapshot.candidates)) {
+      if (!isRecord(snapshot) || snapshot.market !== market || !Array.isArray(snapshot.candidates)
+          || !snapshot.candidates.length || !Number.isFinite(Date.parse(snapshot.fetchedAt))) {
         throw Object.assign(new Error(`${market} 扫描结果结构无效`), { code: "RADAR_INVALID_SNAPSHOT" });
       }
       markets[market] = freshSnapshot(snapshot);
       freshMarkets.push(market);
     } catch (error) {
       failures[market] = refreshError(error, attemptedAt);
-      const inherited = previous?.markets?.[market];
-      if (isRecord(inherited) && Array.isArray(inherited.candidates)) {
+      if (isRecord(inherited) && Array.isArray(inherited.candidates) && inherited.candidates.length) {
         markets[market] = staleSnapshot(inherited, error, attemptedAt);
         staleMarkets.push(market);
       } else {
@@ -97,18 +117,11 @@ export async function refreshRadarSnapshots({ kv, scanMarket, now = () => new Da
   }
 
   const failedMarkets = RADAR_SNAPSHOT_MARKETS.filter((market) => failures[market]);
-  if (!freshMarkets.length) {
-    return {
-      written: false,
-      envelope: previous,
-      failedMarkets,
-      failures,
-    };
-  }
+  if (!scanned) return { written: false, envelope: previous, failedMarkets, failures };
 
   const envelope = {
     schema: RADAR_SNAPSHOT_SCHEMA,
-    publishedAt: attemptedAt,
+    publishedAt: scanned > failedMarkets.length ? attemptedAt : previous?.publishedAt ?? null,
     attemptedAt,
     markets,
     status: { freshMarkets, staleMarkets, unavailableMarkets },

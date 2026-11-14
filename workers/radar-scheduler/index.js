@@ -6,12 +6,13 @@ export async function runScheduledRadarRefresh({
   fetcher = fetch,
   now = () => new Date(),
   scanMarket,
+  recoveryOnly = false,
 }) {
   if (!env?.RADAR_SNAPSHOTS) throw new TypeError("缺少 RADAR_SNAPSHOTS KV 绑定");
   const scanner = typeof scanMarket === "function"
     ? scanMarket
     : (market) => scanRadarMarket({ market, fetcher, now });
-  return refreshRadarSnapshots({ kv: env.RADAR_SNAPSHOTS, scanMarket: scanner, now });
+  return refreshRadarSnapshots({ kv: env.RADAR_SNAPSHOTS, scanMarket: scanner, now, recoveryOnly });
 }
 
 export function createRadarScheduler(refresh = runScheduledRadarRefresh) {
@@ -23,6 +24,7 @@ export function createRadarScheduler(refresh = runScheduledRadarRefresh) {
       context.waitUntil(refresh({
         env,
         now: () => new Date(scheduledTime),
+        recoveryOnly: controller?.cron === "40 0 * * *",
       }));
     },
   };

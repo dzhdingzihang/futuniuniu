@@ -1277,6 +1277,7 @@ test("radar top three is explicit per market, excludes holdings, and explains se
       const currency = market === "A股" ? "CNY" : market === "港股" ? "HKD" : "USD";
       return {
         id: market + ":" + code, market, code, name: market + code, currency,
+        topEligible: true,
         sina: market === "A股" ? "sh" + code : market === "港股" ? "hk" + code : "gb_" + code.toLowerCase(),
         score, band: score >= 70 ? "priority" : score >= 55 ? "watch" : "reserve",
         components: { trend: 30, liquidity: 25, risk: 18, quality: 12 },
@@ -1289,6 +1290,7 @@ test("radar top three is explicit per market, excludes holdings, and explains se
     state.rows = [];
     state.radarRows = [
       candidate("A股", "600001", 99, "fresh", "当前持仓应被排除"),
+      { ...candidate("A股", "600099", 99, "fresh", "超出风险门槛"), topEligible: false },
       candidate("A股", "600002", 95, "cached", "缓存高分不抢占今日结果"),
       candidate("A股", "600003", 91, "fresh", "趋势与流动性领先 & 可复核"),
       candidate("A股", "600004", 88, "fresh", "短期波动更稳定"),
@@ -1358,7 +1360,7 @@ test("radar price model accepts 90 valid bars and fails closed for thin malforme
       score: 82, components: { trend: 30, liquidity: 24, risk: 16, quality: 12 },
       metrics: { price: 123, changePct: 1.2, return60d: 25, amount: 5e9, marketCap: 2e11, pe: 18 },
       reasons: ["成交活跃度位于本市场前列"], risks: ["分数不代表上涨概率"],
-      source: "东方财富行情中心", quoteUpdatedAt: new Date().toISOString(), fetchedAt: new Date().toISOString(), loadState: "fresh"
+      source: "东方财富行情中心", quoteUpdatedAt: now.toISOString(), fetchedAt: now.toISOString(), loadState: "fresh"
     };
     const malformed = history.map(function (point) { return Object.assign({}, point); });
     malformed[malformed.length - 3].high = malformed[malformed.length - 3].close - 0.01;
@@ -1368,6 +1370,8 @@ test("radar price model accepts 90 valid bars and fails closed for thin malforme
       return { date: point.date, open: close, high: close * 1.02, low: close * 0.98, close: close };
     });
     const valid = radarTenDayLevels(item, history, now);
+    const noQuoteDate = radarTenDayLevels({ ...item, quoteUpdatedAt: null }, history, now);
+    const expiredQuote = radarTenDayLevels({ ...item, quoteUpdatedAt: dates.at(-3) + "T08:00:00Z" }, history, now);
     const thin = radarTenDayLevels(item, history.slice(-60), now);
     const invalid = radarTenDayLevels(item, malformed, now);
     const unstable = radarTenDayLevels(item, extreme, now);
@@ -1379,6 +1383,7 @@ test("radar price model accepts 90 valid bars and fails closed for thin malforme
     const pricePlan = planStart >= 0 && planEnd >= 0 ? markup.slice(planStart, planEnd + 5) : "";
     return {
       valid: valid,
+      noQuoteDate: noQuoteDate.status, expiredQuote: expiredQuote.status,
       thin: thin,
       invalid: invalid,
       unstable: unstable,
@@ -1388,6 +1393,8 @@ test("radar price model accepts 90 valid bars and fails closed for thin malforme
   })()`, context));
 
   assert.equal(result.valid.status, "ready");
+  assert.equal(result.noQuoteDate, "stale");
+  assert.equal(result.expiredQuote, "stale");
   assert.equal(result.valid.bars, 90);
   assert.ok(result.valid.upper > 123);
   assert.ok(result.valid.stop > 0 && result.valid.stop < 123);
@@ -1419,7 +1426,7 @@ test("radar history batches the visible page plus off-page market Top 3 and keep
       const code = String(600001 + index);
       return {
         id: "A股:" + code, market: "A股", code: code, name: "候选" + (index + 1), currency: "CNY", sina: "sh" + code,
-        score: 100 - index, components: { trend: 30, liquidity: 24, risk: 16, quality: 12 },
+        topEligible: true, score: 100 - index, components: { trend: 30, liquidity: 24, risk: 16, quality: 12 },
         metrics: { price: 100 + index, changePct: 1, return60d: 20, amount: 5e9, marketCap: 2e11, pe: 18 },
         reasons: ["用于批次测试"], risks: ["仅供研究"], source: "测试行情",
         quoteUpdatedAt: new Date().toISOString(), fetchedAt: new Date().toISOString(), loadState: "fresh"
@@ -1565,7 +1572,7 @@ test("radar API maps all three markets and scans exactly five bounded pages", as
       poolSize: payload.poolSize,
     }, {
       market: item.market,
-      modelVersion: "radar-v1.1",
+      modelVersion: "radar-v1.2",
       source: "东方财富行情中心",
       fetchedAt: "2026-08-17T00:00:00.000Z",
       rawSize: 500,

@@ -7,7 +7,7 @@ GitHub main ─→ Cloudflare Pages / Pages Functions ─→ alixjd.com
                                   │
                                   └── 只读 RADAR_SNAPSHOTS KV
 
-Cron Worker（每日 00:10 UTC / 北京时间 08:10）
+Cron Worker（北京时间每日 08:10 全量扫描、08:40 补扫）
             └── 扫描 A 股、港股、美股 ─→ 写入同一 RADAR_SNAPSHOTS KV
 ```
 
@@ -63,7 +63,7 @@ schema: radar-snapshot-v2
 markets: A股 / 港股 / 美股
 ```
 
-Worker 每次按市场扫描。某个市场失败时，如果 KV 中有上一份有效快照，则继承它并标记 `stale`；没有可继承数据则标记 `unavailable`。三个市场全部失败时，Worker **不写入 KV**，保留上一份完整可用快照。
+Worker 主任务按市场扫描。失败市场有历史候选时标记 `stale`，首次无历史候选时标记 `unavailable`。08:40 只补扫当天尚未成功的市场。所有市场均已更新时跳过补扫；实际扫描全部失败时写入本次 `attemptedAt`，保留原候选、行情时间和 `publishedAt`。首次全失败时 `publishedAt` 为 null。
 
 Pages Functions 行为：
 
@@ -93,11 +93,11 @@ Worker 配置已包含：
 {
   "name": "futuniuniu-radar-scheduler",
   "main": "index.js",
-  "triggers": { "crons": ["10 0 * * *"] }
+  "triggers": { "crons": ["10 0 * * *", "40 0 * * *"] }
 }
 ```
 
-Cloudflare Cron 使用 UTC，`10 0 * * *` 即 UTC 00:10，对应北京时间每日 08:10。在获得明确发布授权后，Worker 部署命令为：
+Cloudflare Cron 使用 UTC。两个触发时间分别对应北京时间 08:10 和 08:40。部署 Worker 的命令为：
 
 ```bash
 npx wrangler deploy --config workers/radar-scheduler/wrangler.jsonc

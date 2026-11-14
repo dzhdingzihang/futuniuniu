@@ -59,7 +59,7 @@ function memoryKv(initial = null) {
   };
 }
 
-test("radar percentile optimization preserves the exact legacy scores, ties, reasons, and ordering", () => {
+test("radar percentiles preserve ordinary ties and scores while volatility reduces eligible points", () => {
   const values = [
     ["AAA", 1, 5, 1e9, 8e10, 20, 2, 3, 1],
     ["BBB", 1, 5, 1e9, 8e10, 20, 2, 3, 1],
@@ -83,12 +83,12 @@ test("radar percentile optimization preserves the exact legacy scores, ties, rea
   assert.deepEqual(
     scoreRadarCandidates(candidates).map(({ code, score, band, components, reasons, risks }) => ({ code, score, band, components, reasons, risks })),
     [
-      { code: "DDD", score: 80.1, band: "priority", components: { trend: 35, liquidity: 30, risk: 13.6, quality: 1.5 }, reasons: ["成交活跃度位于本市场前列", "60日趋势与最近交易日动量位于本市场前列"], risks: ["最近交易日波动较大，避免把短期冲高当成确定性机会"] },
+      { code: "DDD", score: 74.1, band: "priority", components: { trend: 35, liquidity: 30, risk: 7.6, quality: 1.5 }, reasons: ["成交活跃度位于本市场前列", "60日趋势与最近交易日动量位于本市场前列"], risks: ["最近交易日波动较大，避免把短期冲高当成确定性机会"] },
       { code: "AAA", score: 58.9, band: "watch", components: { trend: 19.5, liquidity: 18, risk: 13.1, quality: 8.3 }, reasons: ["60日趋势处于可继续研究区间"], risks: ["分数仅表示本市场内的研究优先级，不代表上涨概率"] },
       { code: "BBB", score: 58.9, band: "watch", components: { trend: 19.5, liquidity: 18, risk: 13.1, quality: 8.3 }, reasons: ["60日趋势处于可继续研究区间"], risks: ["分数仅表示本市场内的研究优先级，不代表上涨概率"] },
       { code: "FFF", score: 42.5, band: "reserve", components: { trend: 16.5, liquidity: 18, risk: 8, quality: 0 }, reasons: ["60日趋势处于可继续研究区间"], risks: ["市盈率缺失或为负，质量分不能代替基本面核查", "市净率处于较高水平，估值容错需要单独评估"] },
       { code: "EEE", score: 15, band: "reserve", components: { trend: 0, liquidity: 0, risk: 0, quality: 15 }, reasons: ["估值指标在本市场具有相对可比性"], risks: ["最近交易日波动较大，避免把短期冲高当成确定性机会"] },
-      { code: "CCC", score: 14.2, band: "reserve", components: { trend: 2, liquidity: 6, risk: 6.2, quality: 0 }, reasons: ["核心行情数据完整，可纳入后续研究"], risks: ["最近交易日波动较大，避免把短期冲高当成确定性机会", "市盈率缺失或为负，质量分不能代替基本面核查"] },
+      { code: "CCC", score: 8.2, band: "reserve", components: { trend: 2, liquidity: 6, risk: 0.2, quality: 0 }, reasons: ["成交额与市值达到候选池筛选条件"], risks: ["最近交易日波动较大，避免把短期冲高当成确定性机会", "市盈率缺失或为负，质量分不能代替基本面核查"] },
     ],
   );
 });
@@ -152,7 +152,7 @@ test("partial refresh inherits an old market as stale and never invents freshnes
   assert.deepEqual(saved.status, { freshMarkets: ["美股"], staleMarkets: ["港股"], unavailableMarkets: ["A股"] });
 });
 
-test("an all-market failure does not overwrite either an old envelope or an empty namespace", async () => {
+test("an all-market failure records the attempt and preserves every previous candidate and publication time", async () => {
   const old = envelope({ "A股": { ...marketSnapshot("A股", "2026-08-29T00:10:00.000Z"), loadState: "fresh", stale: false, error: null } });
   for (const initial of [old, null]) {
     const kv = memoryKv(initial);
@@ -161,11 +161,17 @@ test("an all-market failure does not overwrite either an old envelope or an empt
       now: () => new Date("2026-08-30T00:10:00.000Z"),
       scanMarket: async (market) => { throw new Error(`${market} failed`); },
     });
-    assert.equal(result.written, false);
-    assert.equal(kv.calls.put.length, 0);
-    assert.deepEqual(kv.current(), initial);
+    assert.equal(result.written, true);
+    assert.equal(kv.calls.put.length, 1);
     assert.deepEqual(result.failedMarkets, MARKET_ORDER);
-    assert.deepEqual(result.envelope, initial);
+    const saved = await readRadarSnapshotEnvelope(kv);
+    assert.deepEqual(saved, result.envelope);
+    assert.equal(saved.attemptedAt, "2026-08-30T00:10:00.000Z");
+    assert.equal(saved.publishedAt, initial?.publishedAt ?? null);
+    assert.deepEqual(saved.status.freshMarkets, []);
+    assert.deepEqual(saved.status.staleMarkets, initial ? ["A股"] : []);
+    assert.deepEqual(saved.status.unavailableMarkets, initial ? ["港股", "美股"] : MARKET_ORDER);
+    assert.deepEqual(saved.markets["A股"]?.candidates, initial?.markets["A股"].candidates);
   }
 });
 
@@ -264,7 +270,7 @@ test("scheduler delegates one refresh to waitUntil and wrangler declares the dai
 
   const configText = await readFile(new URL("../workers/radar-scheduler/wrangler.jsonc", import.meta.url), "utf8");
   const config = JSON.parse(configText.replace(/^\s*\/\/.*$/gm, ""));
-  assert.deepEqual(config.triggers.crons, ["10 0 * * *"]);
+  assert.deepEqual(config.triggers.crons, ["10 0 * * *", "40 0 * * *"]);
   assert.equal(config.kv_namespaces[0].binding, "RADAR_SNAPSHOTS");
 
   const pagesConfig = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
