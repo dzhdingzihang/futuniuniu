@@ -2289,15 +2289,15 @@ function radarTenDayLevels(item, history, now) {
   const series = completedRadarHistory(history, item && item.market, now);
   const baseDate = series.length ? last(series).date : "";
   if (series.length < 61) return radarLevelUnavailable("insufficient", "历史日线 " + series.length + "/61", series.length, baseDate);
-  const current = optionalNumber(item && item.metrics && item.metrics.price);
-  if (!Number.isFinite(current) || current <= 0) return radarLevelUnavailable("invalid", "当前价格不可用", series.length, baseDate);
+  const quotedPrice = optionalNumber(item && item.metrics && item.metrics.price);
+  if (!Number.isFinite(quotedPrice) || quotedPrice <= 0) return radarLevelUnavailable("invalid", "当前价格不可用", series.length, baseDate);
   const marketDate = radarMarketClock(item.market, now).date;
   if (historyAgeDays(baseDate, marketDate) > 10) return radarLevelUnavailable("stale", "历史行情已超过10天", series.length, baseDate);
   const quotedAt = Date.parse(item.quoteUpdatedAt || "");
   if (!Number.isFinite(quotedAt)) return radarLevelUnavailable("stale", "缺少可核对的报价日期", series.length, baseDate);
   const quoteDate = radarMarketClock(item.market, new Date(quotedAt)).date;
   if (quotedAt > (now || new Date()).getTime() + RADAR_FUTURE_TOLERANCE_MS ||
-      historyAgeDays(quoteDate, marketDate) > 10 || quoteDate < baseDate) {
+      historyAgeDays(quoteDate, marketDate) > 10) {
     return radarLevelUnavailable("stale", "报价与最新日线日期不匹配", series.length, baseDate);
   }
 
@@ -2327,10 +2327,14 @@ function radarTenDayLevels(item, history, now) {
   const sigmaEffective = Math.max(sigma20, 0.75 * sigma60);
   const atr = averageTrueRange(recent, 14);
   const latestClose = last(recent).close;
+  // If the ranking is older, its snapshot quote and percentage change belong to
+  // that older session. Anchor both reference prices to the verified later close.
+  const useLatestClose = baseDate > quoteDate;
+  const current = useLatestClose ? latestClose : quotedPrice;
   if (![sigma20, sigma60, sigmaEffective, atr, latestClose].every(Number.isFinite) || sigmaEffective <= 0 || atr <= 0) {
     return radarLevelUnavailable("unstable", "近期波动数据不足", series.length, baseDate);
   }
-  if (Math.abs(Math.log(current / latestClose)) > Math.log(1.25)) {
+  if (Math.abs(Math.log(quotedPrice / latestClose)) > Math.log(1.25)) {
     return radarLevelUnavailable("unstable", "当前价与历史收盘偏离过大", series.length, baseDate);
   }
 
@@ -2360,6 +2364,7 @@ function radarTenDayLevels(item, history, now) {
 
   return {
     status: "ready", reason: "基于日对数波动与ATR的10个交易日情景", bars: series.length, baseDate: baseDate,
+    referenceClose: useLatestClose ? current : null,
     upper: roundedUpper, upperPct: (roundedUpper / current - 1) * 100,
     stop: roundedStop, stopPct: Number.isFinite(roundedStop) && roundedStop > 0 && roundedStop < roundedCurrent ? (roundedStop / current - 1) * 100 : NaN,
     stopReason: Number.isFinite(roundedStop) && roundedStop > 0 && roundedStop < roundedCurrent ? "日收盘低于该价位触发复核" : "没有通过3%–15%距离校验的风控线",
@@ -2822,7 +2827,8 @@ function radarPricePlanMarkup(item, inTopThree = false) {
   const cached = radarEffectiveLoadState(item) !== "fresh";
   const quoteTime = (cached ? "缓存 · " : "") + radarQuoteTimestamp(item);
   const dailyChange = Number.isFinite(optionalNumber(metrics.changePct)) ? "当日 " + pct(metrics.changePct) : "当日涨跌待核验";
-  const quoteLabel = inTopThree ? dailyChange : quoteTime + " · " + dailyChange;
+  const hasNewerClose = Number.isFinite(levels.referenceClose);
+  const quoteLabel = hasNewerClose ? levels.baseDate + " 收盘" : inTopThree ? dailyChange : quoteTime + " · " + dailyChange;
   const loading = levels.status === "loading" || levels.loading;
   const wrapperClass = "radar-price-plan " + (loading ? "is-loading" : levels.status === "ready" ? "is-ready" : levels.status === "error" ? "is-error" : "is-unavailable");
   const upperReady = levels.status === "ready" && Number.isFinite(levels.upper) && Number.isFinite(levels.upperPct);
@@ -2832,7 +2838,7 @@ function radarPricePlanMarkup(item, inTopThree = false) {
   const upperNote = upperReady ? "上行空间 " + pct(levels.upperPct) : levels.reason;
   const stopNote = stopReady ? "距现价 " + pct(levels.stopPct) : levels.status === "ready" ? levels.stopReason : "待日线核验";
   return '<dl class="' + wrapperClass + '" aria-label="' + escapeHtml(item.name) + '未来10个交易日价格参考" aria-busy="' + loading + '">' +
-    '<div class="radar-price-point is-current"><dt>当前价</dt><dd>' + nativeMoney(metrics.price, item.currency) + '</dd><small>' + escapeHtml(quoteLabel) + '</small></div>' +
+    '<div class="radar-price-point is-current"><dt>' + (hasNewerClose ? "最近收盘价" : "当前价") + '</dt><dd>' + nativeMoney(hasNewerClose ? levels.referenceClose : metrics.price, item.currency) + '</dd><small>' + escapeHtml(quoteLabel) + '</small></div>' +
     '<div class="radar-price-point is-upper"><dt>10日参考上沿<span class="visually-hidden">，波动情景，非目标价</span></dt><dd>' + upperValue + '</dd><small>' + escapeHtml(upperNote) + '</small></div>' +
     '<div class="radar-price-point is-stop"><dt>风控止损参考<span class="visually-hidden">，日收盘低于时复核</span></dt><dd>' + stopValue + '</dd><small>' + escapeHtml(stopNote) + '</small></div></dl>';
 }
@@ -2906,7 +2912,7 @@ function radarTopThreeMarket(market) {
       '<div class="radar-top3-security"><strong>' + escapeHtml(item.name) + '</strong><span>' + escapeHtml(item.code) + ' · ' + escapeHtml(item.currency) + '</span></div>' +
       '<div class="radar-top3-score"><strong>' + (Number.isFinite(score) ? score.toFixed(1) : "—") + '</strong><small>研究分</small></div>' +
       radarPricePlanMarkup(item, true) + radarTopThreeEvidence(item) +
-      '<footer class="radar-top3-tools"><small>报价 ' + escapeHtml(radarQuoteTimestamp(item)) + '</small>' +
+      '<footer class="radar-top3-tools"><small>评分快照 ' + escapeHtml(radarQuoteTimestamp(item)) + '</small>' +
       '<button type="button" data-toggle-watch="' + escapeHtml(item.id) + '" aria-pressed="' + saved + '" aria-label="将' + escapeHtml(item.name) + action + '">' + action + '</button></footer></li>';
   }).join("") + '</ol>' + (rows.length < 3 ? '<p class="radar-top3-shortfall">本期仅 ' + rows.length + ' 只符合入榜条件。</p>' : '') :
     '<div class="radar-top3-empty"><strong>' + (hasScannedCandidates ? "暂无符合入榜条件的股票" : "暂无可展示候选") + '</strong><p>' + escapeHtml(emptyReason) + '</p></div>';

@@ -1383,7 +1383,8 @@ test("radar price model accepts 90 valid bars and fails closed for thin malforme
     const pricePlan = planStart >= 0 && planEnd >= 0 ? markup.slice(planStart, planEnd + 5) : "";
     return {
       valid: valid,
-      noQuoteDate: noQuoteDate.status, expiredQuote: expiredQuote.status,
+      noQuoteDate: noQuoteDate.status, pastQuoteState: expiredQuote.status,
+      rebased: expiredQuote.referenceClose === history.at(-1).close && expiredQuote.upper > expiredQuote.referenceClose,
       thin: thin,
       invalid: invalid,
       unstable: unstable,
@@ -1394,7 +1395,8 @@ test("radar price model accepts 90 valid bars and fails closed for thin malforme
 
   assert.equal(result.valid.status, "ready");
   assert.equal(result.noQuoteDate, "stale");
-  assert.equal(result.expiredQuote, "stale");
+  assert.equal(result.pastQuoteState, "ready");
+  assert.equal(result.rebased, true);
   assert.equal(result.valid.bars, 90);
   assert.ok(result.valid.upper > 123);
   assert.ok(result.valid.stop > 0 && result.valid.stop < 123);
