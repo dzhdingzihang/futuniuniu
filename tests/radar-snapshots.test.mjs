@@ -271,7 +271,7 @@ test("scheduler delegates one refresh to waitUntil and wrangler declares the dai
 
   const configText = await readFile(new URL("../workers/radar-scheduler/wrangler.jsonc", import.meta.url), "utf8");
   const config = JSON.parse(configText.replace(/^\s*\/\/.*$/gm, ""));
-  assert.deepEqual(config.triggers.crons, ["10 0 * * *", "40 0 * * *"]);
+  assert.deepEqual(config.triggers.crons, ["10,40 0 * * *", "0,5,10,15,20,24,25,30,35,40,45,50,55 1-10,13-23 * * *"]);
   assert.equal(config.kv_namespaces[0].binding, "RADAR_SNAPSHOTS");
 
   const pagesConfig = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");

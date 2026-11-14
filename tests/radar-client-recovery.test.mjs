@@ -30,7 +30,7 @@ test("a previous snapshot is rescored once and overheated stocks remain in the p
 test("changing the visible page releases canceled history requests for immediate retry", () => {
   const run = dashboard();
   const result = run(`(() => {
-    state.tab = "radar";
+    state.tab = "radar"; state.radarScope = "market";
     radarPageWindow = () => ({pageRows:[{sina:"gb_a"}, {sina:"gb_new"}]});
     state.radarVisibleFingerprint = "gb_a,gb_old";
     state.radarHistoryStatus = {gb_a:{state:"loading"},gb_old:{state:"loading"},gb_ready:{state:"ready"}};

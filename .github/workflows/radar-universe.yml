@@ -25,18 +25,23 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install data readers
-        run: python -m pip install openpyxl==3.1.5 pypdf==6.21.4
+        run: python -m pip install openpyxl==3.1.5 pypdf==6.21.4 "exchange_calendars>=4.13.2,<5"
       - name: Refresh official memberships
         run: python scripts/update_radar_universe.py
+      - name: Refresh exchange calendars
+        run: python scripts/update_radar_calendar.py
+      - name: Refresh dated industry classifications
+        continue-on-error: true
+        run: python scripts/update_radar_industries.py
       - name: Publish changed membership
         run: |
-          if git diff --quiet -- assets/radar-universe.json; then
+          if git diff --quiet -- assets/radar-universe.json assets/radar-calendar.json assets/radar-industries.json; then
             echo "Membership unchanged."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- assets/radar-universe.json
+          git add -- assets/radar-universe.json assets/radar-calendar.json assets/radar-industries.json
           git commit -m "Update official radar membership"
           git pull --rebase origin main
           git push origin HEAD:main

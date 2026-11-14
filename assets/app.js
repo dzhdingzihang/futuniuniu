@@ -82,10 +82,10 @@ const METRIC_HELP = {
   actionPrice: "执行价位由当前价、成本价、持仓盈亏和日内波动自动推导；用于明确下一步的风控或分批操作参考。"
 };
 
-const openGrowthRadar = /(?:^|[?&])radar=growth(?:&|$)/.test(location.search || "");
+const linkedRadarScope = /(?:^|[?&])radar=(preopen|intraday|growth|market)(?:&|$)/.exec(location.search || "")?.[1];
 
 const state = {
-  tab: VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : openGrowthRadar ? "radar" : "overview",
+  tab: VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : linkedRadarScope ? "radar" : "overview",
   market: "全部",
   tradeMarket: "全部",
   tradeDateStart: "",
@@ -93,12 +93,21 @@ const state = {
   tradeSort: "date",
   tradeSortDirection: "desc",
   watchMarket: "全部",
-  radarBand: openGrowthRadar ? "all" : "priority",
+  radarBand: linkedRadarScope === "growth" ? "all" : "priority",
   radarSort: "score",
   radarQuery: "",
   radarPage: 1,
   radarRows: [],
-  radarScope: openGrowthRadar ? "growth" : "market",
+  radarScope: linkedRadarScope || "preopen",
+  preopenData: null,
+  preopenError: "",
+  preopenLoading: false,
+  preopenOpen: {},
+  preopenReviewMarket: "A股",
+  intradayData: null,
+  intradayError: "",
+  intradayLoading: false,
+  intradayHistoryOpen: {},
   radarSegmentRows: [],
   radarMarkets: {},
   radarStatus: "idle",
@@ -652,7 +661,35 @@ function adoptRadarEnvelope(envelope) {
   return count;
 }
 
+function dailyRadarScope(scope = state.radarScope) {
+  return scope === "intraday" || scope === "preopen";
+}
+
+async function loadDailyRadar(scope = state.radarScope) {
+  if (!dailyRadarScope(scope) || state[scope + "Loading"] || state.tab !== "radar") return;
+  state[scope + "Loading"] = true;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12000);
+  render();
+  try {
+    const response = await fetch("/api/" + scope + "-radar", { signal: controller.signal, cache: "no-store" });
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    if (data?.modelVersion !== scope + "-v1" || !data.markets || !Number.isFinite(Date.parse(data.asOf))) throw new Error();
+    state[scope + "Data"] = data;
+    state[scope + "Error"] = "";
+  } catch (error) {
+    const label = scope === "preopen" ? "盘前预测" : "盘中行情";
+    state[scope + "Error"] = label + (error.name === "AbortError" ? "读取超时，请刷新重试。" : "暂时读取失败，请刷新重试。");
+  } finally {
+    window.clearTimeout(timeout);
+    state[scope + "Loading"] = false;
+    if (state.tab === "radar" && state.radarScope === scope) render();
+  }
+}
+
 async function loadRadar(force) {
+  if (dailyRadarScope()) return loadDailyRadar();
   if (state.radarStatus === "loading") return;
   let targetMarkets = RADAR_MARKETS.slice();
   const requestId = ++state.radarRequestId;
@@ -1216,14 +1253,15 @@ function preferredScrollBehavior() {
 }
 
 function topNav() {
-  const isBusy = state.isRefreshing || state.radarStatus === "loading";
+  const isBusy = state.tab === "radar" ? (dailyRadarScope() ? state[state.radarScope + "Loading"] : state.radarStatus === "loading") : state.isRefreshing;
+  const updateLabel = state.tab === "radar" && dailyRadarScope() ? (state[state.radarScope + "Data"]?.asOf ? radarTimestamp(state[state.radarScope + "Data"].asOf) : "待更新") : state.updatedAt;
   const petDefinition = PET_STATES[brandVisual.petState] || PET_STATES.idle;
   const storedCoins = Array.from({ length: BRAND_COIN_MAX }, function (_, index) {
     return "<i class=\"" + (index < brandVisual.coinCount ? "is-stored" : "") + "\" data-stored-coin=\"" + index + "\"></i>";
   }).join("");
   const updateStatus = isBusy
     ? "<span class=\"market-refresh-status\" role=\"status\" aria-live=\"polite\"><img src=\"assets/pig-logo.png\" alt=\"\"/>" + (state.tab === "radar" ? "小猪正在读取机会" : "小猪正在核算行情") + "</span>"
-    : "<span class=\"updated\" role=\"status\">更新于 " + escapeHtml(state.updatedAt || "待更新") + "</span>";
+    : "<span class=\"updated\" role=\"status\">更新于 " + escapeHtml(updateLabel || "待更新") + "</span>";
   return "<header class=\"site-header\"><a class=\"brand\" href=\"#overview\" aria-label=\"猪猪存钱罐 · 小猪状态：" + escapeHtml(petDefinition.label) + " · 返回总览\"><span class=\"brand-scene\" aria-hidden=\"true\"><span class=\"brand-pig-stage\" data-pet-state=\"" + escapeHtml(brandVisual.petState) + "\" data-pet-label=\"" + escapeHtml(petDefinition.label) + "\"><span class=\"brand-pig-sprite\"></span></span><span class=\"brand-wordmark\"><strong data-text=\"猪猪存钱罐\">猪猪存钱罐</strong></span><span class=\"brand-jar-stage\"><span class=\"jar-coin-bank\">" + storedCoins + "</span><span class=\"brand-coins\"><i></i><i></i><i></i><i></i></span><img class=\"brand-jar\" src=\"assets/glass-savings-jar-v1.png\" alt=\"\"/></span></span></a><nav class=\"global-nav\" aria-label=\"主导航\">" +
     NAV_ITEMS.map(function (item) { return "<button class=\"nav-link " + (state.tab === item[0] ? "active" : "") + "\" " + (state.tab === item[0] ? "aria-current=\"page\" " : "") + "type=\"button\" data-tab=\"" + item[0] + "\">" + navIcon(item[0]) + "<span class=\"nav-label\">" + item[1] + "</span></button>"; }).join("") +
     "</nav><div class=\"header-tools\">" + updateStatus + "<div class=\"header-action-group\"><button class=\"header-action-button edit\" type=\"button\" data-open-holding-editor=\"holding\" data-editor-trigger=\"header\">" + headerActionIcon("edit") + "<span>记录交易</span></button><button class=\"header-action-button refresh\" type=\"button\" data-refresh=\"1\"" + (isBusy ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("refresh") + "<span>刷新</span></button><button class=\"header-action-button logout\" type=\"button\" data-logout aria-label=\"" + (state.isLoggingOut ? "正在退出登录" : "退出登录") + "\"" + (state.isLoggingOut ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("logout") + "<span>" + (state.isLoggingOut ? "退出中" : "退出") + "</span></button></div></div></header>";
@@ -2696,7 +2734,7 @@ async function loadVisibleRadarHistories(expectedFingerprint) {
   const view = radarPageWindow();
   const targets = radarHistoryTargets(view.pageRows);
   const fingerprint = radarVisibleFingerprint(targets);
-  if (!fingerprint || fingerprint !== expectedFingerprint || state.tab !== "radar") return;
+  if (!fingerprint || fingerprint !== expectedFingerprint || state.tab !== "radar" || dailyRadarScope()) return;
   const missing = targets.filter(function (item) {
     const status = state.radarHistoryStatus[item.sina];
     return item.sina && radarHistoryNeedsRefresh(item.sina) && (!status || status.state !== "loading");
@@ -2742,7 +2780,7 @@ async function loadVisibleRadarHistories(expectedFingerprint) {
 }
 
 function scheduleVisibleRadarHistoryLoad() {
-  if (state.tab !== "radar") return;
+  if (state.tab !== "radar" || dailyRadarScope()) return;
   const view = radarPageWindow();
   const targets = radarHistoryTargets(view.pageRows);
   const fingerprint = radarVisibleFingerprint(targets);
@@ -3015,16 +3053,318 @@ function radarWatchAside() {
   }).join("") : "<div class=\"radar-empty\"><strong>还没有观察标的</strong><p>先展开评分依据，再把值得继续研究的股票加入这里。</p></div>") + "</aside>";
 }
 
+function radarScopeControls() {
+  const scopes = [["preopen", "盘前预测"], ["intraday", "盘中确认"], ["growth", "成长板块"], ["market", "全市场"]];
+  return '<div class="radar-scope-switch" role="group" aria-label="机会雷达视图">' +
+    scopes.map(([key, label]) => '<button type="button" data-radar-scope="' + key + '" aria-pressed="' +
+      (state.radarScope === key) + '">' + label + '</button>').join("") + '</div>';
+}
+
+const INTRADAY_CLOCKS = {
+  "A股": { zone: "Asia/Shanghai", label: "北京时间", lunch: [690, 780] },
+  "港股": { zone: "Asia/Hong_Kong", label: "香港时间", lunch: [720, 780] },
+  "美股": { zone: "America/New_York", label: "美东时间" }
+};
+const INTRADAY_PHASES = { preopen: "未开盘", open: "交易中", break: "午间休市", closed: "已收盘", holiday: "休市" };
+const INTRADAY_MAX_AGE = 8 * 60000;
+
+function intradayClock(value, market) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: INTRADAY_CLOCKS[market].zone, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).formatToParts(date);
+  const p = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return { date: p.year + "-" + p.month + "-" + p.day, time: p.hour + ":" + p.minute,
+    minutes: Number(p.hour) * 60 + Number(p.minute) };
+}
+
+function intradayMarketState(snapshot, market, now) {
+  const clock = intradayClock(now, market);
+  const scanned = intradayClock(snapshot.scannedAt, market);
+  const age = now - Date.parse(snapshot.scannedAt);
+  const lunch = INTRADAY_CLOCKS[market].lunch;
+  if (snapshot.sessionDate !== clock.date) return { phase: "unknown", live: false };
+  const close = Date.parse(snapshot.closeAt);
+  let phase = snapshot.phase;
+  if (phase === "open") {
+    if (Number.isFinite(close) && now >= close) phase = "closed";
+    else if (lunch && clock.minutes >= lunch[0] && clock.minutes < lunch[1]) phase = "break";
+  }
+  const fresh = scanned?.date === clock.date && age >= -60000 && age < INTRADAY_MAX_AGE;
+  const sameSession = !lunch || clock.minutes < lunch[1] || (scanned && scanned.minutes >= lunch[1]);
+  return { phase, live: phase === "open" && snapshot.status === "live" && fresh && sameSession && Number.isFinite(close) && now < close };
+}
+
+function intradayNumber(value) {
+  return Number.isInteger(value) && value >= 0 ? value.toLocaleString("zh-CN") : "—";
+}
+
+function intradayPrices(item, market) {
+  const trigger = optionalNumber(item.triggerPrice);
+  const target = optionalNumber(item.targetPrice);
+  if (!(trigger > 0 && target > 0)) return "";
+  const currency = { "A股": "CNY", "港股": "HKD", "美股": "USD" }[market];
+  const price = value => value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  return '<dl class="intraday-prices"><div><dt>触发价 · ' + currency + '</dt><dd>' + price(trigger) +
+    '</dd></div><div><dt>达标收盘价 · ' + currency + '</dt><dd>' + price(target) +
+    '</dd></div></dl><p class="intraday-distance">从触发价到收盘还需上涨 <b>' + ratioPct((target / trigger - 1) * 100, 2) + '</b></p>';
+}
+
+function intradaySignals(rows, market) {
+  return '<ol class="intraday-signals">' + rows.map((item, index) => {
+    const clock = intradayClock(item.triggerAt, market);
+    const ratio = optionalNumber(item.volumeRatio);
+    const reasons = Array.isArray(item.reasons) ? item.reasons.filter(x => typeof x === "string") : [];
+    const risks = Array.isArray(item.risks) ? item.risks.filter(x => typeof x === "string") : [];
+    return '<li><header><span class="intraday-rank">' + (index + 1) + '</span><div><strong>' + escapeHtml(item.name || item.code) +
+      '</strong><small>' + escapeHtml(item.code) + ' · ' + (clock?.time || "—") + ' 触发</small></div></header>' +
+      intradayPrices(item, market) + '<p class="intraday-evidence">触发时较昨收 ' + pct(item.changePct) +
+      (Number.isFinite(ratio) ? ' · 量比 ' + ratio.toFixed(2) + ' 倍' : '') + '</p>' +
+      (reasons.length ? '<ul class="intraday-reasons">' + reasons.map(reason => '<li>' + escapeHtml(reason) + '</li>').join("") + '</ul>' : '') +
+      (risks.length ? '<p class="intraday-risk"><b>风险</b> ' + escapeHtml(risks.join("；")) + '</p>' : '') + '</li>';
+  }).join("") + '</ol>';
+}
+
+function intradayHistory(last, market) {
+  if (!last?.sessionDate || !Array.isArray(last.candidates) || !last.candidates.length) return "";
+  const clock = intradayClock(last.scannedAt, market);
+  const rows = last.candidates.filter(item => item && item.code && intradayClock(item.triggerAt, market)?.date === last.sessionDate);
+  if (!rows.length) return "";
+  return '<details class="intraday-history" data-intraday-history="' + market + '"' +
+    (state.intradayHistoryOpen[market] ? ' open' : '') + '><summary>历史信号 · ' + escapeHtml(last.sessionDate) +
+    ' <small>' + rows.length + ' 只</small></summary><div><p>归档扫描 ' + (clock?.time || "—") + ' ' +
+    INTRADAY_CLOCKS[market].label + '</p>' + intradaySignals(rows, market) + '</div></details>';
+}
+
+function intradayMarketCard(market, now) {
+  const snap = state.intradayData?.markets?.[market];
+  const label = RADAR_SEGMENT_LABELS[market];
+  if (!snap) return '<article class="card intraday-board"><h3>' + label + '</h3><p class="intraday-empty">' +
+    (state.intradayError ? "暂未取得该市场的盘中数据。" : "正在读取市场状态…") + '</p></article>';
+  const { phase, live } = intradayMarketState(snap, market, now);
+  const local = INTRADAY_CLOCKS[market].label;
+  const scan = intradayClock(snap.scannedAt, market);
+  const close = intradayClock(snap.closeAt, market);
+  const phaseLabel = INTRADAY_PHASES[phase] || "状态待更新";
+  const rows = (live && !state.intradayError && Array.isArray(snap.candidates) ? snap.candidates : []).filter(item =>
+    item && item.code && intradayClock(item.triggerAt, market)?.date === snap.sessionDate);
+  const phaseMessage = { unknown: "等待本地新交易日的扫描。", holiday: "休市，下一交易日开盘后扫描。",
+    closed: "今天的交易已结束。", preopen: "等待开盘后的第一轮有效行情。", break: "午间休市，下午开盘后继续扫描。" }[phase];
+  let message = phaseMessage || snap.reason || (live ? "本轮没有同时满足信号和风控条件的股票。" : "等待新一轮有效行情。");
+  if (phase === "open" && !live && snap.status === "live") message = "上次报价已过期，正在等待新的盘中信号。";
+  if (state.intradayError) message = "行情读取未完成，暂缓展示盘中信号。";
+  return '<article class="card intraday-board"><header><div><small>' + market + ' · ' + local + '</small><h3>' +
+    escapeHtml(snap.label || label) + '</h3></div><span class="intraday-phase' + (live && !state.intradayError ? " is-live" : "") + '">' +
+    phaseLabel + '</span></header><p class="intraday-session">' + escapeHtml(snap.sessionDate || "") +
+    (close ? ' · 收盘 ' + close.time : '') + '</p><p class="intraday-scope">' + escapeHtml(snap.scope || "") + '</p>' +
+    '<dl class="intraday-coverage"><div><dt>股票池</dt><dd>' + intradayNumber(snap.total) + '</dd></div><div><dt>有效报价</dt><dd>' +
+    intradayNumber(snap.quotedCount) + '</dd></div><div><dt>参与评分</dt><dd>' + intradayNumber(snap.scoredCount) +
+    '</dd></div></dl><p class="intraday-scan">最近扫描 ' + (scan ? scan.date + ' ' + scan.time : '尚无记录') +
+    '</p>' + (rows.length ? intradaySignals(rows, market) : '<p class="intraday-empty">' + escapeHtml(message) + '</p>') +
+    intradayHistory(snap.lastSession, market) + '</article>';
+}
+
+function intradayEvaluation() {
+  const data = state.intradayData;
+  const rows = RADAR_MARKETS.map(market => [RADAR_SEGMENT_LABELS[market], data?.markets?.[market]?.evaluation]);
+  const populated = rows.some(([, e]) => e && (e.signalCount > 0 || e.days > 0 || e.pendingCount > 0));
+  return '<section class="card intraday-evaluation"><h2>收盘验证</h2><p>最近 20 个有记录的已收盘交易日，同一只股票每天按首次触发价核对一次。两项条件同时达到才计为达标。</p>' +
+    (populated ? '<div class="intraday-results">' + rows.map(([label, e]) => {
+      const n = e?.verifiedCount;
+      return '<article><h3>' + label + '</h3><strong>' +
+        (n > 0 ? intradayNumber(e.hitCount) + ' / ' + intradayNumber(n) + ' 达标' : '暂无已验证样本') +
+        '</strong><p>' + (n > 0 ? '历史达标率 ' + ratioPct(e.hitRate, 1) + ' · ' + intradayNumber(e.days) + ' 个交易日<br>' +
+          '全天涨幅达标 ' + intradayNumber(e.dayHitCount) + ' 只 · 触发后涨幅达标 ' + intradayNumber(e.afterHitCount) + ' 只<br>' : '') +
+        '待收盘 ' + intradayNumber(e?.pendingCount) + ' 只 · 缺收盘价 ' + intradayNumber(e?.missingCount) + ' 只</p></article>';
+    }).join("") + '</div>' : '<p class="intraday-empty">' + (data ? '尚无已验证样本。首个盘中信号出现并取得当日收盘价后，这里会显示实际达标记录。' : '等待扫描与验证记录。') + '</p>') + '</section>';
+}
+
+function intradayPage() {
+  const data = state.intradayData;
+  const now = Date.now();
+  return '<main id="main-content" tabindex="-1" class="page-shell radar-page intraday-page"><header class="radar-page-heading"><div><h1 class="page-title">机会雷达</h1>' +
+    '<p class="page-subtitle">创业板 · 港股科技 · 纳斯达克</p></div>' + radarScopeControls() + '</header>' +
+    '<section class="card intraday-target"><div><h2>当日异动观察</h2><p>交易时段每 5 分钟筛选一次，寻找放量走强、距收盘仍有上涨空间的股票。</p></div>' +
+    '<dl><div><dt>收盘较昨收</dt><dd>≥ 5%</dd></div><div><dt>收盘较触发价</dt><dd>≥ 3%</dd></div></dl></section>' +
+    '<p class="intraday-updated" role="status">' + (state.intradayError ? escapeHtml(state.intradayError) :
+      data ? '页面状态更新于 ' + escapeHtml(radarTimestamp(data.asOf)) + ' 北京' : '正在读取盘中扫描记录…') + '</p>' +
+    '<section class="intraday-grid" aria-label="三地盘中观察名单">' + RADAR_MARKETS.map(market => intradayMarketCard(market, now)).join("") +
+    '</section>' + intradayEvaluation() + '</main>';
+}
+
+function preopenStamp(value, market) {
+  const clock = intradayClock(value, market);
+  return clock ? clock.date + " " + clock.time : "时间待核";
+}
+
+function preopenDetails(id, title, content) {
+  const key = escapeHtml(id);
+  return '<details class="preopen-details" data-preopen-details="' + key + '"' + (state.preopenOpen[id] ? " open" : "") +
+    '><summary data-preopen-focus="' + key + '">' + escapeHtml(title) + '</summary><div>' + content + '</div></details>';
+}
+
+function preopenSourceLink(label, value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:") return '<a href="' + escapeHtml(url.href) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(label || "查看来源") + '</a>';
+  } catch {}
+  return escapeHtml(label || "来源待核");
+}
+
+function preopenPrice(value, market) {
+  const currency = {"A股":"CNY","港股":"HKD","美股":"USD"}[market];
+  return new Intl.NumberFormat("zh-CN", {style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 4}).format(value);
+}
+
+function preopenPick(pick, market, cutoffAt) {
+  const citations = (pick.evidence || []).filter(e => e && e.label && Date.parse(e.at) <= Date.parse(cutoffAt));
+  const evidence = citations.map(e => '<li><strong>' + escapeHtml(e.label) + '</strong><p>' + escapeHtml(e.detail) +
+    '</p><small>' + preopenSourceLink(e.source, e.url) + (e.at ? ' · ' + preopenStamp(e.at, market) : '') + '</small></li>').join("");
+  const price = optionalNumber(pick.prevClose);
+  const target = optionalNumber(pick.targetPrice);
+  const prePrice = optionalNumber(pick.prePrice);
+  const quote = value => preopenPrice(value, market);
+  const risk = pick.risk || (pick.risks || []).join("；");
+  return '<li class="preopen-pick"><h4>' + escapeHtml(pick.name || pick.code) + ' <small>' + escapeHtml(pick.code) +
+    '</small></h4><p class="preopen-target-price">' + (price > 0 ? '昨收 ' + quote(price) +
+      ' · 触及线 ' + quote(target > 0 ? target : price * 1.05) + '<br>' : '') +
+    (prePrice > 0 ? '冻结前价格 ' + quote(prePrice) + (Number.isFinite(optionalNumber(pick.preChangePct)) ? '（' + pct(pick.preChangePct) + '）' : '') +
+      (pick.prePriceAt ? ' · ' + preopenStamp(pick.prePriceAt, market) : '') : '盘前价待核对') + '</p>' +
+    '<ul class="preopen-evidence">' + evidence + '</ul>' + (risk ? '<p class="preopen-risk">关注风险 · ' + escapeHtml(risk) + '</p>' : '') + '</li>';
+}
+
+function preopenFrozen(snapshot, market) {
+  const picks = Array.isArray(snapshot.candidates) ? snapshot.candidates : [];
+  const jumped = Array.isArray(snapshot.jumped) ? snapshot.jumped : [];
+  const id = "preopen-" + market + "-" + snapshot.tradeDate;
+  let html = '<p class="preopen-frozen-time">冻结截止 ' + preopenStamp(snapshot.cutoffAt, market) +
+    (snapshot.observedAt ? '<br>输入采集时间 ' + preopenStamp(snapshot.observedAt, market) : '') +
+    (snapshot.publishedAt ? '<br>名单发布时间 ' + preopenStamp(snapshot.publishedAt, market) : '') + '</p>';
+  if (snapshot.status === "frozen") {
+    html += picks.length ? '<ol class="preopen-picks">' + picks.slice(0,3).map(item => preopenPick(item, market, snapshot.cutoffAt)).join("") + '</ol>'
+      : '<p class="preopen-notice"><strong>本次冻结为空榜</strong>' + escapeHtml(snapshot.reason || "没有股票同时达到两类独立证据要求。") + '</p>';
+  } else {
+    html += '<p class="preopen-notice"><strong>本次预测缺少可核实数据</strong>' + escapeHtml(snapshot.reason || "本次未生成可用名单。") + '</p>';
+  }
+  if (jumped.length) html += preopenDetails(id + "-jumped", "盘前已跳涨 · " + jumped.length + " 只",
+    '<ul class="preopen-jumped">' + jumped.map(row => {
+      const jumpPct = row.jumpPrice > 0 && row.prevClose > 0 ? (row.jumpPrice / row.prevClose - 1) * 100 : null;
+      const source = row.jumpSource ? ' · ' + preopenSourceLink(row.jumpSource, row.jumpUrl) : '';
+      return '<li><div><strong>' + escapeHtml(row.name || row.code) + ' <small>' + escapeHtml(row.code) + '</small></strong>' +
+        '<p class="preopen-target-price">' + (jumpPct !== null ? '盘前达标价 ' + preopenPrice(row.jumpPrice, market) + '（' + pct(jumpPct) + '）' : '盘前达标价待核') + (row.jumpAt ? ' · ' + preopenStamp(row.jumpAt, market) : '') +
+        source + (Number.isFinite(optionalNumber(row.preChangePct)) ? '<br>冻结前最新 ' + pct(row.preChangePct) : '') + '</p></div></li>';
+    }).join("") + '</ul>');
+  if (snapshot.sources?.length || snapshot.coverage) {
+    const c = snapshot.coverage;
+    const coverage = c ? '<p class="preopen-scope">昨收可核 ' + intradayNumber(c.referenceCount) + ' 只' +
+      (Number.isInteger(c.eligibleCount) ? ' · 通过流动性等门槛 ' + intradayNumber(c.eligibleCount) + ' 只' : '') + ' · 竞价或盘前成交 ' + intradayNumber(c.auctionCount) + ' 只 · 当日事件 ' + intradayNumber(c.eventCount) + ' 只 · 同业线索 ' + intradayNumber(c.contextCount) + ' 只' +
+      (Number.isInteger(c.auctionAttempted) ? '<br>已尝试读取竞价 ' + intradayNumber(c.auctionAttempted) + ' 只 · 同时点异常放量 ' + intradayNumber(c.abnormalVolumeCount) + ' 只' : '') +
+      (market === "美股" ? '<br>美股每轮最多逐只核验 8 只的盘前成交。' : '') +
+      (c.comparablePriceRejected > 0 ? '<br>剔除昨收口径不一致 ' + intradayNumber(c.comparablePriceRejected) + ' 只' : '') + '</p>' : '';
+    const statuses = {available:"可用", partial:"部分可用", unavailable:"未取得"};
+    html += preopenDetails(id + "-sources", "数据来源与覆盖", coverage + '<ul class="preopen-source-list">' +
+      (snapshot.sources || []).map(s => '<li><b>' + preopenSourceLink(s.label || s.source, s.url) + '</b> · ' + (statuses[s.status] || "待核") +
+        '<p>' + escapeHtml(s.detail || "覆盖情况待核") + '</p></li>').join("") + '</ul>');
+  }
+  return html;
+}
+
+function preopenMarketCard(market) {
+  const snap = state.preopenData?.markets?.[market];
+  const label = RADAR_SEGMENT_LABELS[market];
+  if (!snap) return '<article class="card preopen-board"><h3>' + label + '</h3><p class="preopen-stage">' +
+    (state.preopenError || state.preopenData ? '暂未取得该市场的冻结记录，请刷新重试。' : '正在读取冻结记录…') + '</p></article>';
+  const current = snap.latest?.tradeDate === snap.sessionDate ? snap.latest : null;
+  const older = snap.latest && !current ? snap.latest : null;
+  const status = {"waiting":"待冻结","frozen":"已冻结","missed":"本次缺档","unavailable":"数据待核"}[snap.phase] || "待核对";
+  const anchor = intradayClock(snap.cutoffAt || snap.nextCutoffAt, market);
+  const date = anchor?.date || snap.sessionDate;
+  const zone = INTRADAY_CLOCKS[market].label;
+  let body = current ? preopenFrozen(current, market) : '<p class="preopen-notice">' +
+    escapeHtml(snap.reason || (snap.phase === "waiting" ? "等待本场开盘前的冻结时点。" : "该交易日尚无可核实的盘前名单。")) + '</p>';
+  if (older) body += preopenDetails("preopen-prev-" + market, "上一次记录 · " + older.tradeDate, preopenFrozen(older, market));
+  if (!snap.latest && snap.phase === "waiting") body += '<p class="preopen-first">尚无历史冻结记录。</p>';
+  return '<article class="card preopen-board"><header><div><small>' + market + ' · ' + zone + '</small><h3>' + escapeHtml(snap.label || label) +
+    '</h3></div><span class="preopen-tag ' + (snap.phase === "frozen" ? "is-frozen" : "") + '">' + status + '</span></header>' +
+    '<dl class="preopen-clock"><div><dt>当地冻结时间</dt><dd>' + escapeHtml(anchor?.time || "—") + '</dd></div><div><dt>交易日</dt><dd>' +
+    escapeHtml(date || "待定") + '</dd></div></dl><p class="preopen-scope">' + escapeHtml(snap.scope || label) +
+    (Number.isInteger(snap.total) ? ' · ' + snap.total.toLocaleString("zh-CN") + ' 只' : '') +
+    (snap.membershipAsOf ? '<br>候选名册更新于 ' + escapeHtml(String(snap.membershipAsOf).slice(0,10)) : '') + '</p>' + body + '</article>';
+}
+
+function preopenExample() {
+  return '<details class="card preopen-example" data-preopen-details="preopen-example"' + (state.preopenOpen["preopen-example"] ? " open" : "") +
+    '><summary data-preopen-focus="preopen-example"><strong>看判读示例</strong><span>虚构股票 · 独立演示</span></summary>' +
+    '<div class="preopen-example-grid"><article><small>主榜候选</small><h3>乙股</h3><p>昨晚上调业绩指引。盘前涨 1.8%，成交额为过去同一时点中位数的 3 倍。公告与资金响应相互印证。</p></article>' +
+    '<article><small>证据不足</small><h3>甲股</h3><p>过去 10 天涨了 22%，当天没有新的公司公告，盘前成交平淡。本轮留在候选池。</p></article>' +
+    '<article><small>已跳涨</small><h3>丙股</h3><p>冻结时已有可靠的盘前成交，价格较昨收涨 6%。单列观察，主榜席位留给仍有上涨空间的股票。</p></article></div>' +
+    '<p class="preopen-example-outcome">假设乙股盘中最高涨 7%、收盘涨 1%，这一笔记为「盘中命中 · 收盘回落」。示例不参与历史统计。</p></details>';
+}
+
+function preopenFirstTouch(row, market) {
+  const touch = row.firstTouch;
+  if (!row.hit || !touch) return "";
+  if (touch.kind === "open") return "开盘即触及";
+  if (touch.kind === "interval" && touch.start && touch.end) {
+    return "首次触及区间 " + (intradayClock(touch.start, market)?.time || "—") + "–" + (intradayClock(touch.end, market)?.time || "—");
+  }
+  return touch.at ? "首次触及 " + preopenStamp(touch.at, market) : "盘中触及，时刻待核";
+}
+
+function preopenReview(snap, market) {
+  if (!snap) return '<p class="preopen-notice">' + (state.preopenError || state.preopenData ? "暂未取得该市场的验证记录。" : "正在读取验证记录…") + '</p>';
+  const e = snap.evaluation;
+  if (!e?.days) return '<p class="preopen-notice">尚无已复核的冻结记录。交易日结束后，这里将比较盘前主榜、全候选池和昨日涨幅前三。</p>';
+  const tableRows = [["picks","盘前主榜"],["pool","全候选池"],["yesterdayLeaders","昨日涨幅前三"]].map(([k,title]) => {
+    const g = e.groups?.[k];
+    if (!g) return '<tr><th scope="row">' + title + '</th><td colspan="4">待核实</td></tr>';
+    return '<tr><th scope="row">' + title + '</th><td>' + intradayNumber(g.hits) + ' / ' + intradayNumber(g.verified) + '</td><td>' +
+      (g.verified ? ratioPct(g.hitRate,1) : '—') + '</td><td>' + intradayNumber(g.held) + '</td><td>' + intradayNumber(g.missing) + '</td></tr>';
+  }).join("");
+  const picks = e.groups?.picks;
+  const detail = (snap.results || []).filter(r => Array.isArray(r.rows)).slice().sort((a,b) => String(b.tradeDate).localeCompare(String(a.tradeDate)))[0];
+  const details = detail?.rows.filter(r => r.groups?.includes("picks")).map(r => '<li><strong>' +
+    escapeHtml(r.name || r.code) + ' <small>' + escapeHtml(r.code) + '</small></strong><p>' +
+    (r.status === "verified" ? '盘中最高 ' + pct(r.highChangePct) + ' · 收盘 ' + pct(r.closeChangePct) + ' · 开盘至收盘 ' +
+      pct(r.openToClosePct) + (r.hit ? ' · ' + preopenFirstTouch(r, market) + ' · ' + (r.held ? '守住涨幅' : '收盘回落') : ' · 未触及')
+      : escapeHtml(r.reason || "行情缺失，待核实")) + '</p></li>').join("");
+  return '<p class="preopen-sample">' + escapeHtml(e.fromDate || "") + ' 至 ' + escapeHtml(e.toDate || "") + ' · ' +
+    intradayNumber(e.days) + ' 个交易日 · 空榜 ' + intradayNumber(e.emptyDays) + ' 天</p>' +
+    '<div class="preopen-table-wrap" tabindex="0" role="region" aria-label="可横向滚动的验证对比"><table class="preopen-table"><thead><tr><th>样本组</th>' +
+    '<th>触及 / 已核</th><th>触及率</th><th>收盘守住</th><th>缺数据</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
+    (picks ? '<p class="preopen-breakdown">主榜共 ' + intradayNumber(picks.count) + ' 笔，开盘即触及 ' + intradayNumber(picks.openHits) + ' 笔，盘中才触及 ' +
+      intradayNumber(picks.intradayHits) + ' 笔，触及后收盘回落 ' + intradayNumber(picks.faded) + ' 笔。</p>' : '') +
+    (details ? preopenDetails("preopen-outcomes-" + market, "最近收盘明细 · " + detail.tradeDate, '<ul class="preopen-journal">' + details + '</ul>') : '');
+}
+
+function preopenPage() {
+  const market = state.preopenReviewMarket;
+  const tabs = RADAR_MARKETS.map(m => '<button type="button" data-preopen-focus="review-' + m + '" data-preopen-market="' + m +
+    '" aria-pressed="' + (m === market) + '">' + escapeHtml(RADAR_SEGMENT_LABELS[m]) + '</button>').join("");
+  return '<main id="main-content" tabindex="-1" class="page-shell radar-page preopen-page"><header class="radar-page-heading"><div><h1>机会雷达</h1>' +
+    '<p>创业板 · 港股科技 · 纳斯达克</p></div>' + radarScopeControls() + '</header>' +
+    '<section class="card preopen-brief"><div><h2>当日大涨预测</h2><p>开盘前 5 分钟冻结名单。公司公告、盘前买盘、同业走势至少有两类信号相互印证，才进入主榜。每个市场最多 3 只，允许空榜。</p></div>' +
+    '<div class="preopen-goal"><span>盘中触及线</span><strong>+5<small>%</small></strong><span>相对可比昨收</span></div></section>' +
+    (state.preopenData?.asOf ? '<p class="preopen-updated">记录读取时间 ' + preopenStamp(state.preopenData.asOf, "A股") + ' 北京时间</p>' : '') +
+    (state.preopenError ? '<p class="preopen-error" role="status">' + escapeHtml(state.preopenError) + (state.preopenData ? ' 当前展示上次读取的记录。' : '') + '</p>' : '') +
+    '<section class="preopen-boards" aria-label="三地盘前冻结名单">' + RADAR_MARKETS.map(preopenMarketCard).join("") + '</section>' +
+    preopenExample() + '<section class="card preopen-review"><header><div><h2>收盘验证</h2><p>最高价触及 +5% 计为命中，另看收盘能否守住。按市场分别统计最近 20 个已记录交易日。缺少可核对行情的样本单列。</p></div>' +
+    '<div class="preopen-review-tabs" role="group" aria-label="选择验证市场">' + tabs + '</div></header>' +
+    preopenReview(state.preopenData?.markets?.[market],market) + '</section></main>';
+}
+
 function radarPage() {
+  if (state.radarScope === "preopen") return preopenPage();
+  if (state.radarScope === "intraday") return intradayPage();
   const view = radarPageWindow();
   const allRows = view.rows, totalPages = view.totalPages, start = view.start, pageRows = view.pageRows;
   state.radarPage = view.page;
   const poolTotal = RADAR_MARKETS.reduce(function (total, market) { return total + (Number(state.radarMarkets[market] && state.radarMarkets[market].poolSize) || 0); }, 0);
   const growth = state.radarScope === "growth";
-  const scopeControls = '<div class="radar-scope-switch" role="group" aria-label="机会雷达扫描范围">' +
-    [["market", "全市场"], ["growth", "成长板块"]].map(function ([value, label]) {
-      return '<button type="button" data-radar-scope="' + value + '" aria-pressed="' + (state.radarScope === value) + '">' + label + '</button>';
-    }).join("") + '</div>';
+  const scopeControls = radarScopeControls();
   const availableRows = radarRowsBeforeFilters();
   const query = state.radarQuery.trim().toUpperCase();
   const scopeRows = availableRows.filter(function (item) {
@@ -3439,6 +3779,12 @@ function render(announceRoute) {
   const activeWatch = !announceRoute && state.tab === "radar" && !state.holdingEditorOpen &&
     document.activeElement?.closest("[data-toggle-watch]");
   const watchSurface = activeWatch && radarWatchSurface(activeWatch);
+  const activePreopen = !announceRoute && document.activeElement?.closest("[data-preopen-focus]")?.dataset.preopenFocus;
+  document.querySelectorAll("[data-preopen-details]").forEach(el => { state.preopenOpen[el.dataset.preopenDetails] = el.open; });
+  const activeArchive = !announceRoute && document.activeElement?.closest("[data-intraday-history]")?.dataset.intradayHistory;
+  if (state.tab === "radar") {
+    document.querySelectorAll("[data-intraday-history]").forEach(el => { state.intradayHistoryOpen[el.dataset.intradayHistory] = el.open; });
+  }
   const activeScope = !announceRoute && state.tab === "radar" && !state.holdingEditorOpen && document.activeElement?.closest("[data-radar-scope]");
   const rawPage = state.tab === "actions" ? actionsPage() : state.tab === "radar" ? radarPage() : state.tab === "trades" ? tradesPage() : overviewPage();
   const page = rawPage;
@@ -3450,6 +3796,8 @@ function render(announceRoute) {
     main.setAttribute("tabindex", "-1");
   }
   if (activeScope) document.querySelector('[data-radar-scope="' + activeScope.dataset.radarScope + '"]')?.focus({ preventScroll: true });
+  if (activePreopen) document.querySelector('[data-preopen-focus="' + CSS.escape(activePreopen) + '"]')?.focus({ preventScroll: true });
+  if (activeArchive) document.querySelector('[data-intraday-history="' + activeArchive + '"] summary')?.focus({ preventScroll: true });
   if (activeWatch) findRadarWatchButton(watchSurface, activeWatch.dataset.toggleWatch)?.focus({ preventScroll: true });
   normalizeHoldingEditorSemantics();
   applyPageMeta(Boolean(announceRoute));
@@ -3458,7 +3806,7 @@ function render(announceRoute) {
   if (state.holdingEditorOpen) window.requestAnimationFrame(syncHoldingFormUi);
   scheduleJarDeposits();
   requestAnimationFrame(drawCharts);
-  if (state.tab === "radar") requestAnimationFrame(scheduleVisibleRadarHistoryLoad);
+  if (state.tab === "radar" && !dailyRadarScope()) requestAnimationFrame(scheduleVisibleRadarHistoryLoad);
   if (state.tab === "overview" && state.trendDays >= 365) void loadLongChart(state.trendDays);
 }
 
@@ -3748,6 +4096,8 @@ function exportJson(kind) {
 }
 
 function refreshRadarIfStale() {
+  if (document.visibilityState === "hidden" || state.tab !== "radar") return;
+  if (dailyRadarScope()) return loadDailyRadar();
   if (state.tab !== "radar" || state.radarStatus === "loading") return;
   const allCurrent = RADAR_MARKETS.every(function (market) {
     const snapshot = state.radarMarkets[market];
@@ -3789,11 +4139,20 @@ function eventHandlers() {
     if (retryLookup) { scheduleHoldingLookup(true); return; }
     const tab = event.target.closest("[data-tab]");
     if (tab) { location.hash = tab.dataset.tab; return; }
+    const reviewButton = event.target.closest("[data-preopen-market]");
+    if (reviewButton && RADAR_MARKETS.includes(reviewButton.dataset.preopenMarket)) {
+      state.preopenReviewMarket = reviewButton.dataset.preopenMarket;
+      render();
+      return;
+    }
     const scopeButton = event.target.closest("[data-radar-scope]");
     if (scopeButton) {
       const scope = scopeButton.dataset.radarScope;
-      if (!["market", "growth"].includes(scope) || scope === state.radarScope) return;
+      if (!["preopen", "intraday", "market", "growth"].includes(scope) || scope === state.radarScope) return;
       state.radarScope = scope;
+      const url = new URL(location.href);
+      url.searchParams.set("radar", scope);
+      window.history.replaceState(null, "", url);
       state.radarPage = 1;
       state.watchMarket = "全部";
       state.radarQuery = "";
@@ -3802,6 +4161,8 @@ function eventHandlers() {
       state.expandedRadarId = "";
       render();
       document.querySelector('[data-radar-scope="' + scope + '"]')?.focus({ preventScroll: true });
+      if (dailyRadarScope(scope) || state.radarStatus === "idle") loadRadar(false);
+      else refreshRadarIfStale();
       return;
     }
     const radarMarket = event.target.closest("[data-radar-market]");
@@ -4179,7 +4540,12 @@ function eventHandlers() {
     if (typeof motionPreference.addEventListener === "function") motionPreference.addEventListener("change", handleMotionPreference);
     else if (typeof motionPreference.addListener === "function") motionPreference.addListener(handleMotionPreference);
   }
-  window.setInterval(refreshRadarIfStale, 5 * 60 * 1000);
+  window.setInterval(() => {
+    if (state.tab === "radar" && dailyRadarScope() && document.visibilityState === "visible") loadDailyRadar();
+  }, 60000);
+  window.setInterval(() => {
+    if (!dailyRadarScope()) refreshRadarIfStale();
+  }, 5 * 60 * 1000);
 }
 
 async function refreshData() {
@@ -4256,7 +4622,7 @@ function startupStateFingerprint() {
 }
 
 async function start() {
-  if (!VALID_TABS.includes(location.hash.slice(1))) location.hash = openGrowthRadar ? "#radar" : "#overview";
+  if (!VALID_TABS.includes(location.hash.slice(1))) location.hash = linkedRadarScope ? "#radar" : "#overview";
   const syncRequest = getJson("/api/holdings-sync", null, 8000);
   const staticRequest = Promise.all([
     getJson("holdings.json", null),

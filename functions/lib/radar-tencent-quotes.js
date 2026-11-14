@@ -66,6 +66,7 @@ function toRow(market, symbol, fields, offsets) {
   return {
     f12: code, f13: providerMarket, f14: fields[1],
     f2: number(fields[3]), f3: number(fields[32]),
+    f18: number(fields[4]), f17: number(fields[5]), f15: number(fields[33]), f16: number(fields[34]),
     f6: mainlandAmount ?? (amount === null ? null : amount * (market === "A股" ? 10000 : 1)),
     f7: number(fields[43]), f8: number(fields[idx.turnover]), f9: number(fields[39]),
     f10: number(fields[idx.volumeRatio]), f20: marketCap === null ? null : Math.round(marketCap * 1e8),

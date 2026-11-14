@@ -1095,6 +1095,7 @@ test("opportunity radar filters the 600-plus pool, explains its score, and keeps
         source: "东方财富行情中心", quoteUpdatedAt: new Date().toISOString(), fetchedAt: new Date().toISOString(), loadState: "fresh"
       };
     }
+    state.radarScope = "market";
     state.holdings = [{ market: "港股", code: "00700", name: "腾讯控股", status: "holding", cost: 1, qty: 1, currency: "HKD", sina: "hk00700" }];
     state.rows = [];
     state.radarRows = [

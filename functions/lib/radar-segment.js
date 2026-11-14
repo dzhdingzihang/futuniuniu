@@ -26,6 +26,30 @@ export async function loadGrowthDirectory(fetcher, timeoutMs) {
   }
 }
 
+export async function fetchSegmentMembers({ market, codes, fetcher, timeoutMs, normalize, batchQuotes = fetchTencentGrowthQuotes }) {
+  const list = [...codes];
+  const rows = new Map();
+  const batchCount = Math.ceil(list.length / BATCH_SIZE);
+  let nextBatch = 0;
+  // Bound concurrent response bodies within a Workers invocation.
+  let failure;
+  async function readNext() {
+    while (!failure && nextBatch < batchCount) {
+      const start = nextBatch++ * BATCH_SIZE;
+      try {
+        const diff = await batchQuotes({ market, codes: list.slice(start, start + BATCH_SIZE), fetcher, timeoutMs });
+        for (const raw of diff) {
+          const row = normalize(raw, market);
+          if (row && codes.has(row.code) && row.providerMarket === GROWTH_SEGMENTS[market].exchange) rows.set(row.code, row);
+        }
+      } catch (error) { failure = error; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(batchCount, 4) }, readNext));
+  if (failure) throw failure;
+  return [...rows.values()];
+}
+
 export async function scanGrowthSegment({ market, fetcher = fetch, now = () => new Date(), timeoutMs = 8000,
   normalize, isEligible, directory, batchQuotes = fetchTencentGrowthQuotes }) {
   const config = GROWTH_SEGMENTS[market];
@@ -36,28 +60,9 @@ export async function scanGrowthSegment({ market, fetcher = fetch, now = () => n
     const codes = new Set(entry?.codes);
     if (codes.size < 200 || !/^\d{4}-\d{2}-\d{2}$/.test(entry?.asOf || "")) throw new Error("官方名册缺失或不足 200 只");
     Object.assign(info, { total: codes.size, membershipAsOf: entry.asOf });
-    const list = [...codes];
-    const rows = new Map();
-    const batchCount = Math.ceil(list.length / BATCH_SIZE);
-    let nextBatch = 0;
-    // Bound concurrent response bodies within a Workers invocation.
-    let failure;
-    async function readNext() {
-      while (!failure && nextBatch < batchCount) {
-        const start = nextBatch++ * BATCH_SIZE;
-        try {
-          const diff = await batchQuotes({ market, codes: list.slice(start, start + BATCH_SIZE), fetcher, timeoutMs });
-          for (const raw of diff) {
-            const row = normalize(raw, market);
-            if (row && codes.has(row.code) && row.providerMarket === config.exchange) rows.set(row.code, row);
-          }
-        } catch (error) { failure = error; }
-      }
-    }
-    await Promise.all(Array.from({ length: Math.min(batchCount, 4) }, readNext));
-    if (failure) throw failure;
+    const rows = await fetchSegmentMembers({market, codes, fetcher, timeoutMs, normalize, batchQuotes});
     const stamp = new Date(now());
-    const validQuotes = [...rows.values()].filter(row => {
+    const validQuotes = rows.filter(row => {
       const age = stamp.getTime() - Date.parse(row.quoteUpdatedAt);
       return isEligible(row) && age >= -5 * 60_000 && age <= 10 * DAY;
     });

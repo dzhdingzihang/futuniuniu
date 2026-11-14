@@ -87,17 +87,9 @@ npx wrangler kv namespace create RADAR_SNAPSHOTS
 }
 ```
 
-Worker 配置已包含：
+Worker 的完整定时表达式在 workers/radar-scheduler/wrangler.jsonc。定时表达式使用 UTC，运行时按交易所时区、休市日和半日市校验。北京时间 08:10、08:40 更新成长与全市场研究榜。盘中确认每五分钟触发一次。盘前任务在当地 09:10 准备昨收，09:15、09:20、09:24 采样，09:25 冻结公布。收盘后 35、55 分钟采集收盘参考并复核。GET /api/preopen-radar 读取冻结档案。
 
-```json
-{
-  "name": "futuniuniu-radar-scheduler",
-  "main": "index.js",
-  "triggers": { "crons": ["10 0 * * *", "40 0 * * *"] }
-}
-```
-
-Cloudflare Cron 使用 UTC。两个触发时间分别对应北京时间 08:10 和 08:40。部署 Worker 的命令为：
+部署 Worker 使用以下命令。
 
 ```bash
 npx wrangler deploy --config workers/radar-scheduler/wrangler.jsonc

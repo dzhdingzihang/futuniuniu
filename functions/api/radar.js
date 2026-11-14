@@ -101,6 +101,8 @@ export function normalizeRadarRow(raw, market) {
     quoteUpdatedAt: providerTimestamp(raw.f124),
     metrics: {
       price: positiveNumber(raw.f2),
+      prevClose: positiveNumber(raw.f18), open: positiveNumber(raw.f17),
+      high: positiveNumber(raw.f15), low: positiveNumber(raw.f16),
       changePct: finiteNumber(raw.f3),
       return60d: finiteNumber(raw.f24),
       return10d: finiteNumber(raw.return10d),
