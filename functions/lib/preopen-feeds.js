@@ -154,7 +154,7 @@ const num=value=>{
   const n=Number(value.replace(/[$,]/g,""));return Number.isFinite(n)?n:null;
 };
 async function nasdaqAuction(code,tradeDate,cutoffAt,fetcher) {
-  const url="https://api.nasdaq.com/api/quote/"+encodeURIComponent(code)+"/extended-trading?assetclass=stocks&markettype=pre&limit=20";
+  const url="https://api.nasdaq.com/api/quote/"+encodeURIComponent(code)+"/extended-trading?assetclass=stocks&markettype=pre&time=11&limit=20";
   const data=(await (await request(fetcher,url)).json()).data;
   const last=data?.lastUpdateInfo?.[0]?.match(/\b([A-Za-z]{3}) (\d{1,2}), (\d{4}) (\d{1,2}):(\d{2})(?::(\d{2}))? (AM|PM) ET\b/i);
   if (!last || last[7].toUpperCase()!=="AM") return null;

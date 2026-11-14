@@ -56,7 +56,10 @@ test("move at threshold and earlier premarket high are separated; stale, future,
   assert.equal(r.jumped[0].jumpPrice,105);assert.equal(r.candidates.length,0);
   const back=await build({news:[announcement],tape:[{...print,price:101,high:106,highAt:now-60_000}]});
   assert.equal(back.jumped[0].jumpPrice,106);assert.equal(back.jumped[0].prePrice,101);
-  for (const at of [now+1,now-301000]) assert.equal((await build({tape:[{...print,price:106,at}]})).jumped.length,0);
+  assert.equal((await build({tape:[{...print,price:106,at:now+1}]})).jumped.length,0);
+  const oldPrint=await build({news:[announcement],tape:[{...print,price:106,at:now-301000}]});
+  assert.equal(oldPrint.jumped.length,1);assert.equal(oldPrint.jumped[0].prePrice,null);
+  assert.equal(oldPrint.candidates.length,0);
   const split=await build({news:[announcement],tape:[{...print,prevClose:50}]});
   assert.equal(split.coverage.comparablePriceRejected,1);assert.equal(split.candidates.length,0);
   assert.equal((await build({news:[announcement],asOf:"2026-11-16T14:25:30Z"})).evidenceAvailable,false);

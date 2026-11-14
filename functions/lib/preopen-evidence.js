@@ -135,15 +135,17 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
     const {code,name,currency} = row;
     const prevClose = row.metrics.price;
     const raw = byCode.get(code);
-    const quote = raw?.at >= start && raw.at <= now && now-raw.at <= 5*minute && raw.price>0 ? raw : null;
+    const sessionQuote = raw?.at >= start && raw.at <= now && raw.price>0 ? raw : null;
+    const quote = sessionQuote && now-raw.at<=5*minute ? sessionQuote : null;
     // A different ex-date reference can create a fictitious jump. Exclude the affected security entirely.
-    if (quote && (!(quote.prevClose>0) || Math.abs(quote.prevClose/prevClose-1)>0.001)) {
+    if (sessionQuote && (!(sessionQuote.prevClose>0) || Math.abs(sessionQuote.prevClose/prevClose-1)>0.001)) {
       coverage.comparablePriceRejected++; continue;
     }
     const change = quote ? (quote.price/prevClose-1)*100 : null;
     const targetPrice=prevClose*1.05;
-    const observedHigh=quote && quote.highAt>=start && quote.highAt<=now && quote.high>0 ? quote.high : null;
-    const alreadyJumped=quote && (quote.price+1e-9>=targetPrice || observedHigh+1e-9>=targetPrice);
+    const observedHigh=sessionQuote && raw.highAt>=start && raw.highAt<=now && raw.high>0 ? raw.high : null;
+    // A stale same-session trade cannot establish the current price, but can prove the target was already touched.
+    const alreadyJumped=sessionQuote && (raw.price+1e-9>=targetPrice || observedHigh+1e-9>=targetPrice);
     const items=[], risks=[];
     let ratio=null;
     if (quote) {
@@ -152,7 +154,7 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
         result.observations[code]={amount:quote.amount,at:iso(quote.amountAt),price:quote.price};
         ratio=readVolumeRatio(historyAmounts[code],tradeDate,quote.amount);
       }
-    } else risks.push("盘前价未核实，无法排除已跳涨。");
+    } else risks.push(alreadyJumped ? "当前价待核对；已取得较早的盘前触及记录。" : "盘前价未核实，无法排除已跳涨。");
     if (ratio) coverage.auctionTestableCount++;
     if (Number(news.available) + Number(tested.has(code)) + Number(Boolean(ratio)) >= 2) result.evidenceAvailable=true;
     const event=events.get(code);
@@ -169,9 +171,9 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
       prePriceAt:quote ? iso(quote.at):null, evidence:items,reasons:items.map(e=>e.detail),risks};
     if(alreadyJumped) {
       const highCrossed=observedHigh!==null && observedHigh>=targetPrice;
-      candidate.jumpPrice=highCrossed ? observedHigh : quote.price;
-      candidate.jumpAt=iso(highCrossed ? quote.highAt : quote.at);
-      candidate.jumpSource=quote.source; candidate.jumpUrl=quote.url;
+      candidate.jumpPrice=highCrossed ? observedHigh : raw.price;
+      candidate.jumpAt=iso(highCrossed ? raw.highAt : raw.at);
+      candidate.jumpSource=raw.source; candidate.jumpUrl=raw.url;
       result.jumped.push(candidate);
     } else {
       // Evidence count dominates; confirmed participation then peer breadth break ties.
