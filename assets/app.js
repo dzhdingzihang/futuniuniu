@@ -1727,6 +1727,54 @@ function portfolioChartA11yMarkup(points) {
   return "<p id=\"portfolio-chart-summary\" class=\"visually-hidden\">" + escapeHtml(summaryText) + "使用左右方向键逐点查看，Home 和 End 跳到首尾。</p><p id=\"portfolio-chart-live\" class=\"visually-hidden\" role=\"status\" aria-live=\"polite\"></p><div class=\"visually-hidden\"><table><caption>" + state.trendDays + "日累计盈亏数据</caption><thead><tr><th scope=\"col\">日期</th><th scope=\"col\">累计盈亏（人民币）</th></tr></thead><tbody>" + rows.map(function (point) { return "<tr><th scope=\"row\">" + escapeHtml(point.date) + "</th><td>" + escapeHtml(signed(point.value, 0)) + "</td></tr>"; }).join("") + "</tbody></table></div>";
 }
 
+function orderFeeComparison(data) {
+  const source = state.holdingsDocument?.source;
+  const baseline = source?.orderFeeScenario;
+  if (!baseline || ![baseline.buyOrderCount, baseline.sellOrderCount].every(n => Number.isSafeInteger(n) && n >= 0)
+      || ![baseline.recordedOrderFeesCny, baseline.scenarioOrderFeesCny].every(n => Number.isFinite(n) && n >= 0)
+      || baseline.feeUsdPerOrder !== 2) return null;
+
+  let count = baseline.buyOrderCount + baseline.sellOrderCount;
+  let feeDifference = baseline.recordedOrderFeesCny - baseline.scenarioOrderFeesCny;
+  if (!Number.isFinite(data.totalPnl)) {
+    const snapshotPnl = source.reconciliation?.sourcePnlCny;
+    return Number.isFinite(snapshotPnl) ? { pnl: snapshotPnl + feeDifference, count, asOf: source.asOf } : null;
+  }
+
+  // Excel orders are already included in the baseline. A website order can be
+  // split across several lots by FIFO, each carrying only its share of the fee.
+  const orders = new Map();
+  for (const row of state.rows) {
+    for (const side of ["buy", "sell"]) {
+      const id = row[side + "OperationId"];
+      if (!id) continue;
+      const key = side + ":" + id;
+      const order = orders.get(key) || { usd: 0, cny: 0 };
+      order.usd += row[side + "FeeUsd"];
+      order.cny += recordedFeeCny(row, side);
+      orders.set(key, order);
+    }
+  }
+  for (const order of orders.values()) {
+    if (!(order.usd > 0) || !Number.isFinite(order.cny) || order.cny <= 0) return null;
+    const usdToCny = order.cny / order.usd;
+    feeDifference += order.cny - baseline.feeUsdPerOrder * usdToCny;
+    count++;
+  }
+  const stockAdjustments = sum(state.rows, "adjustmentCny") + sum(state.rows, "sellAdjustmentCny");
+  return { pnl: data.totalPnl + stockAdjustments + feeDifference, count, asOf: "" };
+}
+
+function orderFeeNote(data) {
+  const result = orderFeeComparison(data);
+  if (!result) return '<p class="order-fee-note">每单 2 美元的盈亏测算正在等待可核对的订单和费用数据。</p>';
+  const detail = "每张已成交买单、卖单各计 2 美元，同一订单分多次成交只计一次。按订单汇率换算人民币，替换可核实的订单手续费，免计每只股票的定额成本。A 股历史订单和费用不全，历史交易成本沿用原表。网站新录入的各市场买卖也按单计费。";
+  const date = result.asOf ? " · " + escapeHtml(result.asOf) + " 账本估值" : "";
+  return '<p class="order-fee-note">若每笔买入或卖出只收 2 美元，累计盈亏约为 <strong class="' +
+    tone(result.pnl) + '">' + signed(result.pnl, 2) + '</strong><span>（' + result.count +
+    ' 单，A 股历史费用沿用原表' + date + '）</span>' + infoTip(detail) + '</p>';
+}
+
 function overviewPage() {
   const data = summary();
   const chartPoints = portfolioSeries(state.trendDays);
@@ -1741,7 +1789,7 @@ function overviewPage() {
     overviewMetric("持仓市值（人民币）", money(data.value, 0), data.netInvested > 0 && Number.isFinite(data.value) ? "占总投入 " + ratioPct(data.value / data.netInvested * 100) : "占总投入 --", valuationNote, "neutral", METRIC_HELP.marketValue) +
     overviewMetric("累计盈亏（人民币）", signed(data.totalPnl, 0), pct(data.totalRate), valuationComplete ? "持仓市值 − 股票总投入" : "等待全部持仓完成估值后计算", tone(data.totalPnl), METRIC_HELP.totalPnl) +
     overviewMetric("今日盈亏（人民币）", signed(data.today, 0), pct(data.todayRate), todayNote, tone(data.today), METRIC_HELP.todayPnl) +
-    "</div>" + costPolicyPanel() + "</section>" +
+    "</div>" + orderFeeNote(data) + costPolicyPanel() + "</section>" +
     "<section class=\"overview-section market-overview-section\"><div class=\"overview-section-heading\"><div><h2>市场概览</h2></div><p>A 股按人民币记账。港美股的原币盈亏按成交价计算，人民币盈亏另计成本调整和汇兑影响。</p></div><div class=\"overview-market-grid\">" + MARKET_ORDER.map(marketBlock).join("") + "</div></section>" +
     "<section class=\"overview-section pnl-chart-section\"><article class=\"card chart-card overview-chart-card\"><div class=\"chart-heading\"><div><h2>累计盈亏走势（人民币）" + infoTip(METRIC_HELP.chart) + "</h2><div class=\"chart-legend\"><span class=\"legend-item\"><i class=\"legend-dot\"></i>当前累计盈亏 <b class=\"" + tone(data.totalPnl) + "\">" + signed(data.totalPnl, 0) + "</b></span><span class=\"legend-item\"><i class=\"legend-dot blue\"></i>盈亏平衡线（¥0）</span><span class=\"chart-estimate-note\">按当前持仓回溯估算，未反映期间交易</span></div></div>" + trendButtons() + "</div>" + longChartNote(chartPoints) + "<div class=\"canvas-wrap overview-canvas-wrap\"><canvas class=\"line-chart\" data-chart=\"portfolio\" tabindex=\"0\" role=\"img\" aria-label=\"" + state.trendDays + "日累计盈亏走势图\" aria-keyshortcuts=\"ArrowLeft ArrowRight Home End\" aria-describedby=\"portfolio-chart-summary\"></canvas></div>" + portfolioChartA11yMarkup(chartPoints) + "</article></section>" +
     "<section class=\"overview-section ranking-section\"><div class=\"card overview-ranking-card\">" + rankCard() + "</div></section></main>";

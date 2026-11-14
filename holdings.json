@@ -38,6 +38,17 @@
       "A": "2026-11-06",
       "HK": "2026-11-13",
       "US": "2026-11-13"
+    },
+    "orderFeeScenario": {
+      "marketScope": [
+        "HK",
+        "US"
+      ],
+      "feeUsdPerOrder": 2,
+      "buyOrderCount": 165,
+      "sellOrderCount": 91,
+      "recordedOrderFeesCny": 6653.70655921,
+      "scenarioOrderFeesCny": 3497.23107861
     }
   },
   "newTradeFeeUsd": {

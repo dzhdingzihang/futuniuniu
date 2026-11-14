@@ -2,7 +2,38 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from scripts.import_holdings_from_excel import ImportContractError, SaleHistory, incremental_sales
+from scripts.import_holdings_from_excel import ImportContractError, SaleHistory, incremental_sales, order_fee_scenario
+
+
+class OrderFeeScenarioTests(unittest.TestCase):
+    def setUp(self):
+        self.rates = {
+            "2026-11-09": {"1 USD 折合 CNY": 7, "1 HKD 折合 CNY": 0.9},
+            "2026-11-10": {"1 USD 折合 CNY": 6.5, "1 HKD 折合 CNY": 0.8},
+        }
+        self.buy = {"成交时间": "2026-11-10", "业务账户": "one", "订单号": "a", "成交号": "2",
+                    "原始股票代码": "HK.00001", "方向": "买入", "分摊订单费": 2, "币种": "HKD", "成交日参考汇率": 0.8}
+
+    def test_charges_first_fill_day_once_per_order_and_converts_each_actual_fee_on_its_day(self):
+        fills = [
+            self.buy,
+            {**self.buy, "成交时间": "2026-11-09", "成交号": "1", "分摊订单费": 3, "成交日参考汇率": 0.9},
+            {**self.buy, "业务账户": "two", "方向": "卖出", "原始股票代码": "US.EX", "币种": "USD", "成交日参考汇率": 6.5},
+            {**self.buy, "原始股票代码": "SH.600000"}, {**self.buy, "方向": "认购"},
+        ]
+        expected = {"marketScope": ["HK", "US"], "feeUsdPerOrder": 2, "buyOrderCount": 1,
+                    "sellOrderCount": 1, "recordedOrderFeesCny": 17.3, "scenarioOrderFeesCny": 27}
+        self.assertEqual(order_fee_scenario(fills, self.rates), expected)
+        self.assertEqual(order_fee_scenario(list(reversed(fills)), self.rates), expected)
+        self.assertIsNone(order_fee_scenario([], self.rates))
+        self.assertIsNone(order_fee_scenario([{"方向": "买入"}], self.rates))
+        self.assertIsNone(order_fee_scenario([self.buy], {}))
+
+    def test_untraceable_orders_or_fees_fail_reconciliation(self):
+        for fills in ([self.buy, self.buy], [self.buy, {**self.buy, "成交号": "3", "方向": "卖出"}],
+                      [{**self.buy, "成交日参考汇率": 0.9}], [{**self.buy, "订单号": ""}]):
+            with self.subTest(fills=fills), self.assertRaises(ImportContractError):
+                order_fee_scenario(fills, self.rates)
 
 
 class ExcelSaleImportTests(unittest.TestCase):

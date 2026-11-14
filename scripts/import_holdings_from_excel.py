@@ -27,6 +27,7 @@ from openpyxl import load_workbook
 
 MARKET_ORDER = {"A": 0, "HK": 1, "US": 2}
 FUTURE_TRADE_FEE_USD = 20
+SCENARIO_FEE_USD = 2
 FALLBACK_A_SOLD_AS_OF = "2026-11-05"
 INITIAL_HK_US_LEDGER_DATE = "2026-11-08"
 
@@ -302,7 +303,65 @@ class SaleHistory:
     rates: dict[str, dict[str, Any]]
 
 
-def read_sale_history(workbook: Any) -> SaleHistory | None:
+def order_fee_scenario(
+    executions: list[dict[str, Any]], rates: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    # Earlier exports may lack fee or FX columns. Their accounting still imports,
+    # but they cannot establish a comparable per-order fee scenario.
+    execution_columns = {"方向", "原始股票代码", "业务账户", "成交时间", "订单号", "成交号",
+                         "成交日参考汇率", "分摊订单费", "币种"}
+    if not executions or not rates or not execution_columns.issubset(executions[0]):
+        return None
+    if not {"1 USD 折合 CNY", "1 HKD 折合 CNY"}.issubset(next(iter(rates.values()))):
+        return None
+    orders: dict[tuple[str, str], tuple[str, str, str]] = {}
+    seen_fills: set[tuple[str, str]] = set()
+    recorded_fees = 0.0
+    for fill in executions:
+        side = fill.get("方向")
+        code = clean_text(fill.get("原始股票代码")).upper()
+        if side not in {"买入", "卖出"} or not code.startswith(("HK.", "US.")):
+            continue
+        day = iso_date(fill.get("成交时间"))
+        account = clean_text(fill.get("业务账户"))
+        order_key = (account, clean_text(fill.get("订单号")))
+        fill_key = (account, clean_text(fill.get("成交号")))
+        if not day or not all(order_key) or not all(fill_key) or fill_key in seen_fills:
+            raise ImportContractError(f"{code} 手续费测算的成交日期或标识缺失、重复")
+        seen_fills.add(fill_key)
+        currency = clean_text(fill.get("币种"))
+        rate_row = rates.get(day, {})
+        fx = number(fill.get("成交日参考汇率"), field=f"{code} {day} 成交日参考汇率")
+        currency_rate = number(rate_row.get(f"1 {currency} 折合 CNY"), field=f"{day} {currency} 历史汇率")
+        fee = number(fill.get("分摊订单费"), field=f"{code} {day} 分摊订单费")
+        if fee < 0 or fx <= 0 or not math.isclose(fx, currency_rate, rel_tol=1e-7):
+            raise ImportContractError(f"{code} {day} 成交费用或成交日汇率无法核对")
+        recorded_fees += fee * fx
+        old_side, old_code, first_day = orders.get(order_key, (side, code, day))
+        if (side, code) != (old_side, old_code):
+            raise ImportContractError(f"{code} 同一订单含有不同的买卖方向或证券")
+        orders[order_key] = (side, code, min(day, first_day))
+
+    if not orders:
+        return None
+    scenario_fees = 0.0
+    buy_count = 0
+    for side, _, first_day in orders.values():
+        usd_rate = number(rates[first_day].get("1 USD 折合 CNY"), field=f"{first_day} 美元汇率")
+        if usd_rate <= 0:
+            raise ImportContractError(f"{first_day} 美元汇率必须大于零")
+        scenario_fees += SCENARIO_FEE_USD * usd_rate
+        buy_count += side == "买入"
+    return {
+        "marketScope": ["HK", "US"], "feeUsdPerOrder": SCENARIO_FEE_USD,
+        "buyOrderCount": buy_count, "sellOrderCount": len(orders) - buy_count,
+        "recordedOrderFeesCny": round(recorded_fees, 8), "scenarioOrderFeesCny": round(scenario_fees, 8),
+    }
+
+
+def read_sale_history(
+    workbook: Any, executions: list[dict[str, Any]], rates: dict[str, dict[str, Any]],
+) -> SaleHistory | None:
     if "历史卖出基准" not in workbook.sheetnames:
         return None
     baseline = {}
@@ -319,11 +378,10 @@ def read_sale_history(workbook: Any) -> SaleHistory | None:
     if not {"实盘逐笔成交", "历史汇率"}.issubset(workbook.sheetnames):
         raise ImportContractError("逐单导入需要实盘逐笔成交和历史汇率")
     fills = defaultdict(list)
-    for row in table_rows(workbook["实盘逐笔成交"], 5):
+    for row in executions:
         if row.get("方向") == "卖出" and iso_date(row.get("成交时间")) > cutoff:
             key = security_key(*market_and_code(row.get("原始股票代码")))
             fills[key].append(row)
-    rates = {iso_date(row["取价日期"]): row for row in table_rows(workbook["历史汇率"], 5)}
     return SaleHistory(cutoff, baseline, fills, rates)
 
 
@@ -646,7 +704,10 @@ def build_document(workbook_path: Path, buy_cny: float, sell_cny: float) -> tupl
         current_a[security_key(market, code)] = row
 
     ledgers = ledger_groups(table_rows(workbook["人民币成本明细"], 5))
-    history = read_sale_history(workbook)
+    executions = table_rows(workbook["实盘逐笔成交"], 5) if "实盘逐笔成交" in workbook.sheetnames else []
+    rate_rows = table_rows(workbook["历史汇率"], 5) if "历史汇率" in workbook.sheetnames else []
+    rates = {iso_date(row["取价日期"]): row for row in rate_rows if iso_date(row.get("取价日期"))}
+    history = read_sale_history(workbook, executions, rates)
     if history:
         market_keys = {m.key for m in masters if m.market in {"HK", "US"}}
         if (set(history.fills) | set(history.baseline)) - market_keys:
@@ -727,7 +788,12 @@ def build_document(workbook_path: Path, buy_cny: float, sell_cny: float) -> tupl
     }
     if history is not None:
         document["source"]["valuationAsOfByMarket"] = latest_by_market
-        document["source"]["sheets"].extend(["历史卖出基准", "实盘逐笔成交", "历史汇率"])
+        document["source"]["sheets"].append("历史卖出基准")
+    scenario = order_fee_scenario(executions, rates)
+    if scenario is not None:
+        document["source"]["orderFeeScenario"] = scenario
+    if history is not None or scenario is not None:
+        document["source"]["sheets"].extend(["实盘逐笔成交", "历史汇率"])
     workbook.close()
     summary = validate_document(document, masters, source_pnl, generated_pnl)
     return document, summary

@@ -775,6 +775,14 @@ body.modal-open { overflow: hidden; }
 .account-metric-rate { flex: 0 0 auto; font-size: 12px; font-weight: 850; white-space: nowrap; }
 .account-metric-card p { margin: auto 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .fee-policy-note { margin: 8px 2px 0; color: #7b8498; font-size: 11px; }
+.order-fee-note { margin: 12px 2px 0; color: #505d73; font-size: 13px; line-height: 1.65; }
+.order-fee-note strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.order-fee-note .info-popover { left: auto; right: -3px; width: min(244px, 75vw); }
+@media (max-width: 600px) {
+  .order-fee-note { position: relative; }
+  .order-fee-note .info-tip { position: static; }
+  .order-fee-note .info-popover { right: 0; bottom: 100%; }
+}
 .cost-policy-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
 .cost-policy-form { margin-top: 18px; max-width: 640px; padding: 18px; border: 1px solid var(--line-strong); border-radius: 14px; }
 .cost-policy-form h2 { margin: 0; font-size: 17px; }
