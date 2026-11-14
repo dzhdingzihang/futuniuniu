@@ -88,6 +88,7 @@ export async function refreshRadarSnapshots({ kv, scanMarket, now = () => new Da
   const unavailableMarkets = [];
   const failures = {};
   let scanned = 0;
+  let published = false;
 
   for (const market of RADAR_SNAPSHOT_MARKETS) {
     const inherited = previous?.markets?.[market];
@@ -106,6 +107,7 @@ export async function refreshRadarSnapshots({ kv, scanMarket, now = () => new Da
         throw Object.assign(new Error(`${market} 扫描结果结构无效`), { code: "RADAR_INVALID_SNAPSHOT" });
       }
       markets[market] = snapshot.loadState ? snapshot : freshSnapshot(snapshot);
+      if (markets[market].loadState === "fresh" || snapshot.segment?.loadState === "fresh") published = true;
       if (snapshot.loadState === "stale" || snapshot.loadState === "unavailable") {
         (snapshot.loadState === "stale" ? staleMarkets : unavailableMarkets).push(market);
         failures[market] = snapshot.error;
@@ -129,7 +131,7 @@ export async function refreshRadarSnapshots({ kv, scanMarket, now = () => new Da
 
   const envelope = {
     schema: RADAR_SNAPSHOT_SCHEMA,
-    publishedAt: scanned > failedMarkets.length || Object.values(markets).some(s => s.segment?.loadState === "fresh" && s.segment.fetchedAt === attemptedAt) ? attemptedAt : previous?.publishedAt ?? null,
+    publishedAt: published ? attemptedAt : previous?.publishedAt ?? null,
     attemptedAt,
     markets,
     status: { freshMarkets, staleMarkets, unavailableMarkets },

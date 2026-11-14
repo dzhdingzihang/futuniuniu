@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { isEligibleRadarCandidate, normalizeRadarRow, scanRadarWithSegment } from "../functions/api/radar.js";
+import { refreshRadarSnapshots } from "../functions/lib/radar-snapshot.js";
 import { scanGrowthSegment } from "../functions/lib/radar-segment.js";
 
 const market = "A股";
@@ -55,4 +56,15 @@ test("incomplete quote coverage cannot silently replace a previous complete segm
     batchQuotes: async ({codes:part}) => part.map(code => quote(code,codes.indexOf(code))) });
   assert.equal(growthOnly.loadState,"unavailable");
   assert.equal(growthOnly.segment.loadState,"fresh");
+});
+
+test("fresh segment advances the publication when the broad feed is stale and scans finish later", async () => {
+  const result = await refreshRadarSnapshots({
+    kv: {get: async () => null, put: async () => {}}, now,
+    scanMarket: async market => ({
+      market, candidates: [], loadState: "unavailable", fetchedAt: null, error: {message:"wide down"},
+      segment: {loadState:"fresh", fetchedAt:"2026-11-14T00:10:05Z", candidates:[]}
+    })
+  });
+  assert.equal(result.envelope.publishedAt, now().toISOString());
 });
