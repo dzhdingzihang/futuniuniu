@@ -10,6 +10,7 @@ stored once in the root costPolicy and applied by the application at read time.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -27,6 +28,7 @@ from openpyxl import load_workbook
 MARKET_ORDER = {"A": 0, "HK": 1, "US": 2}
 FUTURE_TRADE_FEE_USD = 20
 FALLBACK_A_SOLD_AS_OF = "2026-11-05"
+INITIAL_HK_US_LEDGER_DATE = "2026-11-08"
 
 
 class ImportContractError(RuntimeError):
@@ -292,10 +294,165 @@ def locked_fees(*, sold: bool) -> dict[str, int]:
     return fees
 
 
+@dataclass
+class SaleHistory:
+    cutoff: str
+    baseline: dict[str, dict[str, Any]]
+    fills: dict[str, list[dict[str, Any]]]
+    rates: dict[str, dict[str, Any]]
+
+
+def read_sale_history(workbook: Any) -> SaleHistory | None:
+    if "历史卖出基准" not in workbook.sheetnames:
+        return None
+    baseline = {}
+    dates = set()
+    for row in table_rows(workbook["历史卖出基准"], 1):
+        key = security_key(*market_and_code(row.get("股票代码")))
+        if key in baseline:
+            raise ImportContractError(f"{key} 历史卖出基准重复")
+        baseline[key] = row
+        dates.add(iso_date(row.get("基准日期")))
+    if len(dates) != 1 or "" in dates:
+        raise ImportContractError("历史卖出基准缺少统一的基准日期")
+    cutoff = dates.pop()
+    if not {"实盘逐笔成交", "历史汇率"}.issubset(workbook.sheetnames):
+        raise ImportContractError("逐单导入需要实盘逐笔成交和历史汇率")
+    fills = defaultdict(list)
+    for row in table_rows(workbook["实盘逐笔成交"], 5):
+        if row.get("方向") == "卖出" and iso_date(row.get("成交时间")) > cutoff:
+            key = security_key(*market_and_code(row.get("原始股票代码")))
+            fills[key].append(row)
+    rates = {iso_date(row["取价日期"]): row for row in table_rows(workbook["历史汇率"], 5)}
+    return SaleHistory(cutoff, baseline, fills, rates)
+
+
+def aggregate_sale(
+    master: MasterSecurity, events: list[dict[str, Any]], buy_price: Any, sell_price: Any, qty: Any
+) -> dict[str, Any]:
+    cost = sum_field(events, "卖出", "本次卖出成本 CNY")
+    proceeds = sum_field(events, "卖出", "折合人民币净额")
+    sell_date = last_ledger_sale_date(events)
+    if cost <= 0 or proceeds < 0 or not sell_date:
+        raise ImportContractError(f"{master.key} 历史卖出缺少有效成本、净额或日期")
+    qty = quantity(qty, field=f"{master.key} 历史卖出数量")
+    sale = lot_common(master, "sold", "ledger-reconciled", master.note)
+    sale["buy"] = {
+        "price": native_number(buy_price, field=f"{master.key} 历史买入均价"),
+        "qty": qty,
+        "purchaseCostCny": rounded(cost, 2),
+    }
+    buy_date = first_ledger_entry_date(events)
+    if buy_date:
+        sale["buy"]["date"] = buy_date
+    sale["sell"] = {
+        "price": native_number(sell_price, field=f"{master.key} 历史卖出均价"),
+        "qty": qty,
+        "date": sell_date,
+        "sellProceedsCny": rounded(proceeds, 2),
+    }
+    sale["fees"] = locked_fees(sold=True)
+    return sale
+
+
+def broker_order_sale(
+    master: MasterSecurity, order_key: tuple[str, str, str],
+    executions: list[tuple[dict[str, Any], dict[str, Any]]], rates: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    day, account, order = order_key
+    qty = gross = native_cost = cost_cny = proceeds = fee_cny = fee_usd = 0.0
+    for fill, ledger in executions:
+        units = quantity(fill.get("成交数量"), field="成交数量")
+        price = number(fill.get("成交单价"), field="成交单价")
+        amount = number(fill.get("成交金额"), field="成交金额")
+        fee = number(fill.get("分摊订单费"), field="分摊订单费")
+        pnl = number(fill.get("本笔已实现盈亏"), field="本笔已实现盈亏")
+        fx = number(ledger.get("汇率 CNY／原币"), field="交易币种兑人民币汇率")
+        net = number(ledger.get("折合人民币净额"), field="折合人民币净额")
+        currency = clean_text(fill.get("币种"))
+        if (price <= 0 or fee < 0 or fx <= 0 or currency != master.currency
+                or currency != ledger.get("交易原币") or day != iso_date(ledger.get("事件日期"))
+                or not math.isclose(amount, price * units, abs_tol=0.005)
+                or not math.isclose(net, (amount - fee) * fx, abs_tol=0.015)):
+            raise ImportContractError(f"{master.key} {day} 成交、费用、币种或人民币净额无法核对")
+        if currency == "USD":
+            usd_fee = fee
+        else:
+            usd_fx = number(rates.get(day, {}).get("1 USD 折合 CNY"), field=f"{day} 美元汇率")
+            if usd_fx <= 0:
+                raise ImportContractError(f"{day} 美元汇率必须大于零")
+            usd_fee = fee * fx / usd_fx
+        qty += units
+        gross += amount
+        native_cost += amount - fee - pnl
+        cost_cny += number(ledger.get("本次卖出成本 CNY"), field="本次卖出成本 CNY")
+        proceeds += net
+        fee_cny += fee * fx
+        fee_usd += usd_fee
+    # The workbook keeps broker identifiers private. The website only needs a stable lot ID.
+    digest = hashlib.sha256(json.dumps([account, order], ensure_ascii=False).encode()).hexdigest()[:16]
+    lot = lot_common(master, f"sold-{day}-{digest}", "ledger-reconciled",
+                     "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用")
+    lot["buy"] = {"price": rounded(native_cost / qty, 6), "qty": rounded(qty, 6),
+                  "purchaseCostCny": rounded(cost_cny, 2)}
+    lot["sell"] = {"price": rounded(gross / qty, 6), "qty": rounded(qty, 6), "date": day,
+                   "sellProceedsCny": rounded(proceeds, 2), "feeCny": rounded(fee_cny, 6)}
+    lot["fees"] = {"buy": 0, "sell": rounded(fee_usd, 6)}
+    return lot
+
+
+def incremental_sales(
+    master: MasterSecurity, events: list[dict[str, Any]], history: SaleHistory
+) -> list[dict[str, Any]]:
+    previous = []
+    entries = {}
+    first_sale = ""
+    share_changes = []
+    for row in events:
+        day = iso_date(row.get("事件日期"))
+        if not day:
+            raise ImportContractError(f"{master.key} 成本明细缺少事件日期")
+        if day <= history.cutoff:
+            previous.append(row)
+            continue
+        kind = row.get("项目")
+        if kind in {"拆合股", "代码变更"}:
+            share_changes.append(day)
+        if kind == "卖出":
+            key = (clean_text(row.get("业务账户")), clean_text(row.get("原始成交号")))
+            if not all(key) or key in entries:
+                raise ImportContractError(f"{master.key} 成本明细的成交标识缺失或重复")
+            entries[key] = row
+            first_sale = min(first_sale or day, day)
+    baseline = history.baseline.get(master.key)
+    if bool(baseline) != bool(last_ledger_sale_date(previous)):
+        raise ImportContractError(f"{master.key} 历史卖出基准与成本明细不一致")
+    if share_changes and (baseline or (first_sale and first_sale <= max(share_changes))):
+        raise ImportContractError(f"{master.key} 卖出后发生拆合股或代码变更，需先核对不同股数单位")
+    sales = []
+    if baseline:
+        sales.append(aggregate_sale(master, previous, baseline["买入均价"], baseline["卖出均价"], baseline["卖出数量"]))
+    orders = defaultdict(list)
+    for fill in history.fills.get(master.key, []):
+        account = clean_text(fill.get("业务账户"))
+        ledger = entries.pop((account, clean_text(fill.get("成交号"))), None)
+        order = clean_text(fill.get("订单号"))
+        if ledger is None or not order:
+            raise ImportContractError(f"{master.key} 逐笔成交缺少订单号，或无法与成本明细逐笔匹配")
+        orders[(iso_date(fill.get("成交时间")), account, order)].append((fill, ledger))
+    if entries:
+        raise ImportContractError(f"{master.key} 成本明细有卖出，但缺少逐笔成交")
+    sales.extend(broker_order_sale(master, key, orders[key], history.rates) for key in sorted(orders))
+    if not math.isclose(sum(lot["sell"]["qty"] for lot in sales), master.sell_qty or 0, abs_tol=1e-6):
+        raise ImportContractError(f"{master.key} 历史与逐单卖出股数之和不等于总表卖出数量")
+    return sales
+
+
 def build_hk_us_lots(
     master: MasterSecurity,
     events: list[dict[str, Any]],
     current_row: dict[str, Any] | None,
+    history: SaleHistory | None = None,
 ) -> tuple[list[dict[str, Any]], float]:
     if not events:
         raise ImportContractError(f"{master.key} 缺少人民币成本明细")
@@ -325,30 +482,10 @@ def build_hk_us_lots(
     elif remaining_cost or valuation_cny:
         raise ImportContractError(f"{master.key} 已清仓但人民币成本明细仍有期末余额")
 
-    if (master.sell_qty or 0) > 0:
-        if sold_cost <= 0 or sold_proceeds < 0:
-            raise ImportContractError(f"{master.key} 卖出成本或净额不正确")
-        if not master.buy_avg or not master.sell_avg:
-            raise ImportContractError(f"{master.key} 港美股聚合成交均价缺失")
-        sold_lot = lot_common(master, "sold", "ledger-reconciled", master.note)
-        sold_lot["buy"] = {
-            "price": rounded(master.buy_avg, 6),
-            "qty": quantity(master.sell_qty, field=f"{master.key} 卖出数量"),
-            "purchaseCostCny": rounded(sold_cost, 2),
-        }
-        if buy_date:
-            sold_lot["buy"]["date"] = buy_date
-        sell_date = last_ledger_sale_date(events)
-        if not sell_date:
-            raise ImportContractError(f"{master.key} 缺少卖出日期")
-        sold_lot["sell"] = {
-            "price": rounded(master.sell_avg, 6),
-            "qty": quantity(master.sell_qty, field=f"{master.key} 卖出数量"),
-            "date": sell_date,
-            "sellProceedsCny": rounded(sold_proceeds, 2),
-        }
-        sold_lot["fees"] = locked_fees(sold=True)
-        lots.append(sold_lot)
+    if history is not None:
+        lots.extend(incremental_sales(master, events, history))
+    elif (master.sell_qty or 0) > 0:
+        lots.append(aggregate_sale(master, events, master.buy_avg, master.sell_avg, master.sell_qty))
     elif not master.is_open:
         raise ImportContractError(f"{master.key} 已清仓但没有卖出数量")
 
@@ -509,20 +646,27 @@ def build_document(workbook_path: Path, buy_cny: float, sell_cny: float) -> tupl
         current_a[security_key(market, code)] = row
 
     ledgers = ledger_groups(table_rows(workbook["人民币成本明细"], 5))
+    history = read_sale_history(workbook)
+    if history:
+        market_keys = {m.key for m in masters if m.market in {"HK", "US"}}
+        if (set(history.fills) | set(history.baseline)) - market_keys:
+            raise ImportContractError("卖出基准或近期成交存在总表未列示的证券，请核对代码变更")
+    elif any(last_ledger_sale_date(events) > INITIAL_HK_US_LEDGER_DATE for events in ledgers.values()):
+        raise ImportContractError("基准建账后的港美股卖出需要历史卖出基准表，无法使用历史聚合均价")
     a_dates = raw_a_dates(table_rows(workbook["成交原始记录"], 7))
 
     lots: list[dict[str, Any]] = []
     generated_pnl = 0.0
     source_pnl = sum(master.pnl_cny for master in masters)
-    source_valuation_dates: list[str] = []
+    valuation_dates: dict[str, list[str]] = defaultdict(list)
     for row in current_a.values():
         value = iso_date(row.get("估值日期"))
         if value:
-            source_valuation_dates.append(value)
-    for row in current_hk_us.values():
+            valuation_dates["A"].append(value)
+    for key, row in current_hk_us.items():
         value = iso_date(row.get("行情更新时间"))
         if value:
-            source_valuation_dates.append(value)
+            valuation_dates[key.split(":")[0]].append(value)
 
     ordered = sorted(masters, key=lambda item: (MARKET_ORDER[item.market], 0 if item.is_open else 1, item.order))
     for master in ordered:
@@ -531,6 +675,7 @@ def build_document(workbook_path: Path, buy_cny: float, sell_cny: float) -> tupl
                 master,
                 ledgers.get(master.key, []),
                 current_hk_us.get(master.key),
+                history,
             )
         elif master.is_open:
             valuation = current_a.get(master.key)
@@ -546,7 +691,8 @@ def build_document(workbook_path: Path, buy_cny: float, sell_cny: float) -> tupl
         generated_pnl += pnl
 
     as_of = workbook_date_from_name(workbook_path)
-    valuation_as_of = max(source_valuation_dates) if source_valuation_dates else ""
+    latest_by_market = {market: max(days) for market, days in valuation_dates.items()}
+    valuation_as_of = max(latest_by_market.values(), default="")
     document = {
         "version": 2,
         "costPolicy": {"buyCny": buy_cny, "sellCny": sell_cny},
@@ -579,6 +725,10 @@ def build_document(workbook_path: Path, buy_cny: float, sell_cny: float) -> tupl
         "newTradeFeeUsd": {"buy": FUTURE_TRADE_FEE_USD, "sell": FUTURE_TRADE_FEE_USD},
         "lots": lots,
     }
+    if history is not None:
+        document["source"]["valuationAsOfByMarket"] = latest_by_market
+        document["source"]["sheets"].extend(["历史卖出基准", "实盘逐笔成交", "历史汇率"])
+    workbook.close()
     summary = validate_document(document, masters, source_pnl, generated_pnl)
     return document, summary
 

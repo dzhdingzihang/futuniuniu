@@ -7,14 +7,14 @@
   "guide": "统一调整人民币买卖成本只改 costPolicy 的 buyCny、sellCny，每只股票分别计一次。lots 保存调整前的成交数据；日常买卖请使用网页上的「记录交易」。",
   "source": {
     "type": "excel",
-    "file": "20261108股票记录.xlsx",
-    "asOf": "2026-11-08",
-    "valuationAsOf": "2026-11-06",
+    "file": "20261114股票记录.xlsx",
+    "asOf": "2026-11-14",
+    "valuationAsOf": "2026-11-13",
     "fx": {
       "CNY": 1,
-      "HKD": 0.8516,
-      "USD": 6.67885,
-      "asOf": "2026-11-08 10:30 Asia/Shanghai"
+      "HKD": 0.8506,
+      "USD": 6.67615,
+      "asOf": "2026-11-14 10:30 Asia/Shanghai"
     },
     "sheets": [
       "全市场股票明细",
@@ -22,14 +22,22 @@
       "持仓估值",
       "当前实盘持仓",
       "人民币成本明细",
-      "成交原始记录"
+      "成交原始记录",
+      "历史卖出基准",
+      "实盘逐笔成交",
+      "历史汇率"
     ],
     "reconciliation": {
       "securityCount": 80,
       "openSecurityCount": 31,
       "closedSecurityCount": 49,
-      "soldSecurityCount": 63,
-      "sourcePnlCny": -261399.85
+      "soldSecurityCount": 64,
+      "sourcePnlCny": -249019.72
+    },
+    "valuationAsOfByMarket": {
+      "A": "2026-11-06",
+      "HK": "2026-11-13",
+      "US": "2026-11-13"
     }
   },
   "newTradeFeeUsd": {
@@ -1371,8 +1379,8 @@
       "note": "买卖数量及均价已按拆合股统一",
       "buy": {
         "price": 24.338,
-        "qty": 140,
-        "purchaseCostCny": 23138.51,
+        "qty": 40,
+        "purchaseCostCny": 6611,
         "date": "2026-05-22"
       },
       "fees": {
@@ -1404,6 +1412,30 @@
       }
     },
     {
+      "id": "excel-us-okll-sold-2026-11-09-6386eee92bd5d8dd",
+      "market": "US",
+      "code": "OKLL",
+      "name": "2倍做多OKLO ETF-Defiance",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 24.431429,
+        "qty": 100,
+        "purchaseCostCny": 16527.5
+      },
+      "sell": {
+        "price": 4.23,
+        "qty": 100,
+        "date": "2026-11-09",
+        "sellProceedsCny": 2807.26,
+        "feeCny": 15.347512
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.3
+      }
+    },
+    {
       "id": "excel-us-nok-open",
       "market": "US",
       "code": "NOK",
@@ -1429,8 +1461,8 @@
       "note": "数量已核对",
       "buy": {
         "price": 13.829,
-        "qty": 250,
-        "purchaseCostCny": 23073.48,
+        "qty": 150,
+        "purchaseCostCny": 13844.09,
         "date": "2026-10-29"
       },
       "fees": {
@@ -1459,6 +1491,30 @@
       "fees": {
         "buy": 0,
         "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-mvll-sold-2026-11-09-4f77b2afa8522852",
+      "market": "US",
+      "code": "MVLL",
+      "name": "2倍做多MRVL ETF-GraniteShares",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 13.8507,
+        "qty": 100,
+        "purchaseCostCny": 9229.39
+      },
+      "sell": {
+        "price": 10.4,
+        "qty": 100,
+        "date": "2026-11-09",
+        "sellProceedsCny": 6924.33,
+        "feeCny": 15.41424
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.31
       }
     },
     {
@@ -1651,8 +1707,8 @@
       "note": "数量已核对",
       "buy": {
         "price": 10.576,
-        "qty": 250,
-        "purchaseCostCny": 17960.63,
+        "qty": 150,
+        "purchaseCostCny": 10776.38,
         "date": "2026-05-15"
       },
       "fees": {
@@ -1684,6 +1740,30 @@
       }
     },
     {
+      "id": "excel-us-tsll-sold-2026-11-09-2eedc1e1e6926561",
+      "market": "US",
+      "code": "TSLL",
+      "name": "2倍做多TSLA ETF-Direxion",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 10.60288,
+        "qty": 100,
+        "purchaseCostCny": 7184.25
+      },
+      "sell": {
+        "price": 9.78,
+        "qty": 100,
+        "date": "2026-11-09",
+        "sellProceedsCny": 6510.55,
+        "feeCny": 15.480968
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.32
+      }
+    },
+    {
       "id": "excel-us-crdu-open",
       "market": "US",
       "code": "CRDU",
@@ -1692,12 +1772,36 @@
       "note": "数量已核对",
       "buy": {
         "price": 7.55,
-        "qty": 50,
-        "purchaseCostCny": 2551.77,
+        "qty": 10,
+        "purchaseCostCny": 510.35,
         "date": "2026-09-02"
       },
       "fees": {
         "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-crdu-sold-2026-11-09-57143d3f258906b4",
+      "market": "US",
+      "code": "CRDU",
+      "name": "2倍做多CRDO ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 7.5928,
+        "qty": 40,
+        "purchaseCostCny": 2041.41
+      },
+      "sell": {
+        "price": 3.64,
+        "qty": 40,
+        "date": "2026-11-09",
+        "sellProceedsCny": 957.42,
+        "feeCny": 14.146402
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.12
       }
     },
     {
