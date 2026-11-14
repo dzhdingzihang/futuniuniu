@@ -1,4 +1,4 @@
-import bundledCalendar from "../../assets/radar-calendar.json" with { type: "json" };
+import { bundledCalendar } from "../../assets/radar-bundled.cjs";
 
 const zones = { "A股": "Asia/Shanghai", "港股": "Asia/Hong_Kong", "美股": "America/New_York" };
 const formatters = Object.fromEntries(Object.entries(zones).map(([market, timeZone]) => [

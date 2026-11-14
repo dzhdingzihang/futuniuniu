@@ -1,4 +1,4 @@
-import directory from "../../assets/radar-universe.json" with {type:"json"};
+import { directory } from "../../assets/radar-bundled.cjs";
 import { loadSessionCalendar } from "../lib/intraday-session.js";
 import { GROWTH_SEGMENTS } from "../lib/radar-segment.js";
 import { PREOPEN_VERSION, readPreopenMarket } from "../lib/preopen-cycle.js";

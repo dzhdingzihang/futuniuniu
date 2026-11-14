@@ -1,5 +1,5 @@
 // Non-price announcements and exchange-session observations available before the cutoff.
-import bundledIndustries from "../../assets/radar-industries.json" with {type:"json"};
+import { bundledIndustries } from "../../assets/radar-bundled.cjs";
 import { fetchTencentGrowthQuotes } from "./radar-tencent-quotes.js";
 
 const FEEDS = {
