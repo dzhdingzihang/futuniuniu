@@ -1,4 +1,5 @@
-import { scanRadarMarket } from "../../functions/api/radar.js";
+import { scanRadarWithSegment } from "../../functions/api/radar.js";
+import { loadGrowthDirectory } from "../../functions/lib/radar-segment.js";
 import { refreshRadarSnapshots } from "../../functions/lib/radar-snapshot.js";
 
 export async function runScheduledRadarRefresh({
@@ -9,9 +10,13 @@ export async function runScheduledRadarRefresh({
   recoveryOnly = false,
 }) {
   if (!env?.RADAR_SNAPSHOTS) throw new TypeError("缺少 RADAR_SNAPSHOTS KV 绑定");
+  let directory;
   const scanner = typeof scanMarket === "function"
     ? scanMarket
-    : (market) => scanRadarMarket({ market, fetcher, now });
+    : (market, previous) => {
+      directory ??= loadGrowthDirectory(fetcher, 8000);
+      return scanRadarWithSegment({ market, fetcher, now, directory }, previous);
+    };
   return refreshRadarSnapshots({ kv: env.RADAR_SNAPSHOTS, scanMarket: scanner, now, recoveryOnly });
 }
 

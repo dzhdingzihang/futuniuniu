@@ -1,0 +1,42 @@
+name: Refresh radar membership
+
+on:
+  schedule:
+    # Beijing 23:37 Monday–Friday, after the Hong Kong close and before the next radar scan.
+    - cron: "37 15 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: radar-universe-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install data readers
+        run: python -m pip install openpyxl==3.1.5 pypdf==6.21.4
+      - name: Refresh official memberships
+        run: python scripts/update_radar_universe.py
+      - name: Publish changed membership
+        run: |
+          if git diff --quiet -- assets/radar-universe.json; then
+            echo "Membership unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- assets/radar-universe.json
+          git commit -m "Update official radar membership"
+          git pull --rebase origin main
+          git push origin HEAD:main

@@ -91,24 +91,32 @@ export async function refreshRadarSnapshots({ kv, scanMarket, now = () => new Da
 
   for (const market of RADAR_SNAPSHOT_MARKETS) {
     const inherited = previous?.markets?.[market];
-    if (recoveryOnly && isCurrentMarket(inherited, attemptedAt)) {
+    if (recoveryOnly && isCurrentMarket(inherited, attemptedAt)
+        && (!inherited.segment || inherited.segment.loadState === "fresh")) {
       markets[market] = inherited;
       freshMarkets.push(market);
       continue;
     }
     scanned++;
     try {
-      const snapshot = await scanMarket(market);
+      const snapshot = await scanMarket(market, inherited);
       if (!isRecord(snapshot) || snapshot.market !== market || !Array.isArray(snapshot.candidates)
-          || !snapshot.candidates.length || !Number.isFinite(Date.parse(snapshot.fetchedAt))) {
+          || ((!snapshot.candidates.length || !Number.isFinite(Date.parse(snapshot.fetchedAt)))
+             && snapshot.segment?.loadState !== "fresh" && snapshot.segment?.loadState !== "stale")) {
         throw Object.assign(new Error(`${market} 扫描结果结构无效`), { code: "RADAR_INVALID_SNAPSHOT" });
       }
-      markets[market] = freshSnapshot(snapshot);
-      freshMarkets.push(market);
+      markets[market] = snapshot.loadState ? snapshot : freshSnapshot(snapshot);
+      if (snapshot.loadState === "stale" || snapshot.loadState === "unavailable") {
+        (snapshot.loadState === "stale" ? staleMarkets : unavailableMarkets).push(market);
+        failures[market] = snapshot.error;
+      } else {
+        freshMarkets.push(market);
+      }
     } catch (error) {
       failures[market] = refreshError(error, attemptedAt);
       if (isRecord(inherited) && Array.isArray(inherited.candidates) && inherited.candidates.length) {
         markets[market] = staleSnapshot(inherited, error, attemptedAt);
+        if (inherited.segment?.fetchedAt) markets[market].segment = staleSnapshot(inherited.segment, error, attemptedAt);
         staleMarkets.push(market);
       } else {
         unavailableMarkets.push(market);
@@ -121,7 +129,7 @@ export async function refreshRadarSnapshots({ kv, scanMarket, now = () => new Da
 
   const envelope = {
     schema: RADAR_SNAPSHOT_SCHEMA,
-    publishedAt: scanned > failedMarkets.length ? attemptedAt : previous?.publishedAt ?? null,
+    publishedAt: scanned > failedMarkets.length || Object.values(markets).some(s => s.segment?.loadState === "fresh" && s.segment.fetchedAt === attemptedAt) ? attemptedAt : previous?.publishedAt ?? null,
     attemptedAt,
     markets,
     status: { freshMarkets, staleMarkets, unavailableMarkets },

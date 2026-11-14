@@ -1,9 +1,10 @@
 import { readRadarSnapshotEnvelope } from "../lib/radar-snapshot.js";
 import "../../assets/radar-risk-policy.js";
+import { scanGrowthSegment } from "../lib/radar-segment.js";
 
 const EASTMONEY_RADAR_URL = "https://push2delay.eastmoney.com/api/qt/clist/get";
 
-export const RADAR_MODEL_VERSION = "radar-v1.2";
+export const RADAR_MODEL_VERSION = "radar-v1.3";
 export const RADAR_SOURCE = "东方财富行情中心";
 export const RADAR_PAGE_SIZE = 100;
 export const RADAR_PAGE_COUNT = 5;
@@ -102,12 +103,14 @@ export function normalizeRadarRow(raw, market) {
       price: positiveNumber(raw.f2),
       changePct: finiteNumber(raw.f3),
       return60d: finiteNumber(raw.f24),
+      return10d: finiteNumber(raw.return10d),
       amount: positiveNumber(raw.f6),
       marketCap: positiveNumber(raw.f20),
       pe: finiteNumber(raw.f9),
       pb: finiteNumber(raw.f23),
       amplitude: finiteNumber(raw.f7),
       turnoverRate: finiteNumber(raw.f8),
+      volumeRatio: positiveNumber(raw.f10),
     },
   };
 }
@@ -290,7 +293,7 @@ async function fetchRadarPageWithRetry(market, page, fetcher, timeoutMs) {
   try {
     return await fetchRadarPage(market, page, fetcher, timeoutMs);
   } catch (error) {
-    // Retry only this page. Keep the whole scan below the browser's 14s deadline.
+    // Retry only this page. A failed page must not invalidate the other completed pages.
     if (!error?.retryable && !(error instanceof TypeError)) throw error;
     await new Promise((resolve) => setTimeout(resolve, 200));
     return fetchRadarPage(market, page, fetcher, Math.min(timeoutMs, 4000));
@@ -352,16 +355,36 @@ function snapshotUnavailableResponse(message) {
   );
 }
 
-function fallbackSnapshot(snapshot, error, now) {
-  const radarError = asRadarError(error);
-  const stamp = now();
-  const at = (stamp instanceof Date ? stamp : new Date(stamp)).toISOString();
+function snapshotAfterFailure(previous, error, attemptedAt, empty) {
+  const available = previous && previous.fetchedAt && Array.isArray(previous.candidates);
+  const fallback = available ? previous : empty;
   return {
-    ...snapshot,
-    loadState: "stale",
-    stale: true,
-    error: { code: radarError.code, message: radarError.message, at },
+    ...fallback,
+    loadState: available ? "stale" : "unavailable",
+    stale: Boolean(available),
+    error: { code: error?.code || "RADAR_UPSTREAM_ERROR", message: error?.message || "行情暂不可用", at: attemptedAt },
   };
+}
+
+// Both daily jobs and manual scans publish each universe independently.
+export async function scanRadarWithSegment(options, previous = null) {
+  const { market, now = () => new Date() } = options;
+  if (!RADAR_MARKETS[market]) throw new RadarError("请选择 A股、港股或美股", "INVALID_MARKET", 400);
+  const [wide, growth] = await Promise.allSettled([
+    scanRadarMarket(options),
+    scanGrowthSegment({ ...options, normalize: normalizeRadarRow, isEligible: isEligibleRadarCandidate }),
+  ]);
+  const attemptedAt = new Date(now()).toISOString();
+  if (wide.status === "rejected" && growth.status === "rejected" && !previous) throw wide.reason;
+  const base = wide.status === "fulfilled" ? { ...wide.value, loadState: "fresh", stale: false, error: null }
+    : snapshotAfterFailure(previous, wide.reason, attemptedAt, {
+      market, modelVersion: RADAR_MODEL_VERSION, source: RADAR_SOURCE, candidates: [], fetchedAt: null, poolSize: 0,
+    });
+  const segment = growth.status === "fulfilled" ? growth.value
+    : snapshotAfterFailure(previous?.segment, growth.reason, attemptedAt, {
+      ...growth.reason?.segmentInfo, fetchedAt: null, candidates: [],
+    });
+  return { ...base, segment };
 }
 
 export async function onRequestGet({ request, env = {}, fetcher = fetch, now = () => new Date(), timeoutMs = RADAR_UPSTREAM_TIMEOUT_MS }) {
@@ -373,14 +396,11 @@ export async function onRequestGet({ request, env = {}, fetcher = fetch, now = (
     return Response.json(envelope, { headers: { "Cache-Control": "private, no-store" } });
   }
   try {
-    const snapshot = await scanRadarMarket({ market, fetcher, now, timeoutMs });
+    if (!RADAR_MARKETS[market]) throw new RadarError("请选择 A股、港股或美股", "INVALID_MARKET", 400);
+    const previous = await readRadarSnapshotEnvelope(env.RADAR_SNAPSHOTS);
+    const snapshot = await scanRadarWithSegment({ market, fetcher, now, timeoutMs }, previous?.markets?.[market]);
     return Response.json(snapshot, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
-    const envelope = await readRadarSnapshotEnvelope(env.RADAR_SNAPSHOTS);
-    const cached = envelope?.markets?.[market];
-    if (cached && Array.isArray(cached.candidates)) {
-      return Response.json(fallbackSnapshot(cached, error, now), { headers: { "Cache-Control": "private, no-store" } });
-    }
     return errorResponse(error, market);
   }
 }

@@ -1071,6 +1071,15 @@ tr:last-child td { border-bottom: 0; }
 .radar-top3-market { min-width: 0; overflow: hidden; border: 1px solid #dce4f1; border-radius: 12px; background: #fff; }
 .radar-top3-market.is-cached { border-color: #eed7b9; background: #fffcf7; }
 .radar-top3-market.is-error { border-color: #efcbd1; background: #fffafb; }
+.radar-scope-switch { display: inline-flex; align-items: stretch; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.radar-scope-switch button { min-height: 44px; padding: 0 17px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 14px; font-weight: 750; cursor: pointer; }
+.radar-scope-switch button[aria-pressed="true"] { color: #fff; background: var(--blue); }
+.radar-scope-switch button:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+.radar-segment-coverage { padding: 9px 14px 12px; border-bottom: 1px solid var(--line); background: #fbfcff; }
+.radar-segment-coverage p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.radar-segment-coverage dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin: 8px 0 0; }
+.radar-segment-coverage dt { color: var(--muted); font-size: 11px; }
+.radar-segment-coverage dd { margin: 3px 0 0; color: var(--ink); font-size: 13px; font-weight: 750; font-variant-numeric: tabular-nums; }
 .radar-top3-market > header { display: flex; min-width: 0; min-height: 62px; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: #fbfcff; }
 .radar-top3-market > header > div { min-width: 0; }
 .radar-top3-market > header > div:first-child { display: grid; gap: 3px; }
@@ -1157,6 +1166,7 @@ tr:last-child td { border-bottom: 0; }
 .radar-method-card > p { margin: 0 0 16px; color: var(--muted); font-size: 11px; line-height: 1.55; }
 
 .radar-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) repeat(2, max-content) minmax(170px, .65fr); align-items: end; gap: 12px; margin-bottom: 14px; padding: 15px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+@media (min-width: 1101px) { .radar-toolbar.is-growth { grid-template-columns: minmax(180px, 1fr) max-content minmax(170px, .65fr); } }
 .radar-search, .radar-toolbar > label { display: grid; min-width: 0; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 750; }
 .radar-search input, .radar-toolbar select { width: 100%; min-width: 0; height: 44px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; outline: 0; background: #fff; color: var(--ink); }
 .radar-filter-group { min-width: 0; margin: 0; padding: 0; border: 0; }

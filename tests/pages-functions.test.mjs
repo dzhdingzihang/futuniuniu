@@ -1546,6 +1546,7 @@ test("radar API maps all three markets and scans exactly five bounded pages", as
       now: () => new Date("2026-08-17T00:00:00.000Z"),
       fetcher: async (input) => {
         const url = new URL(input);
+        if (url.pathname === "/assets/radar-universe.json") return Response.json({});
         requested.push(url);
         const page = Number(url.searchParams.get("pn"));
         return Response.json({ rc: 0, data: { total: 500, diff: radarRowsForPage(item.market, page) } });
@@ -1574,7 +1575,7 @@ test("radar API maps all three markets and scans exactly five bounded pages", as
       poolSize: payload.poolSize,
     }, {
       market: item.market,
-      modelVersion: "radar-v1.2",
+      modelVersion: "radar-v1.3",
       source: "东方财富行情中心",
       fetchedAt: "2026-08-17T00:00:00.000Z",
       rawSize: 500,

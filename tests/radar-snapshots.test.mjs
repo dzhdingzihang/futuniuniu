@@ -204,6 +204,7 @@ test("Pages GET returns a unified KV envelope without a market and keeps the leg
     env: { RADAR_SNAPSHOTS: kv },
     now: () => new Date("2026-08-30T00:10:00.000Z"),
     fetcher: async (input) => {
+      if (new URL(input).pathname === "/assets/radar-universe.json") return Response.json({});
       fetchCalls += 1;
       const page = Number(new URL(input).searchParams.get("pn"));
       const rows = Array.from({ length: 100 }, (_, offset) => {
