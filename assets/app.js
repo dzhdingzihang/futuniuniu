@@ -3344,7 +3344,22 @@ function normalizeHoldingEditorSemantics() {
   }
 }
 
+function radarWatchSurface(button) {
+  if (button.closest(".radar-top3-item")) return ".radar-top3-item";
+  return button.closest(".radar-watch-aside") ? ".radar-watch-aside" : ".radar-candidate";
+}
+
+function findRadarWatchButton(surface, id) {
+  return Array.from(document.querySelectorAll(surface + " [data-toggle-watch]")).find(function (button) {
+    return button.dataset.toggleWatch === id;
+  });
+}
+
 function render(announceRoute) {
+  // Background price batches can redraw the page while a watch button has focus.
+  const activeWatch = !announceRoute && state.tab === "radar" && !state.holdingEditorOpen &&
+    document.activeElement?.closest("[data-toggle-watch]");
+  const watchSurface = activeWatch && radarWatchSurface(activeWatch);
   const rawPage = state.tab === "actions" ? actionsPage() : state.tab === "radar" ? radarPage() : state.tab === "trades" ? tradesPage() : overviewPage();
   const page = rawPage;
   document.body.classList.toggle("modal-open", state.holdingEditorOpen);
@@ -3354,6 +3369,7 @@ function render(announceRoute) {
     main.id = "main-content";
     main.setAttribute("tabindex", "-1");
   }
+  if (activeWatch) findRadarWatchButton(watchSurface, activeWatch.dataset.toggleWatch)?.focus({ preventScroll: true });
   normalizeHoldingEditorSemantics();
   applyPageMeta(Boolean(announceRoute));
   syncModalIsolation();
@@ -3755,7 +3771,7 @@ function eventHandlers() {
     const toggleWatch = event.target.closest("[data-toggle-watch]");
     if (toggleWatch) {
       const id = toggleWatch.dataset.toggleWatch || "";
-      const watchSurface = toggleWatch.closest(".radar-top3-item") ? ".radar-top3-item" : toggleWatch.closest(".radar-watch-aside") ? ".radar-watch-aside" : ".radar-candidate";
+      const watchSurface = radarWatchSurface(toggleWatch);
       const existing = state.saved.findIndex(function (item) { return item.id === id; });
       const previous = state.saved.slice();
       if (existing >= 0) {
@@ -3771,15 +3787,13 @@ function eventHandlers() {
         state.saved = previous;
         showToast("浏览器无法保存观察清单", "error");
       }
-      window.requestAnimationFrame(function () {
-        const selector = "[data-toggle-watch=\"" + id.replace(/\"/g, "\\\"") + "\"]";
-        const controls = Array.from(document.querySelectorAll(selector));
-        const preferred = controls.find(function (control) {
-          return control.closest(watchSurface);
-        });
-        const fallback = controls[0] || document.querySelector("#radar-watch-title");
-        if (preferred || fallback) (preferred || fallback).focus();
-      });
+      // Interaction can land on the document body when removing the focused
+      // sidebar entry. Keep an intentional switch to any other control intact.
+      if (document.activeElement === document.body) {
+        const next = findRadarWatchButton(watchSurface, id) || findRadarWatchButton(".radar-top3-item", id) ||
+          findRadarWatchButton(".radar-candidate", id) || document.querySelector("#radar-watch-title");
+        if (next) next.focus({ preventScroll: true });
+      }
       return;
     }
     const holdingMarket = event.target.closest("[data-holding-market]");
