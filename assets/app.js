@@ -85,7 +85,7 @@ const METRIC_HELP = {
 const openGrowthRadar = /(?:^|[?&])radar=growth(?:&|$)/.test(location.search || "");
 
 const state = {
-  tab: VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview",
+  tab: VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : openGrowthRadar ? "radar" : "overview",
   market: "全部",
   tradeMarket: "全部",
   tradeDateStart: "",
@@ -4256,7 +4256,7 @@ function startupStateFingerprint() {
 }
 
 async function start() {
-  if (!VALID_TABS.includes(location.hash.slice(1))) location.hash = "#overview";
+  if (!VALID_TABS.includes(location.hash.slice(1))) location.hash = openGrowthRadar ? "#radar" : "#overview";
   const syncRequest = getJson("/api/holdings-sync", null, 8000);
   const staticRequest = Promise.all([
     getJson("holdings.json", null),
