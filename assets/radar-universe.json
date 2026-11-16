@@ -1695,9 +1695,9 @@
     ]
   },
   "美股": {
-    "asOf": "2026-11-14",
+    "asOf": "2026-11-17",
     "source": "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
-    "sourceDate": "2026-11-13",
+    "sourceDate": "2026-11-16",
     "codes": [
       "AACG",
       "AACI",
@@ -2183,6 +2183,7 @@
       "BRLS",
       "BRLT",
       "BRNX",
+      "BRRK",
       "BRTM",
       "BRTX",
       "BRUN",
@@ -3875,7 +3876,6 @@
       "NVX",
       "NWBI",
       "NWCL",
-      "NWE",
       "NWFL",
       "NWGL",
       "NWL",
@@ -4087,7 +4087,6 @@
       "PLBC",
       "PLBL",
       "PLBY",
-      "PLCE",
       "PLCI",
       "PLMK",
       "PLMR",
