@@ -1695,9 +1695,9 @@
     ]
   },
   "美股": {
-    "asOf": "2026-11-17",
+    "asOf": "2026-11-18",
     "source": "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
-    "sourceDate": "2026-11-16",
+    "sourceDate": "2026-11-17",
     "codes": [
       "AACG",
       "AACI",
@@ -2629,7 +2629,6 @@
       "DUO",
       "DUOL",
       "DUOT",
-      "DVLT",
       "DWSN",
       "DWTX",
       "DXCM",
@@ -2984,6 +2983,7 @@
       "GLUE",
       "GLXG",
       "GLXY",
+      "GM",
       "GMAB",
       "GMEX",
       "GMHS",
@@ -4852,7 +4852,6 @@
       "VALU",
       "VANI",
       "VBIO",
-      "VBNK",
       "VC",
       "VCEL",
       "VCIG",
@@ -4910,6 +4909,7 @@
       "VRM",
       "VRNS",
       "VRRM",
+      "VRSA",
       "VRSK",
       "VRSN",
       "VRTX",
