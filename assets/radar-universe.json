@@ -1695,9 +1695,9 @@
     ]
   },
   "美股": {
-    "asOf": "2026-11-18",
+    "asOf": "2026-11-19",
     "source": "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
-    "sourceDate": "2026-11-17",
+    "sourceDate": "2026-11-18",
     "codes": [
       "AACG",
       "AACI",
@@ -3042,6 +3042,7 @@
       "GTM",
       "GTX",
       "GUAC",
+      "GUER",
       "GURE",
       "GUTS",
       "GVH",
@@ -4033,7 +4034,6 @@
       "PCAR",
       "PCB",
       "PCLA",
-      "PCRX",
       "PCSA",
       "PCT",
       "PCTY",
@@ -4450,7 +4450,6 @@
       "SHBI",
       "SHC",
       "SHEN",
-      "SHFS",
       "SHIM",
       "SHIP",
       "SHLS",
