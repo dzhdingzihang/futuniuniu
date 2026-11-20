@@ -1,0 +1,128 @@
+.overview-page {
+  --ledger-border: #deded4;
+  --ledger-muted: #60665e;
+  --ledger-gold: #80662e;
+  font-variant-numeric: tabular-nums;
+}
+.overview-page .overview-section + .overview-section { margin-top: 36px; }
+.overview-page .overview-section-heading { align-items: center; }
+.overview-page .overview-section-heading h1 { font-size: 30px; letter-spacing: -.035em; }
+.overview-page .overview-section-heading h2,
+.overview-page .overview-chart-card h2,
+.overview-page .ranking-heading h2 { font-size: 23px; letter-spacing: -.025em; line-height: 1.3; }
+.account-unit { color: var(--ledger-muted); font-size: 12px; white-space: nowrap; }
+.overview-page .fx-status-badge { background: #ecefe7; color: #41603e; }
+.overview-page .fx-status-line.is-fallback .fx-status-badge { background: #f4ecda; color: #755622; }
+.overview-page .fx-rate-values { flex-wrap: wrap; }
+.overview-page .fx-rate-values b { color: #41473f; }
+.overview-page .account-metric-grid {
+  gap: 0; background: white; border: 1px solid var(--ledger-border); border-radius: 14px;
+}
+.overview-page .account-metric-card {
+  background: transparent; border: 0; border-radius: 0; box-shadow: none;
+  min-height: 162px; padding: 22px; gap: 0;
+}
+.overview-page .account-metric-card + .account-metric-card { border-inline-start: 1px solid var(--ledger-border); }
+.overview-page .account-metric-card:nth-child(3) { background: #f7f3e8; }
+.overview-page .account-metric-card:nth-child(3) .metric-label { color: #6c5428; }
+.overview-page .metric-label { color: #454b43; font-weight: 650; font-size: 14px; }
+.overview-page .account-metric-main { display: grid; gap: 7px; margin: 16px 0 13px; }
+.overview-page .metric-value {
+  max-width: none; overflow: visible; overflow-wrap: anywhere; white-space: normal;
+  font-size: 32px; line-height: 1.08; letter-spacing: -.035em; font-weight: 700;
+}
+.overview-page .metric-value.neutral { color: #232623; }
+.overview-page .account-metric-rate { font-size: 12px; font-weight: 650; }
+.overview-page .account-metric-rate.neutral,
+.overview-page .account-metric-card p,
+.overview-page .fee-policy-note { color: var(--ledger-muted); }
+.overview-page .account-metric-card p { font-size: 12px; line-height: 1.6; }
+.overview-page .order-fee-note { margin-top: 14px; color: #41473f; }
+.overview-page .market-overview-section .overview-section-heading { align-items: baseline; }
+.overview-page .overview-section-heading p { max-width: 48em; }
+.overview-page .overview-market-grid { gap: 15px; }
+.overview-page .overview-market-card { padding: 18px 20px 8px; }
+.overview-page .overview-market-card > header { min-height: 35px; padding: 0; border: 0; }
+.overview-page .overview-market-card h3 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
+.overview-page .overview-market-card > header > span { color: var(--ledger-muted); white-space: normal; text-align: right; }
+.market-pnl-summary { display: grid; gap: 4px; padding: 17px 0 15px; }
+.market-pnl-summary > span { color: var(--ledger-muted); font-size: 12px; }
+.market-pnl-summary > strong { font-size: 26px; font-weight: 700; letter-spacing: -.035em; line-height: 1.15; overflow-wrap: anywhere; }
+.market-pnl-summary > small { color: var(--ledger-muted); font-size: 12px; line-height: 1.55; }
+.market-pnl-scale { position: relative; height: 6px; margin-top: 8px; border-radius: 4px; background: #edede7; }
+.market-pnl-scale::after { position: absolute; content: ''; top: -3px; left: 50%; width: 1px; height: 12px; background: #7a8076; }
+.market-pnl-scale i { position: absolute; top: 0; left: 50%; display: block; height: 100%; background: currentColor; border-radius: 0 4px 4px 0; }
+.market-pnl-scale i.negative { left: auto; right: 50%; border-radius: 4px 0 0 4px; }
+.overview-page .overview-market-table { border-top: 1px solid var(--ledger-border); }
+.overview-page .market-data-row,
+.overview-page .overview-market-card.is-cny .market-data-row:not(.count-row) {
+  grid-template-columns: minmax(59px,auto) minmax(0,1fr) auto; gap: 0 9px; min-height: 54px;
+  padding: 7px 0; align-content: center; align-items: baseline;
+}
+.overview-page .market-data-row > span,
+.overview-page .market-data-row > em { align-self: center; }
+.overview-page .market-data-row > b,
+.overview-page .market-data-row > small { overflow: visible; text-overflow: clip; overflow-wrap: anywhere; white-space: normal; }
+.overview-page .market-data-row > b { text-align: right; font-weight: 650; line-height: 1.4; }
+.overview-page .market-data-row > small { margin: 0; text-align: right; line-height: 1.5; }
+.overview-page .market-data-row > em:empty { display: none; }
+.overview-page .market-data-row:has(em:empty) :is(b,small) { grid-column: 2 / 4; }
+.overview-page .is-cny .market-data-row > small { display: none; }
+.overview-page .is-cny .market-data-row > b { grid-row: 1 / 3; align-self: center; }
+.overview-page .overview-chart-card { padding: 23px 24px 17px; }
+.overview-page .chart-estimate-note { margin: 6px 0 0; color: var(--ledger-muted); font-size: 13px; }
+.overview-page .trend-segmented, .overview-page .ranking-market-tabs { border-color: var(--ledger-border); }
+.overview-page .segmented button.active, .overview-page .ranking-market-tabs button.active { background: #282c27; color: white; }
+.chart-range-summary { display: flex; flex-wrap: wrap; gap: 16px 44px; margin: 21px 0 0; border-top: 1px solid var(--ledger-border); padding: 16px 0 0; }
+.chart-range-summary dt { color: var(--ledger-muted); font-size: 12px; }
+.chart-range-summary dd { margin: 4px 0 0; font-size: 19px; font-weight: 650; line-height: 1.25; letter-spacing: -.02em; }
+.chart-range-summary .range-date { color: var(--ledger-muted); font-size: 11px; font-weight: 450; letter-spacing: normal; }
+.chart-only-point { font-size: 13px; color: var(--ledger-muted); }
+.overview-page .overview-canvas-wrap { height: 285px; }
+.overview-page .line-chart { animation: none; }
+.overview-page .chart-legend { justify-content: flex-end; margin: 6px 0 0; color: var(--ledger-muted); }
+.zero-line-key { display: inline-block; width: 20px; border-top: 1px dashed #787970; }
+.overview-page .ranking-number { color: var(--ledger-muted); background: #f0f0e9; }
+.overview-page .ranking-bar { height: 5px; background: #edede7; }
+.overview-page .ranking-security strong { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+
+@media (min-width: 981px) and (max-width: 1250px) {
+  .overview-page .overview-market-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .overview-page .overview-market-card:last-child { grid-column: auto; }
+  .overview-page .overview-market-card { padding-inline: 14px; }
+  .overview-page .account-metric-card { padding: 16px; }
+  .overview-page .metric-value { font-size: 27px; }
+}
+@media (max-width: 980px) {
+  .overview-page .account-metric-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .overview-page .account-metric-card { padding: 17px 20px; min-height: 148px; }
+  .overview-page .account-metric-card:nth-child(3) { border-inline-start: 0; border-end-start-radius: 13px; }
+  .overview-page .account-metric-card:nth-child(n+3) { border-top: 1px solid var(--ledger-border); }
+  .overview-page .overview-market-grid { grid-template-columns: 1fr; }
+  .overview-page .overview-market-card:last-child { grid-column: auto; }
+}
+@media (min-width: 601px) and (max-width: 980px) {
+  .overview-page .overview-market-card { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); column-gap: 26px; padding: 16px 20px; }
+  .overview-page .overview-market-card header { grid-column: 1; }
+  .overview-page .market-pnl-summary { grid-column: 1; align-self: start; }
+  .overview-page .overview-market-table { grid-column: 2; grid-row: 1 / 3; border-top: 0; border-inline-start: 1px solid var(--ledger-border); padding-left: 20px; }
+}
+@media (max-width: 740px) {
+  .overview-page .overview-section-heading, .overview-page .market-overview-section .overview-section-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .overview-page .overview-section-heading p { text-align: left; }
+  .overview-page .overview-chart-card .chart-heading { flex-direction: column; align-items: stretch; }
+  .overview-page .overview-chart-card .trend-segmented { width: 100%; }
+  .overview-page .trend-segmented button { flex: 1; min-width: 0; }
+}
+@media (max-width: 600px) {
+  .overview-page .overview-section-heading h1 { font-size: 27px; }
+  .overview-page .overview-section + .overview-section { margin-top: 28px; }
+  .overview-page .account-metric-card { padding: 14px 12px; min-height: 143px; }
+  .overview-page .metric-value { font-size: clamp(19px, 5.5vw, 30px); }
+  .overview-page .account-metric-rate { white-space: normal; }
+  .overview-page .overview-chart-card { padding: 18px 14px 14px; }
+  .overview-page .overview-canvas-wrap { height: 240px; }
+  .chart-range-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 9px; }
+  .chart-range-summary > div:first-child { grid-column: 1 / -1; }
+  .chart-range-summary dd { font-size: 17px; }
+}

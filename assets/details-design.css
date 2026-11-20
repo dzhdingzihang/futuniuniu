@@ -1,0 +1,160 @@
+.action-page, .sold-page {
+  --ledger-line: #deded5;
+  --ledger-muted: #62655b;
+  --ledger-ink: #242822;
+  --ledger-tint: #f6f5ef;
+  --ledger-hk: #a17f42;
+  --ledger-cn: #536963;
+  --ledger-us: #8c94a2;
+}
+.action-page .holding-page-heading, .sold-page > header { margin-bottom: 19px; }
+.action-page .holding-page-heading p, .sold-page .section-helper { color: var(--ledger-muted); }
+.sold-page > header .page-title { margin: 0; }
+.action-page .holding-snapshot-card, .sold-page .sale-summary { padding: 0; overflow: hidden; }
+.action-page .holding-snapshot-grid, .sale-summary-body {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.action-page .holding-snapshot-grid > div, .sold-page .trade-kpi {
+  min-width: 0; min-height: 0; padding: clamp(18px, 2.3vw, 34px);
+  border: 0; border-right: 1px solid var(--ledger-line);
+}
+.action-page .holding-snapshot-grid > div:last-child, .sold-page .trade-kpi:last-child { border-right: 0; }
+.action-page .holding-snapshot-grid dt, .sold-page .trade-kpi > span { font-size: 14px; color: var(--ledger-muted); font-weight: 650; }
+.action-page .holding-snapshot-grid dd, .sold-page .trade-kpi > strong {
+  display: block; margin: 8px 0 0; font-size: clamp(21px, 2.3vw, 34px); letter-spacing: -.035em;
+  font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.22; overflow-wrap: anywhere;
+}
+.action-page .holding-snapshot-grid small, .sold-page .trade-kpi small {
+  display: block; margin-top: 7px; color: var(--ledger-muted); font-size: 12px; line-height: 1.5;
+}
+.holding-breadth-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.holding-breadth {
+  display: grid; grid-template-columns: 1fr; gap: 9px; min-width: 0;
+  padding: 16px clamp(18px, 2.3vw, 34px); border-top: 1px solid var(--ledger-line);
+}
+.holding-breadth-pair > :first-child { border-right: 1px solid var(--ledger-line); }
+.holding-breadth h3 { margin: 0; font-size: 14px; font-weight: 650; }
+.holding-share-track, .action-page .holding-allocation-bar {
+  display: flex; gap: 1px; overflow: hidden; border-radius: 3px; background: #eeede7;
+}
+.holding-share-track { height: 6px; }
+.holding-share-track > i, .action-page .holding-allocation-bar > i { flex-basis: 0; }
+.holding-share-legend { display: flex; flex-wrap: wrap; gap: 5px 14px; color: var(--ledger-muted); font-size: 12px; line-height: 1.45; }
+.holding-share-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.holding-share-legend b { color: var(--ledger-ink); font-variant-numeric: tabular-nums; }
+.holding-share-legend i, .allocation-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+.share-gain { background: var(--red); } .share-loss { background: var(--green); }
+.share-flat { background: #71756b; } .share-unknown { background: #d0d1c7; }
+.action-page .holding-structure-card { padding: 20px clamp(18px, 2.3vw, 34px); }
+.allocation-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+.allocation-heading h2 { margin: 0; }
+.allocation-heading small, .allocation-legend small, .holding-concentration small { color: var(--ledger-muted); font-size: 12px; }
+.action-page .holding-allocation-bar { height: 10px; box-shadow: none; }
+.action-page :is(.holding-allocation-bar, .allocation-legend) .hk { background: var(--ledger-hk); }
+.action-page :is(.holding-allocation-bar, .allocation-legend) .a { background: var(--ledger-cn); }
+.action-page :is(.holding-allocation-bar, .allocation-legend) .us { background: var(--ledger-us); }
+.allocation-legend { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); margin: 12px 0 0; gap: 12px; }
+.allocation-legend > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; }
+.allocation-legend dt { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
+.allocation-legend dd { margin: 0; font-size: 14px; font-weight: 700; }
+.allocation-legend small { display: block; width: 100%; font-variant-numeric: tabular-nums; }
+.action-page .holding-concentration dd { font-size: 26px; font-weight: 650; }
+.action-page .holding-filter-group button.active, .sold-page .tab-group button.active {
+  color: #fff; background: var(--ledger-ink); border-color: var(--ledger-ink);
+}
+.action-page .holding-list-heading {
+  position: static; display: flex; width: auto; height: auto; align-items: baseline;
+  gap: 12px; justify-content: space-between; padding: 20px; margin: 0; clip: auto; clip-path: none; white-space: normal;
+}
+.action-page .holding-list-heading h2 { margin: 0; font-size: 20px; }
+.action-page .holding-list-heading p { margin: 5px 0 0; font-size: 12px; color: var(--ledger-muted); }
+.action-page .holding-list-heading strong { font-size: 13px; white-space: nowrap; color: var(--ledger-muted); }
+.action-page .holding-action-table th[aria-sort]:not([aria-sort="none"]),
+.sold-page .sold-record-table th[aria-sort] { background: #eeeade; }
+.action-page .table-sort-button.active { color: var(--ledger-ink); }
+.action-page .holding-price-pair, .action-page .holding-value-cell, .action-page .holding-pnl-cell {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px; line-height: 1.4;
+}
+.action-page .holding-price-pair i { display: none; }
+.action-page .holding-action-table :is(.holding-price-pair small,.table-money small,.holding-pnl-cell small),
+.action-page .holding-pnl-cell em { white-space: normal; overflow: visible; font-size: 12px; }
+.action-page .holding-value-cell i { margin-top: 2px; background: #eeede7; }
+.action-page .holding-value-cell i em { background: #a17f42; }
+.action-page .holding-action-table thead th, .sold-page .sold-record-table th { background: var(--ledger-tint); }
+.action-page .holding-main-row.is-expanded > :is(th,td) { background: var(--ledger-tint); }
+.action-page .holding-outlook-panel { border-color: var(--ledger-line); background: #faf9f6; }
+.action-page .holding-outlook-head, .action-page .holding-outlook-grid > article { border-color: var(--ledger-line); }
+.action-page .holding-outlook-head > div > span { color: #705b2c; background: #eee8d8; }
+.action-page .holding-expand-button, .action-page .holding-mobile-expand {
+  color: var(--ledger-ink); background: #faf9f6; border-color: #d1d2c8;
+}
+.action-page :is(.holding-expand-button,.holding-mobile-expand)::after {
+  content: ''; width: 6px; height: 6px; margin-left: 8px; margin-bottom: 3px;
+  border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg);
+}
+.action-page :is(.holding-expand-button,.holding-mobile-expand)[aria-expanded=true]::after {
+  transform: rotate(225deg); margin-bottom: -3px;
+}
+.sold-page .sale-summary { margin-bottom: 20px; }
+.sold-page .sale-summary-body { grid-template-columns: 1.14fr 1fr 1fr .86fr; }
+.sold-page .sale-summary > .holding-breadth { grid-template-columns: auto minmax(80px,1fr) auto; align-items: center; gap: 16px; }
+.sold-page .trade-result-summary { color: var(--ledger-muted); }
+.sold-page .sold-record-table { min-width: 1050px; }
+.sold-page .sold-record-table :is(th,td) { padding: 14px 11px; }
+.sold-page .sold-record-table :is(th,td):nth-child(n+4) { text-align: right; }
+.sold-page .sold-record-table td:nth-child(3) .stock-code, .sold-page .sold-record-table .number-cell small {
+  display: block; margin: 4px 0 0; font-size: 12px; line-height: 1.4;
+}
+.sold-page .sold-record-table .number-cell small { color: var(--ledger-muted); }
+.sold-sort-indicator { margin-left: 4px; }
+@media (hover:hover) and (pointer:fine) {
+  .action-page :is(.holding-mobile-expand,.holding-expand-button):hover { background: #efede4; border-color: #b8b4a3; }
+  .sold-record-table tr:hover td { background: #faf9f6; }
+}
+@media (prefers-reduced-motion:no-preference) {
+  .action-page :is(.holding-expand-button,.holding-mobile-expand)::after { transition: transform 150ms ease-out; }
+  .action-page :is(.holding-expand-button,.holding-mobile-expand):active { transform: translateY(1px); }
+}
+@media(max-width:1100px) {
+  .action-page .holding-list-heading { padding: 6px 0 14px; }
+}
+@media(max-width:760px) {
+  .action-page .holding-snapshot-grid, .sold-page .sale-summary-body { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .action-page .holding-snapshot-grid > div, .sold-page .trade-kpi { padding: 17px 15px; border: 0; }
+  .action-page .holding-snapshot-grid > div:nth-child(odd), .sold-page .trade-kpi:nth-child(odd) { border-right: 1px solid var(--ledger-line); }
+  .action-page .holding-snapshot-grid > div:nth-child(-n+2), .sold-page .trade-kpi:nth-child(-n+2) { border-bottom: 1px solid var(--ledger-line); }
+  .holding-breadth-pair { grid-template-columns: 1fr; }
+  .holding-breadth-pair > :first-child { border-right: 0; }
+  .holding-breadth, .sold-page .sale-summary > .holding-breadth { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 14px 15px; }
+  .holding-share-legend { gap: 5px 10px; }
+  .allocation-legend { gap: 8px; }
+  .sold-page .tab-group button { flex: 1; min-width: 0; padding-inline: 8px; }
+  .sold-page .sold-record-card { border-color: var(--ledger-line); }
+  .action-page .holding-mobile-card { box-shadow: none; }
+  .action-page .holding-mobile-card .holding-pnl-cell b { font-size: 15px; white-space: normal; }
+  .sold-page .sold-record-card > header strong { white-space: normal; overflow-wrap: anywhere; }
+  .sold-page .sold-record-card footer strong { overflow-wrap: anywhere; }
+  .action-page .holding-mobile-card > header strong { overflow-wrap: anywhere; }
+}
+.sold-page .primary-button {
+  background: var(--ledger-ink);
+  border-color: var(--ledger-ink);
+  color: #fff;
+  box-shadow: none;
+}
+.sold-page .trade-clear-filter {
+  background: transparent;
+  color: var(--ledger-ink);
+  border: 1px solid var(--ledger-line);
+  border-radius: 8px;
+}
+.action-page .holding-action-table td:nth-child(n+2):nth-child(-n+7) { text-align: right; }
+.action-page .holding-action-table :is(.holding-price-pair,.holding-value-cell,.holding-pnl-cell) { align-items: flex-end; }
+.action-page .holding-action-table .holding-value-cell i { width: 100%; }
+.action-page .holding-action-table thead th[aria-sort] { text-align: right; }
+@media (min-width:1101px) and (max-width:1300px) {
+  .action-page .holding-toolbar { grid-template-columns: minmax(168px,1fr) auto auto minmax(160px,1fr); }
+  .action-page .holding-result-status { grid-column: 1 / 4; text-align: left; }
+  .action-page .holding-clear-filter { justify-self: end; }
+  .action-page .holding-action-table :is(th,td) { padding-inline: 8px; }
+}
