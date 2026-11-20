@@ -1695,9 +1695,9 @@
     ]
   },
   "美股": {
-    "asOf": "2026-11-20",
+    "asOf": "2026-11-21",
     "source": "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
-    "sourceDate": "2026-11-19",
+    "sourceDate": "2026-11-20",
     "codes": [
       "AACG",
       "AACI",
@@ -2538,6 +2538,7 @@
       "CZNC",
       "CZR",
       "CZWI",
+      "CZZL",
       "DAAQ",
       "DAIC",
       "DAIO",
@@ -3619,7 +3620,6 @@
       "MELI",
       "MENS",
       "MEOH",
-      "MERC",
       "MESH",
       "MESO",
       "META",
