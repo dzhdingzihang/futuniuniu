@@ -7,14 +7,14 @@
   "guide": "统一调整人民币买卖成本只改 costPolicy 的 buyCny、sellCny，每只股票分别计一次。lots 保存调整前的成交数据；日常买卖请使用网页上的「记录交易」。",
   "source": {
     "type": "excel",
-    "file": "20261114股票记录.xlsx",
-    "asOf": "2026-11-14",
-    "valuationAsOf": "2026-11-13",
+    "file": "20261120股票记录.xlsx",
+    "asOf": "2026-11-20",
+    "valuationAsOf": "2026-11-20",
     "fx": {
       "CNY": 1,
-      "HKD": 0.8506,
-      "USD": 6.67615,
-      "asOf": "2026-11-14 10:30 Asia/Shanghai"
+      "HKD": 0.8514,
+      "USD": 6.6751,
+      "asOf": "2026-11-20 21:40 Asia/Shanghai"
     },
     "sheets": [
       "全市场股票明细",
@@ -29,15 +29,15 @@
     ],
     "reconciliation": {
       "securityCount": 80,
-      "openSecurityCount": 31,
-      "closedSecurityCount": 49,
-      "soldSecurityCount": 64,
-      "sourcePnlCny": -249019.72
+      "openSecurityCount": 30,
+      "closedSecurityCount": 50,
+      "soldSecurityCount": 65,
+      "sourcePnlCny": -273530.62
     },
     "valuationAsOfByMarket": {
       "A": "2026-11-06",
-      "HK": "2026-11-13",
-      "US": "2026-11-13"
+      "HK": "2026-11-20",
+      "US": "2026-11-19"
     },
     "orderFeeScenario": {
       "marketScope": [
@@ -46,9 +46,9 @@
       ],
       "feeUsdPerOrder": 2,
       "buyOrderCount": 165,
-      "sellOrderCount": 91,
-      "recordedOrderFeesCny": 6653.70655921,
-      "scenarioOrderFeesCny": 3497.23107861
+      "sellOrderCount": 94,
+      "recordedOrderFeesCny": 6696.70655921,
+      "scenarioOrderFeesCny": 3537.23107861
     }
   },
   "newTradeFeeUsd": {
@@ -1472,8 +1472,8 @@
       "note": "数量已核对",
       "buy": {
         "price": 13.829,
-        "qty": 150,
-        "purchaseCostCny": 13844.09,
+        "qty": 50,
+        "purchaseCostCny": 4614.7,
         "date": "2026-10-29"
       },
       "fees": {
@@ -1522,6 +1522,30 @@
         "date": "2026-11-09",
         "sellProceedsCny": 6924.33,
         "feeCny": 15.41424
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.31
+      }
+    },
+    {
+      "id": "excel-us-mvll-sold-2026-11-19-240e2184892e8fdb",
+      "market": "US",
+      "code": "MVLL",
+      "name": "2倍做多MRVL ETF-GraniteShares",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 13.8507,
+        "qty": 100,
+        "purchaseCostCny": 9229.39
+      },
+      "sell": {
+        "price": 10,
+        "qty": 100,
+        "date": "2026-11-19",
+        "sellProceedsCny": 6651.27,
+        "feeCny": 15.4
       },
       "fees": {
         "buy": 0,
@@ -1775,20 +1799,61 @@
       }
     },
     {
-      "id": "excel-us-crdu-open",
+      "id": "excel-us-intw-open",
       "market": "US",
-      "code": "CRDU",
-      "name": "2倍做多CRDO ETF-Tradr",
+      "code": "INTW",
+      "name": "2倍做多INTC ETF-GraniteShares",
       "quality": "ledger-reconciled",
       "note": "数量已核对",
       "buy": {
-        "price": 7.55,
-        "qty": 10,
-        "purchaseCostCny": 510.35,
-        "date": "2026-09-02"
+        "price": 7.659,
+        "qty": 100,
+        "purchaseCostCny": 5110.48,
+        "date": "2026-10-30"
       },
       "fees": {
         "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-goox-open",
+      "market": "US",
+      "code": "GOOX",
+      "name": "2倍做多GOOG ETF-T-REX",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 47.96,
+        "qty": 20,
+        "purchaseCostCny": 6395.54,
+        "date": "2026-10-29"
+      },
+      "fees": {
+        "buy": 0
+      }
+    },
+    {
+      "id": "excel-us-goox-sold-2026-11-19-80e4dded787c3ef0",
+      "market": "US",
+      "code": "GOOX",
+      "name": "2倍做多GOOG ETF-T-REX",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 48.0028,
+        "qty": 30,
+        "purchaseCostCny": 9593.31
+      },
+      "sell": {
+        "price": 49,
+        "qty": 30,
+        "date": "2026-11-19",
+        "sellProceedsCny": 9785.93,
+        "feeCny": 14.066667
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.11
       }
     },
     {
@@ -1816,37 +1881,27 @@
       }
     },
     {
-      "id": "excel-us-intw-open",
+      "id": "excel-us-crdu-sold-2026-11-19-1ff9829d01468bc7",
       "market": "US",
-      "code": "INTW",
-      "name": "2倍做多INTC ETF-GraniteShares",
+      "code": "CRDU",
+      "name": "2倍做多CRDO ETF-Tradr",
       "quality": "ledger-reconciled",
-      "note": "数量已核对",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
       "buy": {
-        "price": 7.659,
-        "qty": 100,
-        "purchaseCostCny": 5110.48,
-        "date": "2026-10-30"
+        "price": 7.5928,
+        "qty": 10,
+        "purchaseCostCny": 510.35
+      },
+      "sell": {
+        "price": 3.215,
+        "qty": 10,
+        "date": "2026-11-19",
+        "sellProceedsCny": 200.8,
+        "feeCny": 13.533333
       },
       "fees": {
-        "buy": 0
-      }
-    },
-    {
-      "id": "excel-us-goox-open",
-      "market": "US",
-      "code": "GOOX",
-      "name": "2倍做多GOOG ETF-T-REX",
-      "quality": "ledger-reconciled",
-      "note": "数量已核对",
-      "buy": {
-        "price": 47.96,
-        "qty": 50,
-        "purchaseCostCny": 15988.86,
-        "date": "2026-10-29"
-      },
-      "fees": {
-        "buy": 0
+        "buy": 0,
+        "sell": 2.03
       }
     },
     {
