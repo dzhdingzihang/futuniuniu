@@ -410,6 +410,30 @@ test("writes the readable v2 schema", () => {
   assert.deepEqual(document.lots, [{ market: "US", code: "NVDA", name: "英伟达", buy: { price: 200, qty: 3 }, fees: { buy: 20 } }]);
 });
 
+test("holdings movers use the latest quoted day per market and preserve signed moves", async () => {
+  const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
+  const context = vm.createContext({location: {hash: ""}, localStorage: {getItem: () => null}});
+  vm.runInContext(source.slice(0, source.lastIndexOf("\nstart().catch")), context);
+  const render = vm.runInContext("holdingQuoteStrip", context);
+  const quote = (code, market, date, changePct) => ({
+    code, name: code, market, status: "holding", hasLivePrice: true, quote: {date, changePct}
+  });
+  const rows = [
+    quote("OLD", "美股", "2026-11-19", 20),
+    quote("UP", "美股", "2026-11-20", 2),
+    quote("DOWN", "美股", "2026-11-20", -3),
+    quote("HK", "港股", "2026-11-20", 4),
+    quote("MISSING", "A股", "2026-11-20", null),
+    {...quote("STALE", "美股", "2026-11-20", 100), hasLivePrice: false},
+    {...quote("SOLD", "港股", "2026-11-20", 100), status: "sold"},
+  ];
+  const tape = render(rows);
+  assert.match(tape, /class="positive">\+4\.00%/);
+  assert.match(tape, /class="negative">-3\.00%/);
+  assert.doesNotMatch(tape, /OLD|>UP<|MISSING|STALE|SOLD/);
+  assert.equal(render([]), "");
+});
+
 test("client v2 preserves stock cost adjustments and audit notes without double counting", async () => {
   const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
   const runnable = source.replace(/\nstart\(\)\.catch\(function \(error\) \{[\s\S]*?\n\}\);\s*$/, "\n");
@@ -565,7 +589,8 @@ test("renders a self-contained black-gold password-only login page", async () =>
   assert.match(html, /<input[^>]+type="password"/i);
   assert.match(html, /"Content-Type":"application\/json"/);
   assert.equal(html.includes("never-render-this-secret"), false);
-  assert.match(html, /#d6a84b/i);
+  assert.match(html, /color-scheme:dark/);
+  assert.match(html, /terminal-mark\.svg/);
 
   const defaultResponse = await authMiddleware({
     request: new Request("https://example.test/login"),

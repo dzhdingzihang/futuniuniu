@@ -29,7 +29,8 @@ test("default radar offers pre-open predictions, distinct confirmations and a se
 });
 test("frozen cards show sourced timed evidence, coverage and separate gaps with no invented missing preprice",()=>{
   const html=ui()('preopenFrozen(data,"美股")',snapshot);
-  for(const label of ["业绩指引","同业线索","08:30","09:23","盘前价待核对","流动性","测试跳涨","盘前达标价","（+6.10%）","最多逐只核验 8 只","冻结前最新 +2.00%","竞价或盘前成交 0 只","部分可用"]) assert.ok(html.includes(label),label);
+  const visibleText=html.replace(/<[^>]+>/g, "");
+  for(const label of ["业绩指引","同业线索","08:30","09:23","盘前价待核对","流动性","测试跳涨","盘前达标价","（+6.10%）","最多逐只核验 8 只","冻结前最新 +2.00%","竞价或盘前成交 0 只","部分可用"]) assert.ok(visibleText.includes(label),label);
   assert.match(html,/href="https:\/\/example.org\/event"/);
   assert.doesNotMatch(html,/javascript:|盘后信息/);
   assert.match(html,/触及线[^<]*13\.1565/);

@@ -1161,13 +1161,39 @@ function headerTools() {
 
 function topNav(tools = headerTools()) {
   const mark = '<svg class="identity-mark" viewBox="0 0 64 64" aria-hidden="true">' +
-    '<use href="/assets/savings-bank.svg#tile"></use><use class="identity-coin" href="/assets/savings-bank.svg#coin"></use>' +
-    '<use class="identity-bank" href="/assets/savings-bank.svg#bank"></use></svg>';
+    '<use href="/assets/terminal-mark.svg#tile"></use><use class="identity-coin" href="/assets/terminal-mark.svg#coin"></use>' +
+    '<use class="identity-bank" href="/assets/terminal-mark.svg#bank"></use></svg>';
   return '<header class="site-header"><a class="brand" href="#overview" aria-label="猪猪存钱罐 · 返回总览">' +
-    mark + '<img class="identity-word" src="/assets/savings-wordmark.svg" alt="猪猪存钱罐" width="135" height="24"></a>' +
+    mark + '<img class="identity-word" src="/assets/terminal-wordmark.svg" alt="猪猪存钱罐" width="135" height="24"></a>' +
     '<nav class="global-nav" aria-label="主导航">' +
     NAV_ITEMS.map(function (item) { return "<button class=\"nav-link " + (state.tab === item[0] ? "active" : "") + "\" " + (state.tab === item[0] ? "aria-current=\"page\" " : "") + "type=\"button\" data-tab=\"" + item[0] + "\">" + navIcon(item[0]) + "<span class=\"nav-label\">" + item[1] + "</span><i class=\"nav-indicator\" aria-hidden=\"true\"></i></button>"; }).join("") +
     "</nav><div class=\"header-tools\">" + tools + "</div></header>";
+}
+
+function holdingQuoteStrip(rows) {
+  const movers = new Map();
+  for (const row of rows) {
+    if (row.status !== "holding" || !row.hasLivePrice) continue;
+    const change = optionalNumber(row.quote?.changePct);
+    const date = normalizedMarketDate(row.quote?.date);
+    if (!date || !Number.isFinite(change)) continue;
+    const previous = movers.get(row.market);
+    if (!previous || date > previous.date || (date === previous.date && Math.abs(change) > Math.abs(previous.change))) {
+      movers.set(row.market, { row, date, change });
+    }
+  }
+  if (!movers.size) return "";
+  const cells = MARKET_ORDER.filter(market => movers.has(market)).map(market => {
+    const { row, date, change } = movers.get(market);
+    const code = escapeHtml(row.code);
+    const name = escapeHtml(row.name || row.code);
+    return '<div class="quote-strip-item"><div class="quote-strip-meta"><span>' + escapeHtml(market) +
+      ' <b>' + code + '</b></span><time datetime="' + date + '">' + date.slice(5).replace("-", "/") + '</time></div>' +
+      '<div class="quote-strip-data"><span title="' + name + '">' + name +
+      '</span><strong class="' + tone(change) + '">' + pct(change) + '</strong></div></div>';
+  });
+  return '<section class="quote-strip" aria-label="持仓异动"><div class="quote-strip-heading"><strong>持仓异动</strong>' +
+    '<small>已获报价中涨跌幅绝对值最大</small></div>' + cells.join("") + '</section>';
 }
 
 function createHoldingDraft(initialStatus) {
@@ -1778,11 +1804,11 @@ function overviewPage() {
   const todayNote = todayComplete ? "当日价差 × 当前持仓数量" : "已取得 " + data.todayCount + " / " + data.todayTotal + " 笔持仓的当日涨跌";
   return "<main id=\"main-content\" class=\"page-shell overview-page\" tabindex=\"-1\">" +
     "<section class=\"overview-section account-overview-section\"><div class=\"overview-section-heading account-section-heading\"><div><h1>账户总览</h1><span class=\"account-unit\">人民币 CNY</span></div>" + fxStatusLine() + "</div>" +
-    '<div class="account-metric-grid">' + overviewPnlStatement(data) + '<div class="account-secondary">' +
+    '<div class="account-metric-grid">' + overviewPnlStatement(data, chartPoints) + '<div class="account-secondary">' +
     overviewMetric("股票总投入", money(data.netInvested, 0), data.netInvested > 0 ? "资金基准 100%" : data.netInvested < 0 ? "卖出净额已超过买入成本" : "净投入为零", "买入总成本 " + money(data.grossBuys, 0) + " − 卖出净额 " + money(data.saleProceeds, 0), "neutral", METRIC_HELP.netInvested) +
     overviewMetric("持仓市值", valuationComplete ? money(data.value, 0) : "待估值", data.netInvested > 0 && Number.isFinite(data.value) ? "占总投入 " + ratioPct(data.value / data.netInvested * 100) : "", valuationNote, "neutral", METRIC_HELP.marketValue) +
     overviewMetric("今日盈亏", todayComplete ? signed(data.today, 0) : "待行情", Number.isFinite(data.todayRate) ? "当日收益率 " + pct(data.todayRate) : "", todayNote, tone(data.today), METRIC_HELP.todayPnl) +
-    '</div></div><div class="account-fee-notes">' + costPolicyPanel() + orderFeeNote(data) + '</div></section>' +
+    '</div></div>' + overviewBreadth(openSecurityRows()) + '<div class="account-fee-notes">' + costPolicyPanel() + orderFeeNote(data) + '</div></section>' +
     '<section class="overview-section market-overview-section"><div class="overview-section-heading"><div><h2>市场概览</h2></div></div>' +
     marketAllocation(markets) + '<div class="overview-market-grid">' + markets.map(item => marketBlock(item, comparisonMax)).join("") +
     '</div><p class="market-scale-note">盈亏条共用人民币刻度，左亏右盈。港美股的人民币盈亏已含成本调整和汇兑影响。</p></section>' +
@@ -1833,7 +1859,27 @@ function overviewMetric(label, value, rate, formula, valueTone, helpText) {
     '</div><p>' + formula + '</p></article>';
 }
 
-function overviewPnlStatement(data) {
+function statementSparkline(points) {
+  if (points.length < 2 || state.trendDays > 90) return '';
+  const values = points.map(point => point.value);
+  if (!values.every(Number.isFinite)) return '';
+  const low = Math.min(...values), high = Math.max(...values);
+  const y = value => high === low ? 20 : 36 - (value - low) / (high - low) * 32;
+  const line = values.map((value, index) =>
+    (index ? 'L' : 'M') + (2 + index / (values.length - 1) * 132).toFixed(1) + ' ' + y(value).toFixed(1)
+  ).join(' ');
+  const zero = Math.max(0, Math.min(40, y(0)));
+  let stroke = 'var(--overview-muted)';
+  if (high > 0 || low < 0) stroke = low >= 0 ? 'var(--overview-up)' : high <= 0 ? 'var(--overview-down)' : 'url(#statement-spark-sign)';
+  return '<figure class="statement-spark"><svg aria-hidden="true" viewBox="0 0 136 40" preserveAspectRatio="none">' +
+    '<defs><linearGradient id="statement-spark-sign" gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="0" y2="40">' +
+    '<stop offset="' + (zero / 40) + '" stop-color="var(--overview-up)"/><stop offset="' + (zero / 40) +
+    '" stop-color="var(--overview-down)"/></linearGradient></defs>' +
+    '<path d="' + line + '" fill="none" stroke="' + stroke + '" stroke-width="2" stroke-linejoin="round"/></svg>' +
+    '<figcaption>近 ' + state.trendDays + ' 天走势</figcaption></figure>';
+}
+
+function overviewPnlStatement(data, chartPoints = []) {
   const ledger = state.holdingsDocument?.source;
   const snapshot = ledger?.reconciliation;
   const policy = state.holdingsDocument?.costPolicy;
@@ -1856,10 +1902,17 @@ function overviewPnlStatement(data) {
   const basis = complete ? '持仓估值' : hasSnapshot ? '账本快照' : '等待行情';
   return '<article class="account-metric-card pnl-statement"><div class="statement-head"><span class="metric-label">累计盈亏' +
     infoTip(METRIC_HELP.totalPnl) + '</span><span class="statement-basis">' + basis + '</span></div>' +
-    '<strong class="metric-value ' + tone(pnl) + '">' + (Number.isFinite(pnl) ? signed(pnl, 2) : '待估值') +
-    '</strong><p class="statement-note">' + note + '</p>' +
+    '<div class="statement-quote"><strong class="metric-value ' + tone(pnl) + '">' + (Number.isFinite(pnl) ? signed(pnl, 2) : '待估值') +
+    '</strong>' + (complete ? statementSparkline(chartPoints) : '') + '</div><p class="statement-note">' + note + '</p>' +
     (breakdown.length ? '<dl class="statement-breakdown">' + breakdown.map(([label, amount]) =>
-      '<div><dt>' + label + '</dt><dd>' + signed(amount, 2) + '</dd></div>').join('') + '</dl>' : '') + '</article>';
+      '<div><dt>' + label + '</dt><dd class="' + (complete ? tone(amount) : '') + '">' + signed(amount, 2) + '</dd></div>').join('') + '</dl>' : '') + '</article>';
+}
+
+function overviewBreadth(rows) {
+  if (!rows.length) return '';
+  const totals = holdingSnapshot(rows);
+  return holdingDistributionMarkup('持仓浮动盈亏分布', totals.profitCount, totals.lossCount,
+    totals.flatCount, totals.unavailableCount, '待估值');
 }
 
 function marketAllocation(markets) {
@@ -1904,7 +1957,7 @@ function marketBlock(data, comparisonMax) {
   const visual = available ? '<div class="market-pnl-scale" aria-hidden="true"><i class="' + tone(data.pnl) +
     '" style="width:' + width.toFixed(3) + '%"></i></div>' : '';
   return '<article class="card overview-market-card ' + (data.currency === "CNY" ? "is-cny" : "is-foreign") +
-    '"><header><h3>' + escapeHtml(data.market) + '</h3><span>' + data.count + ' 只持仓' + coverage + '</span></header>' +
+    '"><header><h3>' + escapeHtml(data.market) + '<small class="market-iso">' + escapeHtml(data.currency) + '</small></h3><span>' + data.count + ' 只持仓' + coverage + '</span></header>' +
     '<div class="market-pnl-summary"><span>累计盈亏 · 人民币</span><strong class="' + tone(data.pnl) + '">' +
     (available ? signed(data.pnl, 0) : '待估值') + '</strong>' +
     (detail ? '<small>' + detail + '</small>' : '') + visual +
@@ -2936,16 +2989,20 @@ function radarCandidateDetail(item) {
   const levelNote = levels.status === "ready"
     ? "10日价位依据 " + levels.bars + " 根日线，历史截至 " + levels.baseDate + "；上沿是历史波动情景，不是目标价；止损参考需以日收盘确认。"
     : "10日价位暂不可算：" + levels.reason + "。";
-  return "<div class=\"radar-detail\"><section><h4>评分拆解</h4><div class=\"radar-score-breakdown\">" + breakdown + "</div>" + eligibility + "</section><section class=\"radar-evidence\"><div><h4>为什么进入候选</h4><ul>" + reasons.map(function (reason) { return "<li>" + escapeHtml(reason) + "</li>"; }).join("") + "</ul></div><div><h4>反方与风险</h4><ul>" + risks.map(function (risk) { return "<li>" + escapeHtml(risk) + "</li>"; }).join("") + "</ul></div></section><section class=\"radar-evidence radar-evidence-metrics\"><div><h4>快照指标</h4><p>" + (item.radarScope === "growth" ? "近 10 日实际涨跌 " + pct(metrics.return10d) + " · " : "") + "60日涨跌 " + pct(metrics.return60d) + " · 最近交易日振幅 " + ratioPct(metrics.amplitude, 2) + " · 换手率 " + ratioPct(metrics.turnoverRate, 2) + " · 成交额 " + radarCompactMoney(metrics.amount, item.currency) + " · 总市值 " + radarCompactMoney(metrics.marketCap, item.currency) + " · PE " + (Number.isFinite(pe) ? pe.toFixed(1) : "--") + " · PB " + (Number.isFinite(pb) ? pb.toFixed(1) : "--") + "</p></div><div><h4>价位与持仓关系</h4><p>" + escapeHtml(levelNote + " " + relation) + "</p></div></section><footer>行情来源：" + escapeHtml(item.source || "东方财富行情中心") + " · 行情时间 " + escapeHtml(radarQuoteTimestamp(item)) + " · 扫描于 " + escapeHtml(radarTimestamp(item.fetchedAt)) + "。研究优先级不是上涨概率，也不等于买入建议。</footer></div>";
+  return "<div class=\"radar-detail\"><section><h4>评分拆解</h4><div class=\"radar-score-breakdown\">" + breakdown + "</div>" + eligibility + "</section><section class=\"radar-evidence\"><div><h4>为什么进入候选</h4><ul>" + reasons.map(function (reason) { return "<li>" + escapeHtml(reason) + "</li>"; }).join("") + "</ul></div><div><h4>反方与风险</h4><ul>" + risks.map(function (risk) { return "<li>" + escapeHtml(risk) + "</li>"; }).join("") + "</ul></div></section><section class=\"radar-evidence radar-evidence-metrics\"><div><h4>快照指标</h4><p>" + (item.radarScope === "growth" ? "近 10 日实际涨跌 " + radarChangeMarkup(metrics.return10d) + " · " : "") + "60日涨跌 " + radarChangeMarkup(metrics.return60d) + " · 最近交易日振幅 " + ratioPct(metrics.amplitude, 2) + " · 换手率 " + ratioPct(metrics.turnoverRate, 2) + " · 成交额 " + radarCompactMoney(metrics.amount, item.currency) + " · 总市值 " + radarCompactMoney(metrics.marketCap, item.currency) + " · PE " + (Number.isFinite(pe) ? pe.toFixed(1) : "--") + " · PB " + (Number.isFinite(pb) ? pb.toFixed(1) : "--") + "</p></div><div><h4>价位与持仓关系</h4><p>" + escapeHtml(levelNote + " " + relation) + "</p></div></section><footer>行情来源：" + escapeHtml(item.source || "东方财富行情中心") + " · 行情时间 " + escapeHtml(radarQuoteTimestamp(item)) + " · 扫描于 " + escapeHtml(radarTimestamp(item.fetchedAt)) + "。研究优先级不是上涨概率，也不等于买入建议。</footer></div>";
+}
+
+function radarChangeMarkup(value) {
+  return '<span class="radar-quote-change ' + tone(value) + '">' + pct(value) + '</span>';
 }
 
 function radarPricePlanMarkup(item, inTopThree = false) {
   const metrics = item.metrics || {}, levels = radarLevelsForItem(item);
   const cached = radarEffectiveLoadState(item) !== "fresh";
   const quoteTime = (cached ? "缓存 · " : "") + radarQuoteTimestamp(item);
-  const dailyChange = Number.isFinite(optionalNumber(metrics.changePct)) ? "当日 " + pct(metrics.changePct) : "当日涨跌待核验";
+  const dailyChange = Number.isFinite(optionalNumber(metrics.changePct)) ? "当日 " + radarChangeMarkup(metrics.changePct) : "当日涨跌待核验";
   const hasNewerClose = Number.isFinite(levels.referenceClose);
-  const quoteLabel = hasNewerClose ? levels.baseDate + " 收盘" : inTopThree ? dailyChange : quoteTime + " · " + dailyChange;
+  const quoteLabel = hasNewerClose ? escapeHtml(levels.baseDate) + " 收盘" : inTopThree ? dailyChange : escapeHtml(quoteTime) + " · " + dailyChange;
   const loading = levels.status === "loading" || levels.loading;
   const wrapperClass = "radar-price-plan " + (loading ? "is-loading" : levels.status === "ready" ? "is-ready" : levels.status === "error" ? "is-error" : "is-unavailable");
   const upperReady = levels.status === "ready" && Number.isFinite(levels.upper) && Number.isFinite(levels.upperPct);
@@ -2956,7 +3013,7 @@ function radarPricePlanMarkup(item, inTopThree = false) {
   const upperNote = upperReady ? "上行空间 " + pct(levels.upperPct) : levels.reason;
   const stopNote = stopReady ? "距现价 " + pct(levels.stopPct) : levels.status === "ready" ? levels.stopReason : "待日线核验";
   return '<dl class="' + wrapperClass + '" aria-label="' + escapeHtml(item.name) + '未来10个交易日价格参考" aria-busy="' + loading + '">' +
-    '<div class="radar-price-point is-current"><dt>' + (hasNewerClose ? "最近收盘价" : "当前价") + '</dt><dd>' + nativeMoney(hasNewerClose ? levels.referenceClose : metrics.price, item.currency) + '</dd><small>' + escapeHtml(quoteLabel) + '</small></div>' +
+    '<div class="radar-price-point is-current"><dt>' + (hasNewerClose ? "最近收盘价" : "当前价") + '</dt><dd>' + nativeMoney(hasNewerClose ? levels.referenceClose : metrics.price, item.currency) + '</dd><small>' + quoteLabel + '</small></div>' +
     '<div class="radar-price-point is-upper"><dt>' + upperLabel + '<span class="visually-hidden">，波动情景，非目标价</span></dt><dd>' + upperValue + '</dd><small>' + escapeHtml(upperNote) + '</small></div>' +
     '<div class="radar-price-point is-stop"><dt>风控止损参考<span class="visually-hidden">，日收盘低于时复核</span></dt><dd>' + stopValue + '</dd><small>' + escapeHtml(stopNote) + '</small></div></dl>';
 }
@@ -2990,7 +3047,11 @@ function radarMarketStat(market) {
   const rawSize = usable ? optionalNumber(snapshot.rawSize) : NaN;
   const note = loadState === "error" || loadState === "unavailable" ? radarSnapshotErrorText(snapshot, "本市场扫描失败") : loadState === "stale" ? radarSnapshotErrorText(snapshot, "今日后台更新失败，明确沿用上次有效候选。") : loadState === "cached" ? priorDay ? "当前是非今日缓存；可点击顶部刷新手动重试。" : snapshot && snapshot.error ? "今日重新扫描失败，页面会稍后重试。" : "正在获取今日结果。" : "按本市场自身分布评分；候选数量不足200只时不会发布本期排名。";
   const time = snapshot && snapshot.fetchedAt ? "<span class=\"radar-market-time\">机会扫描 " + radarTimeMarkup(snapshot.fetchedAt) + " · 北京时间</span>" : "<span class=\"radar-market-time\">机会扫描时间待更新</span>";
-  return "<article class=\"radar-market-stat " + cardClass + "\"><header><span>" + marketLabel(market) + "</span><small>" + escapeHtml(stateText) + "</small></header><dl><div><dt>有效候选</dt><dd>" + (Number.isFinite(pool) ? pool : "--") + "<small>只</small></dd></div><div><dt>优先研究</dt><dd>" + (usable ? priority : "--") + "<small>只</small></dd></div><div><dt>原始扫描</dt><dd>" + (Number.isFinite(rawSize) ? rawSize : "--") + "<small>只</small></dd></div></dl><p>" + time + "<small>" + escapeHtml(note) + "</small></p><progress max=\"500\" value=\"" + (Number.isFinite(rawSize) ? Math.min(500, rawSize) : 0) + "\">" + (Number.isFinite(rawSize) ? rawSize : 0) + "/500</progress></article>";
+  const hasRatio = Number.isFinite(pool) && rawSize > 0 && pool >= 0 && pool <= rawSize;
+  const coverage = hasRatio ? '<div class="radar-pool-ratio"><span>入池占原始扫描</span><b>' +
+    ratioPct(pool / rawSize * 100, 1) + '</b><progress aria-label="入池占原始扫描" max="' + rawSize + '" value="' + pool +
+    '"></progress></div>' : "";
+  return "<article class=\"radar-market-stat " + cardClass + "\"><header><span>" + marketLabel(market) + "</span><small>" + escapeHtml(stateText) + "</small></header><dl><div><dt>有效候选</dt><dd>" + (Number.isFinite(pool) ? pool : "--") + "<small>只</small></dd></div><div><dt>优先研究</dt><dd>" + (usable ? priority : "--") + "<small>只</small></dd></div><div><dt>原始扫描</dt><dd>" + (Number.isFinite(rawSize) ? rawSize : "--") + "<small>只</small></dd></div></dl><p>" + time + "<small>" + escapeHtml(note) + "</small></p>" + coverage + "</article>";
 }
 
 function radarTopThreeEvidence(item) {
@@ -3170,7 +3231,7 @@ function intradaySignals(rows, market) {
     const risks = Array.isArray(item.risks) ? item.risks.filter(x => typeof x === "string") : [];
     return '<li><header><span class="intraday-rank">' + (index + 1) + '</span><div><strong>' + escapeHtml(item.name || item.code) +
       '</strong><small>' + escapeHtml(item.code) + ' · ' + (clock?.time || "—") + ' 触发</small></div></header>' +
-      intradayPrices(item, market) + '<p class="intraday-evidence">触发时较昨收 ' + pct(item.changePct) +
+      intradayPrices(item, market) + '<p class="intraday-evidence">触发时较昨收 ' + radarChangeMarkup(item.changePct) +
       (Number.isFinite(ratio) ? ' · 量比 ' + ratio.toFixed(2) + ' 倍' : '') + '</p>' +
       (reasons.length ? '<ul class="intraday-reasons">' + reasons.map(reason => '<li>' + escapeHtml(reason) + '</li>').join("") + '</ul>' : '') +
       (risks.length ? '<p class="intraday-risk"><b>风险</b> ' + escapeHtml(risks.join("；")) + '</p>' : '') + '</li>';
@@ -3285,7 +3346,7 @@ function preopenPick(pick, market, cutoffAt) {
   return '<li class="preopen-pick"><h4>' + escapeHtml(pick.name || pick.code) + ' <small>' + escapeHtml(pick.code) +
     '</small></h4>' + reasons + (price > 0 ? '<p class="preopen-price-pair"><span>昨收 ' + quote(price) +
       '</span><strong>触及线 ' + quote(target > 0 ? target : price * 1.05) + '</strong></p>' : '') + '<p class="preopen-target-price">' +
-    (prePrice > 0 ? '冻结前价格 ' + quote(prePrice) + (Number.isFinite(optionalNumber(pick.preChangePct)) ? '（' + pct(pick.preChangePct) + '）' : '') +
+    (prePrice > 0 ? '冻结前价格 ' + quote(prePrice) + (Number.isFinite(optionalNumber(pick.preChangePct)) ? '（' + radarChangeMarkup(pick.preChangePct) + '）' : '') +
       (pick.prePriceAt ? ' · ' + preopenStamp(pick.prePriceAt, market) : '') : '盘前价待核对') + '</p>' +
     (risk ? '<p class="preopen-risk">关注风险 · ' + escapeHtml(risk) + '</p>' : '') + sources + '</li>';
 }
@@ -3309,8 +3370,8 @@ function preopenFrozen(snapshot, market) {
       const jumpPct = row.jumpPrice > 0 && row.prevClose > 0 ? (row.jumpPrice / row.prevClose - 1) * 100 : null;
       const source = row.jumpSource ? ' · ' + preopenSourceLink(row.jumpSource, row.jumpUrl) : '';
       return '<li><div><strong>' + escapeHtml(row.name || row.code) + ' <small>' + escapeHtml(row.code) + '</small></strong>' +
-        '<p class="preopen-target-price">' + (jumpPct !== null ? '盘前达标价 ' + preopenPrice(row.jumpPrice, market) + '（' + pct(jumpPct) + '）' : '盘前达标价待核') + (row.jumpAt ? ' · ' + preopenStamp(row.jumpAt, market) : '') +
-        source + (Number.isFinite(optionalNumber(row.preChangePct)) ? '<br>冻结前最新 ' + pct(row.preChangePct) : '') + '</p></div></li>';
+        '<p class="preopen-target-price">' + (jumpPct !== null ? '盘前达标价 ' + preopenPrice(row.jumpPrice, market) + '（' + radarChangeMarkup(jumpPct) + '）' : '盘前达标价待核') + (row.jumpAt ? ' · ' + preopenStamp(row.jumpAt, market) : '') +
+        source + (Number.isFinite(optionalNumber(row.preChangePct)) ? '<br>冻结前最新 ' + radarChangeMarkup(row.preChangePct) : '') + '</p></div></li>';
     }).join("") + '</ul>');
   const c = snapshot.coverage;
   const coverage = c ? '<p class="preopen-scope">昨收可核 ' + intradayNumber(c.referenceCount) + ' 只' +
@@ -3426,14 +3487,29 @@ function preopenHeadline() {
   return "本期尚无可核实的名单";
 }
 
+function preopenUniverseSummary(markets) {
+  const sizes = RADAR_MARKETS.map(market => markets?.[market]?.total);
+  if (!sizes.every(size => Number.isSafeInteger(size) && size >= 0)) return "";
+  const total = sizes.reduce((sum, size) => sum + size, 0);
+  if (!total) return "";
+  return '<div class="preopen-universe"><div class="universe-total">三地候选池 <strong>' + intradayNumber(total) +
+    '</strong> 只</div><dl>' + RADAR_MARKETS.map((market, index) => {
+      const size = sizes[index];
+      return '<div><dt>' + RADAR_SEGMENT_LABELS[market] + '</dt><dd>' + intradayNumber(size) +
+        '<span class="universe-meter" aria-hidden="true"><i style="width:' + (size / total * 100).toFixed(2) +
+        '%"></i></span></dd></div>';
+    }).join('') + '</dl></div>';
+}
+
 function preopenPage() {
   const market = state.preopenReviewMarket;
+  const universe = preopenUniverseSummary(state.preopenData?.markets);
   const tabs = RADAR_MARKETS.map(m => '<button type="button" data-preopen-focus="review-' + m + '" data-preopen-market="' + m +
     '" aria-pressed="' + (m === market) + '">' + escapeHtml(RADAR_SEGMENT_LABELS[m]) + '</button>').join("");
   return '<main id="main-content" tabindex="-1" class="page-shell radar-page preopen-page"><header class="radar-page-heading"><div><h1>机会雷达</h1>' +
-    '<p>创业板 · 港股科技 · 纳斯达克</p></div>' + radarScopeControls() + '</header>' +
+    (universe ? '' : '<p>创业板 · 港股科技 · 纳斯达克</p>') + '</div>' + radarScopeControls() + '</header>' +
     '<section class="card preopen-brief"><div><h2>' + preopenHeadline() + '</h2><p>开盘前 5 分钟冻结，每个市场最多 3 只。公司公告、盘前买盘、同业走势至少两类相互印证才入选。</p></div>' +
-    '<div class="preopen-goal"><span>盘中触及线</span><strong>+5<small>%</small></strong><span>相对可比昨收</span></div></section>' +
+    '<div class="preopen-goal"><span>盘中触及线</span><strong>+5<small>%</small></strong><span>相对可比昨收</span></div>' + universe + '</section>' +
     '<div class="preopen-section-heading"><h2>盘前冻结名单</h2>' +
     (state.preopenData?.asOf ? '<p class="preopen-updated">读取于北京时间 ' + preopenStamp(state.preopenData.asOf, "A股") + '</p>' : '') + '</div>' +
     (state.preopenError ? '<p class="preopen-error" role="status">' + escapeHtml(state.preopenError) + (state.preopenData ? ' 当前展示上次读取的记录。' : '') + '</p>' : '') +
@@ -3569,6 +3645,32 @@ function soldEmptyState() {
   return "<div class=\"empty sold-empty\"><strong>" + title + "</strong><p>" + note + "</p>" + (tradeFiltersActive() ? "<button class=\"secondary-button\" type=\"button\" data-clear-trade-filters>清除筛选</button>" : "") + "</div>";
 }
 
+function soldDailyPnlMarkup(rows) {
+  const totals = new Map();
+  for (const row of rows) {
+    const day = soldDateValue(row);
+    if (!day) continue;
+    const previous = totals.has(day) ? totals.get(day) : 0;
+    totals.set(day, Number.isFinite(row.pnlCny) ? previous + row.pnlCny : NaN);
+  }
+  const days = Array.from(totals.keys()).sort().slice(-12);
+  if (!days.length) return "";
+  const maximum = Math.max(0, ...days.map(day => Math.abs(totals.get(day)) || 0));
+  const descriptions = days.map(day => day + " " + (Number.isFinite(totals.get(day)) ? signed(totals.get(day), 2) : "待核算"));
+  const bars = days.map((day, index) => {
+    const amount = totals.get(day);
+    const direction = Number.isFinite(amount) ? tone(amount) : "missing";
+    const height = maximum && Number.isFinite(amount) ? 50 * Math.abs(amount) / maximum : 0;
+    return '<span class="sale-day-sample ' + direction + '" title="' + escapeHtml(descriptions[index]) +
+      '"><i style="height:' + height.toFixed(2) + '%"></i></span>';
+  }).join('');
+  return '<figure class="sale-daily-pnl"><figcaption><strong>逐日卖出盈亏</strong><small>近 ' + days.length +
+    ' 个卖出日 · 人民币</small></figcaption><div class="sale-day-chart" role="img" aria-label="' +
+    escapeHtml(descriptions.join('，')) + '">' + bars + '</div><div class="sale-daily-period"><time>' +
+    days[0] + '</time>' + (days.length > 1 ? '<time>' + days[days.length - 1] + '</time>' : '') +
+    '</div></figure>';
+}
+
 function tradesPage() {
   const soldRows = filteredSortedSoldRows();
   const allSoldCount = state.rows.filter(row => row.status === "sold").length;
@@ -3599,7 +3701,8 @@ function tradesPage() {
     tradeKpi("买入成本", money(purchaseCost, 0), "已卖出批次分摊成本") +
     tradeKpi("卖出净额", money(saleProceeds, 0), "已扣除卖出费用") +
     tradeKpi("盈利批次占比", winRate, "盈利 " + wins + " / 可核算 " + known.length + " 笔") +
-    '</div>' + holdingDistributionMarkup("卖出盈亏分布", wins, losses, known.length - wins - losses, soldRows.length - known.length, "待核算") +
+    '</div><div class="sale-analysis">' + holdingDistributionMarkup("卖出盈亏分布", wins, losses, known.length - wins - losses, soldRows.length - known.length, "待核算") +
+    soldDailyPnlMarkup(soldRows) + '</div>' +
     '</section><section class="card table-card sold-record-section"><div class="trade-toolbar"><div class="trade-toolbar-heading">' + soldMarketTabs() +
     '</div>' + soldFilterControls() + '</div><p id="trade-filter-status" class="trade-result-summary' + (tradeDateRangeInvalid() ? ' is-error' : '') +
     '" role="status">' + (tradeDateRangeInvalid() ? '日期范围无效，请调整后查看记录。' : '当前显示 ' + soldRows.length + ' / ' + allSoldCount + ' 笔卖出记录') +
@@ -3616,23 +3719,28 @@ function soldMarketTabs() {
   }).join("") + "</div>";
 }
 
+function soldNativePnlMarkup(row) {
+  if (row.currency === "CNY") return '<small>人民币</small>';
+  const amount = tradingPnlNative(row);
+  return '<small class="' + tone(amount) + '">' + signedNative(amount, row.currency) + '</small>';
+}
+
 function soldRecordRow(row) {
-  const nativePnl = tradingPnlNative(row);
   const returnRate = soldReturnRate(row);
   const missingDetails = tradeDetailsMissing(row);
-  return "<tr><td>" + escapeHtml(row.sellDate || "—") + "</td><td>" + marketLabel(row.market) + "</td><td><strong>" + escapeHtml(row.name) + "</strong><span class=\"stock-code\">" + escapeHtml(row.code) + "</span></td><td class=\"number-cell\">" + (missingDetails ? "—" : nativeMoney(row.cost, row.currency)) + "</td><td class=\"number-cell\">" + (missingDetails ? "—" : nativeMoney(row.sellPrice, row.currency)) + "</td><td>" + (missingDetails ? "—" : row.qty.toLocaleString("zh-CN")) + "</td><td class=\"number-cell\">" + money(row.purchaseCostCny, 0) + "</td><td class=\"number-cell\">" + money(row.saleProceedsCny, 0) + "</td><td class=\"number-cell " + tone(row.pnlCny) + "\"><strong>" + signed(row.pnlCny, 0) + "</strong><small>" + (row.currency === "CNY" ? "人民币" : signedNative(nativePnl, row.currency)) + "</small></td><td class=\"number-cell " + tone(returnRate) + "\"><strong>" + pct(returnRate) + "</strong></td></tr>";
+  return "<tr><td>" + escapeHtml(row.sellDate || "—") + "</td><td>" + marketLabel(row.market) + "</td><td><strong>" + escapeHtml(row.name) + "</strong><span class=\"stock-code\">" + escapeHtml(row.code) + "</span></td><td class=\"number-cell\">" + (missingDetails ? "—" : nativeMoney(row.cost, row.currency)) + "</td><td class=\"number-cell\">" + (missingDetails ? "—" : nativeMoney(row.sellPrice, row.currency)) + "</td><td>" + (missingDetails ? "—" : row.qty.toLocaleString("zh-CN")) + "</td><td class=\"number-cell\">" + money(row.purchaseCostCny, 0) + "</td><td class=\"number-cell\">" + money(row.saleProceedsCny, 0) + "</td><td class=\"number-cell " + tone(row.pnlCny) + "\"><strong>" + signed(row.pnlCny, 0) + "</strong>" + soldNativePnlMarkup(row) + "</td><td class=\"number-cell " + tone(returnRate) + "\"><strong>" + pct(returnRate) + "</strong></td></tr>";
 }
 
 function soldRecordMobileCard(row) {
-  const nativePnl = tradingPnlNative(row), returnRate = soldReturnRate(row);
+  const returnRate = soldReturnRate(row);
   const missing = tradeDetailsMissing(row);
   const term = (label, value) => '<div><dt>' + label + '</dt><dd>' + value + '</dd></div>';
   const saleDate = '<time datetime="' + escapeHtml(soldDateValue(row)) + '">' + escapeHtml(row.sellDate || "日期待补") + '</time>';
   const quantity = missing ? '<span>—</span>' : row.qty.toLocaleString("zh-CN") + ' 股';
   return '<article class="sold-record-card"><header><div><span><strong>' + escapeHtml(row.name) + '</strong><small>' + escapeHtml(row.code) +
     ' · ' + saleDate + ' · ' + quantity + '</small></span></div>' + marketLabel(row.market) + '</header><div class="sale-card-performance"><div><span>已实现盈亏</span><strong class="' +
-    tone(row.pnlCny) + '">' + signed(row.pnlCny, 0) + '</strong><small>' + (row.currency === "CNY" ? "人民币" : signedNative(nativePnl, row.currency)) +
-    '</small></div><div><span>收益率</span><strong class="' + tone(returnRate) + '">' + pct(returnRate) + '</strong></div></div><dl>' +
+    tone(row.pnlCny) + '">' + signed(row.pnlCny, 0) + '</strong>' + soldNativePnlMarkup(row) +
+    '</div><div><span>收益率</span><strong class="' + tone(returnRate) + '">' + pct(returnRate) + '</strong></div></div><dl>' +
     term("买入价", missing ? "—" : nativeMoney(row.cost, row.currency)) + term("卖出价", missing ? "—" : nativeMoney(row.sellPrice, row.currency)) +
     term("买入成本", money(row.purchaseCostCny, 0)) + term("卖出净额", money(row.saleProceedsCny, 0)) + '</dl></article>';
 }
@@ -3954,6 +4062,9 @@ function render(announceRoute) {
     if (announceRoute) main.classList.add("enter-route");
     main.id = "main-content";
     main.setAttribute("tabindex", "-1");
+    if (state.tab === "overview" || state.tab === "actions") {
+      main.insertAdjacentHTML("afterbegin", holdingQuoteStrip(state.rows));
+    }
   }
   if (oldMetrics.length && !prefersReducedMotion()) {
     app.querySelectorAll(".account-metric-card .metric-value").forEach((el, index) => {
@@ -4003,9 +4114,15 @@ function drawChartCanvas(canvas) {
   const width = rect.width, height = rect.height;
   const days = state.trendDays;
   const points = portfolioSeries(days);
+  const styles = getComputedStyle(canvas);
+  const up = styles.getPropertyValue('--overview-up').trim() || '#ff717e';
+  const down = styles.getPropertyValue('--overview-down').trim() || '#3ed9a3';
+  const axisColor = styles.getPropertyValue('--overview-muted').trim() || '#a5b5c8';
+  const textColor = styles.getPropertyValue('--overview-text').trim() || '#edf3fa';
+  const mono = styles.getPropertyValue('--terminal-mono').trim() || 'ui-monospace, monospace';
   ctx.clearRect(0, 0, width, height);
   if (!points.length) {
-    ctx.fillStyle = "#64675f";
+    ctx.fillStyle = axisColor;
     ctx.font = "13px -apple-system, BlinkMacSystemFont, PingFang SC, Microsoft YaHei, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(days >= 365 ? "暂无可绘制的估值" : "暂无持仓估值", width / 2, height / 2);
@@ -4021,14 +4138,14 @@ function drawChartCanvas(canvas) {
   const chartHeight = Math.max(1, height - top - bottom);
   const chartWidth = Math.max(1, width - left - right);
   const zeroY = top + (max / (max - min)) * chartHeight;
-  ctx.font = "12px -apple-system, BlinkMacSystemFont, PingFang SC, Microsoft YaHei, sans-serif";
-  ctx.fillStyle = "#64675f";
+  ctx.font = "12px " + mono;
+  ctx.fillStyle = axisColor;
   ctx.textAlign = "right";
   ctx.lineWidth = 1;
   for (let index = 0; index <= gridCount; index += 1) {
     const value = max - (max - min) * index / gridCount;
     const y = top + chartHeight * index / gridCount;
-    ctx.strokeStyle = "#e6e5de";
+    ctx.strokeStyle = "#293949";
     ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(width - right, y); ctx.stroke();
     ctx.fillText(formatAxisMoney(value), left - 8, y + 4);
   }
@@ -4057,10 +4174,10 @@ function drawChartCanvas(canvas) {
   ctx.lineTo(xAt(series.length - 1), zeroY); ctx.lineTo(xAt(0), zeroY); ctx.closePath();
   const fill = ctx.createLinearGradient(0, top, 0, top + chartHeight);
   const zeroStop = Math.max(0, Math.min(1, (zeroY - top) / chartHeight));
-  fill.addColorStop(0, "rgba(177,51,57,.15)");
-  fill.addColorStop(Math.max(0, zeroStop - 0.002), "rgba(177,51,57,.055)");
-  fill.addColorStop(Math.min(1, zeroStop + 0.002), "rgba(12,117,80,.055)");
-  fill.addColorStop(1, "rgba(12,117,80,.16)");
+  fill.addColorStop(0, "rgba(255,113,126,.20)");
+  fill.addColorStop(Math.max(0, zeroStop - 0.002), "rgba(255,113,126,.045)");
+  fill.addColorStop(Math.min(1, zeroStop + 0.002), "rgba(62,217,163,.045)");
+  fill.addColorStop(1, "rgba(62,217,163,.20)");
   ctx.fillStyle = fill;
   if (!longWindow) ctx.fill();
   ctx.beginPath();
@@ -4070,21 +4187,21 @@ function drawChartCanvas(canvas) {
     else ctx.lineTo(xAt(index), yAt(value));
   });
   const stroke = ctx.createLinearGradient(0, top, 0, top + chartHeight);
-  stroke.addColorStop(0, "#b13339");
-  stroke.addColorStop(Math.max(0, zeroStop - 0.002), "#b13339");
-  stroke.addColorStop(Math.min(1, zeroStop + 0.002), "#0c7550");
-  stroke.addColorStop(1, "#0c7550");
-  ctx.strokeStyle = stroke;
+  stroke.addColorStop(0, up);
+  stroke.addColorStop(Math.max(0, zeroStop - 0.002), up);
+  stroke.addColorStop(Math.min(1, zeroStop + 0.002), down);
+  stroke.addColorStop(1, down);
+  ctx.strokeStyle = series.every(value => value === 0) ? axisColor : stroke;
   ctx.lineWidth = 2.4;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   ctx.stroke();
   if (series.length) {
     const lastIndex = series.length - 1;
-    ctx.fillStyle = series[lastIndex] >= 0 ? "#b13339" : "#0c7550";
+    ctx.fillStyle = series[lastIndex] === 0 ? axisColor : series[lastIndex] > 0 ? up : down;
     ctx.beginPath(); ctx.arc(xAt(lastIndex), yAt(series[lastIndex]), 3, 0, Math.PI * 2); ctx.fill();
   }
-  ctx.strokeStyle = "#787970";
+  ctx.strokeStyle = "#8293a6";
   ctx.setLineDash([4, 4]);
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(left, zeroY); ctx.lineTo(width - right, zeroY); ctx.stroke();
@@ -4096,22 +4213,22 @@ function drawChartCanvas(canvas) {
     const x = xAt(hoverIndex), y = yAt(point.value);
     ctx.save();
     ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = "#9cb1d4";
+    ctx.strokeStyle = "#79bce8";
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + chartHeight); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = point.value >= 0 ? "#b13339" : "#0c7550";
+    ctx.fillStyle = point.value === 0 ? axisColor : point.value > 0 ? up : down;
     ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 3; ctx.strokeStyle = "#fff"; ctx.stroke();
-    const boxWidth = 196, boxHeight = 70;
-    const boxX = Math.max(left, Math.min(width - right - boxWidth, x - boxWidth / 2));
+    ctx.lineWidth = 3; ctx.strokeStyle = "#111e2c"; ctx.stroke();
+    const boxWidth = Math.min(206, Math.max(120, width - 8)), boxHeight = 70;
+    const boxX = Math.max(4, Math.min(width - 4 - boxWidth, x - boxWidth / 2));
     const boxY = Math.max(top + 4, Math.min(top + chartHeight - boxHeight - 4, y - boxHeight - 16));
-    ctx.fillStyle = "rgba(255,255,255,.98)"; ctx.strokeStyle = "#dfe6f1"; ctx.lineWidth = 1;
+    ctx.fillStyle = "#192b3b"; ctx.strokeStyle = "#54708a"; ctx.lineWidth = 1;
     ctx.fillRect(boxX, boxY, boxWidth, boxHeight); ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
-    ctx.textAlign = "left"; ctx.fillStyle = "#6e778d"; ctx.font = "12px -apple-system, BlinkMacSystemFont, PingFang SC, Microsoft YaHei, sans-serif";
+    ctx.textAlign = "left"; ctx.fillStyle = axisColor; ctx.font = "12px " + mono;
     ctx.fillText(point.date, boxX + 14, boxY + 23);
-    ctx.fillStyle = "#111a33"; ctx.fillText("累计盈亏", boxX + 14, boxY + 50);
-    ctx.textAlign = "right"; ctx.fillStyle = point.value >= 0 ? "#b13339" : "#0c7550"; ctx.font = "700 13px -apple-system, BlinkMacSystemFont, PingFang SC, Microsoft YaHei, sans-serif";
+    ctx.fillStyle = textColor; ctx.fillText("累计盈亏", boxX + 14, boxY + 50);
+    ctx.textAlign = "right"; ctx.fillStyle = point.value === 0 ? axisColor : point.value > 0 ? up : down; ctx.font = "600 13px " + mono;
     ctx.fillText(signed(point.value, 0), boxX + boxWidth - 14, boxY + 50);
     ctx.restore();
   }

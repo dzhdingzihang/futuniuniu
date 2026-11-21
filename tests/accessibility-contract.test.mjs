@@ -25,11 +25,22 @@ test("every dynamic route promotes its semantic main as the skip-link target", (
   assert.match(appSource, /document\.title = meta\.title \+ " · 猪猪存钱罐"/);
 });
 
-test("accessible semantic color tokens keep the required contrast palette", () => {
-  assert.match(styles, /--muted:\s*#5f697e;/i);
-  assert.match(styles, /--red:\s*#c42f3f;/i);
-  assert.match(styles, /--green:\s*#08764f;/i);
-  assert.match(styles, /--orange:\s*#a94900;/i);
+test("stock direction and secondary text are distinguishable on terminal surfaces", () => {
+  const channels = (token) => {
+    const color = styles.match(new RegExp("--" + token + ":\\s*(#[a-f0-9]{6});", "i"))[1];
+    return color.slice(1).match(/../g).map(pair => parseInt(pair, 16) / 255);
+  };
+  const luminance = (token) => channels(token).reduce((total, channel, index) => {
+    const linear = channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4;
+    return total + linear * [.2126, .7152, .0722][index];
+  }, 0);
+  for (const color of ["ink", "muted", "red", "green", "orange", "blue"]) {
+    for (const bg of ["page", "surface", "surface-2"]) {
+      assert.ok((luminance(color) + .05) / (luminance(bg) + .05) >= 4.5, color + " on " + bg);
+    }
+  }
+  assert.ok(channels("red")[0] > channels("red")[1]);
+  assert.ok(channels("green")[1] > channels("green")[0]);
 });
 
 test("forms expose visible keyboard focus and invalid states", () => {

@@ -175,34 +175,35 @@ function loginPage(user, next) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b111a">
   <title>猪猪存钱罐 · 登录</title>
-  <link rel="icon" type="image/svg+xml" href="/assets/savings-bank.svg">
+  <link rel="icon" type="image/svg+xml" href="/assets/terminal-mark.svg">
   <style>
-    :root{color-scheme:light;--ink:#193c32;--paper:#f6f5f0;--line:#d9dbcf;--gold:#d6a84b}
+    :root{color-scheme:dark;--ink:#edf3fa;--base:#0b111a;--panel:#131d2a;--line:#34485e;--accent:#69c9ff}
     *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;min-height:100svh;display:grid;place-items:center;padding:24px;background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
-    main{width:min(420px,100%);padding:clamp(24px,6vw,40px);border:1px solid var(--line);border-radius:16px;background:#fffefa}
-    .brand-lockup{display:flex;align-items:center;gap:15px;padding-bottom:27px;border-bottom:1px solid var(--line)}
+    body{margin:0;min-height:100vh;min-height:100svh;display:grid;place-items:center;padding:20px;background:radial-gradient(ellipse at 50% 44%,#162739 0,var(--base) 64%);color:var(--ink);font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif}
+    main{width:min(420px,100%);padding:clamp(24px,6vw,40px);border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 18px 60px #03070c66}
+    .brand-lockup{display:flex;align-items:center;gap:15px;padding-bottom:28px;border-bottom:1px solid var(--line)}
     .mark{display:block;width:52px;height:52px}
     h1{margin:0;line-height:1}h1 img{display:block;width:min(158px,38vw);height:auto}
-    form{margin-top:26px}
-    label{display:block;margin-bottom:10px;font-size:15px;font-weight:680}
-    input{appearance:none;width:100%;height:48px;padding:0 14px;border:1px solid #919b8d;border-radius:8px;background:#fff;color:var(--ink);font:inherit;font-size:17px;caret-color:var(--ink)}
-    input:focus{outline:2px solid var(--ink);outline-offset:2px}
-    .user{margin:12px 0 23px;color:#5e675c;font-size:13px;line-height:1.6}.user strong{color:#51452e;font-weight:620}
-    button{display:flex;width:100%;min-height:48px;align-items:center;justify-content:space-between;gap:12px;padding:0 15px;border:0;border-radius:8px;background:var(--ink);color:#fff;font:inherit;font-weight:660;cursor:pointer}
-    button:focus-visible{outline:2px solid #8d671f;outline-offset:3px}button:disabled{cursor:wait;background:#53685d}
-    button svg{width:18px;height:18px;stroke:#e5c781}
-    .status{margin:12px 0 0;color:#8c352c;font-size:13px;line-height:1.55}.status:empty{display:none}
-    @media (hover:hover){button:hover:not(:disabled){background:#294d40}}
+    form{margin-top:24px}
+    label{display:block;margin-bottom:10px;font-size:15px;font-weight:650}
+    input{appearance:none;width:100%;height:48px;padding:0 14px;border:1px solid #4d657c;border-radius:6px;background:var(--base);color:var(--ink);font:inherit;font-size:17px;caret-color:var(--accent)}
+    input:focus{outline:2px solid var(--accent);outline-offset:2px}
+    .user{margin:12px 0 23px;color:#a5b5c8;font-size:13px;line-height:1.6}.user strong{color:var(--ink);font-weight:600}
+    button{display:flex;width:100%;min-height:48px;align-items:center;justify-content:space-between;gap:12px;padding:0 15px;border:0;border-radius:6px;background:var(--accent);color:#0b1721;font:inherit;font-weight:700;cursor:pointer}
+    button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}button:disabled{cursor:wait;background:#7a94a6}
+    button svg{width:18px;height:18px;stroke:currentColor}
+    .status{margin:12px 0 0;color:#ff8792;font-size:13px;line-height:1.55}.status:empty{display:none}
+    @media (hover:hover){button:hover:not(:disabled){background:#96dcff}}
     @media (prefers-reduced-motion:no-preference){button svg{transition:transform .16s ease-out}button:active svg{transform:translateX(3px)}}
   </style>
 </head>
 <body>
   <main>
     <div class="brand-lockup">
-      <img class="mark" src="/assets/savings-bank.svg" alt="" width="52" height="52">
-      <h1><img src="/assets/savings-wordmark.svg" alt="猪猪存钱罐" width="158" height="28"></h1>
+      <img class="mark" src="/assets/terminal-mark.svg" alt="" width="52" height="52">
+      <h1><img src="/assets/terminal-wordmark.svg" alt="猪猪存钱罐" width="158" height="28"></h1>
     </div>
     <form id="login-form" action="${escapeHtml(action)}" method="post">
       <label for="password">访问密码</label>
