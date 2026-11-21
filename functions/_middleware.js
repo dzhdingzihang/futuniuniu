@@ -3,7 +3,7 @@ const SESSION_COOKIE = "piggy_session";
 const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MAX_LOGIN_BODY_BYTES = 4096;
 const MAX_PASSWORD_LENGTH = 256;
-const LOGIN_CSP = "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+const LOGIN_CSP = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -176,36 +176,63 @@ function loginPage(user, next) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>猪猪存钱罐 · 登录</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/savings-bank.svg">
   <style>
-    :root{color-scheme:dark;--gold:#d6a84b;--gold-light:#f3d58a;--ink:#090806;--panel:#15110b;--muted:#a89b84}
+    :root{color-scheme:light;--ink:#193c32;--paper:#f6f5f0;--line:#d9dbcf;--gold:#d6a84b}
     *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 18%,#34260f 0,#15100a 28%,var(--ink) 70%);color:#f8f1df;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
-    main{width:min(420px,100%);padding:40px;border:1px solid rgba(214,168,75,.48);border-radius:24px;background:linear-gradient(145deg,rgba(30,24,14,.97),rgba(10,9,7,.98));box-shadow:0 26px 90px rgba(0,0,0,.55),inset 0 1px rgba(255,235,180,.08)}
-    .mark{width:62px;height:62px;display:grid;place-items:center;margin:0 auto 20px;border:1px solid rgba(214,168,75,.65);border-radius:18px;background:linear-gradient(145deg,#32230e,#120e08);font-size:31px;box-shadow:0 12px 32px rgba(214,168,75,.14)}
-    h1{margin:0;text-align:center;font-size:28px;letter-spacing:.08em;background:linear-gradient(100deg,#806022,var(--gold-light),#a77a2b);background-clip:text;-webkit-background-clip:text;color:transparent}
-    .user{margin:14px 0 30px;text-align:center;color:var(--muted);font-size:14px}.user strong{color:var(--gold-light);font-weight:650}
-    label{display:block;margin-bottom:9px;color:#d9c9a5;font-size:13px}
-    input{width:100%;height:52px;padding:0 16px;border:1px solid #5b4723;border-radius:12px;outline:none;background:#0b0906;color:#fff6dd;font-size:16px;transition:.2s border-color,.2s box-shadow}
-    input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(214,168,75,.14)}
-    button{width:100%;height:50px;margin-top:16px;border:0;border-radius:12px;background:linear-gradient(105deg,#8c6624,var(--gold-light),#a97828);color:#171006;font-size:15px;font-weight:750;cursor:pointer;box-shadow:0 10px 28px rgba(214,168,75,.16)}
-    button:disabled{cursor:wait;opacity:.65}.status{min-height:20px;margin:13px 0 0;text-align:center;color:#e39a83;font-size:13px}
+    body{margin:0;min-height:100vh;min-height:100svh;display:grid;place-items:center;padding:24px;background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+    main{width:min(420px,100%);padding:clamp(24px,6vw,40px);border:1px solid var(--line);border-radius:16px;background:#fffefa}
+    .brand-lockup{display:flex;align-items:center;gap:15px;padding-bottom:27px;border-bottom:1px solid var(--line)}
+    .mark{display:block;width:52px;height:52px}
+    h1{margin:0;line-height:1}h1 img{display:block;width:min(158px,38vw);height:auto}
+    form{margin-top:26px}
+    label{display:block;margin-bottom:10px;font-size:15px;font-weight:680}
+    input{appearance:none;width:100%;height:48px;padding:0 14px;border:1px solid #919b8d;border-radius:8px;background:#fff;color:var(--ink);font:inherit;font-size:17px;caret-color:var(--ink)}
+    input:focus{outline:2px solid var(--ink);outline-offset:2px}
+    .user{margin:12px 0 23px;color:#5e675c;font-size:13px;line-height:1.6}.user strong{color:#51452e;font-weight:620}
+    button{display:flex;width:100%;min-height:48px;align-items:center;justify-content:space-between;gap:12px;padding:0 15px;border:0;border-radius:8px;background:var(--ink);color:#fff;font:inherit;font-weight:660;cursor:pointer}
+    button:focus-visible{outline:2px solid #8d671f;outline-offset:3px}button:disabled{cursor:wait;background:#53685d}
+    button svg{width:18px;height:18px;stroke:#e5c781}
+    .status{margin:12px 0 0;color:#8c352c;font-size:13px;line-height:1.55}.status:empty{display:none}
+    @media (hover:hover){button:hover:not(:disabled){background:#294d40}}
+    @media (prefers-reduced-motion:no-preference){button svg{transition:transform .16s ease-out}button:active svg{transform:translateX(3px)}}
   </style>
 </head>
 <body>
   <main>
-    <div class="mark" aria-hidden="true">🐷</div>
-    <h1>猪猪存钱罐</h1>
-    <p class="user">密码提示：<strong>${escapeHtml(user)}</strong></p>
+    <div class="brand-lockup">
+      <img class="mark" src="/assets/savings-bank.svg" alt="" width="52" height="52">
+      <h1><img src="/assets/savings-wordmark.svg" alt="猪猪存钱罐" width="158" height="28"></h1>
+    </div>
     <form id="login-form" action="${escapeHtml(action)}" method="post">
-      <label for="password">请输入访问密码</label>
-      <input id="password" name="password" type="password" maxlength="${MAX_PASSWORD_LENGTH}" autocomplete="current-password" required autofocus>
-      <button type="submit">打开存钱罐</button>
+      <label for="password">访问密码</label>
+      <input id="password" name="password" type="password" maxlength="${MAX_PASSWORD_LENGTH}" autocomplete="current-password" aria-describedby="hint" required autofocus>
+      <p class="user" id="hint">密码提示：<strong>${escapeHtml(user)}</strong></p>
+      <button type="submit"><span>打开存钱罐</span><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
       <p class="status" id="status" role="status" aria-live="polite"></p>
     </form>
   </main>
   <script>
     const form=document.getElementById("login-form"),password=document.getElementById("password"),status=document.getElementById("status"),button=form.querySelector("button");
-    form.addEventListener("submit",async event=>{event.preventDefault();button.disabled=true;status.textContent="";try{const response=await fetch(form.action,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({password:password.value})});const result=await response.json();if(!response.ok)throw new Error(result.error||"登录失败");window.location.assign(typeof result.redirect==="string"?result.redirect:"/")}catch(error){status.textContent=error.message||"登录失败";password.select()}finally{button.disabled=false}});
+    form.addEventListener("submit",async event=>{
+      event.preventDefault();
+      if(button.disabled)return;
+      button.disabled=true;
+      button.querySelector("span").textContent="正在打开…";
+      status.textContent="";
+      try{
+        const response=await fetch(form.action,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({password:password.value})});
+        const result=await response.json();
+        if(!response.ok)throw new Error(result.error||"登录失败，请重试");
+        window.location.assign(typeof result.redirect==="string"?result.redirect:"/");
+      }catch(error){
+        status.textContent=error.message||"登录失败，请重试";
+        button.disabled=false;
+        button.querySelector("span").textContent="打开存钱罐";
+        password.focus();
+        password.select();
+      }
+    });
   </script>
 </body>
 </html>`;

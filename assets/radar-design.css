@@ -20,28 +20,29 @@
 .preopen-page .preopen-updated { margin: 0; }
 .preopen-page .preopen-boards { margin-top: 0; gap: 16px; }
 .preopen-page .preopen-board { padding: clamp(17px, 1.6vw, 25px); }
-.preopen-page .preopen-board header small { font-weight: 600; }
-.preopen-page .preopen-board h3 { font-size: 23px; }
+.preopen-page .preopen-board h3,
+.intraday-page .intraday-board h3 { margin: 0; font-size: 22px; letter-spacing: -.025em; }
 .preopen-page .preopen-tag { border-radius: 5px; color: #5b5c53; background: #f0efe9; }
 .preopen-page .preopen-tag[data-phase="frozen"] { background: #eee9da; color: #634b18; }
 .preopen-page .preopen-tag[data-phase="missed"],
 .preopen-page .preopen-tag[data-phase="unavailable"] { background: #f6ebe1; color: #7f4420; }
-.preopen-page .preopen-board-numbers {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-block: 1px solid var(--line); margin: 16px 0 12px; padding: 13px 0;
+.preopen-page .preopen-market-id > header { display: flex; justify-content: space-between; gap: 12px; }
+.preopen-page .preopen-market-id > header,
+.intraday-page .intraday-board > header { align-items: center; }
+.preopen-page .preopen-date {
+  display: flex; gap: 0 12px; justify-content: flex-start; padding: 0; border: 0; margin: 7px 0 16px;
+  color: var(--muted); font-size: 12px; line-height: 1.65; font-variant-numeric: tabular-nums;
 }
-.preopen-page .preopen-board-numbers div + div { padding-left: 15px; border-left: 1px solid var(--line); }
-.preopen-page .preopen-board-numbers dt { color: var(--muted); font-size: 12px; }
-.preopen-page .preopen-board-numbers dd {
-  margin: 3px 0 0; color: #242820; font-size: clamp(22px, 2vw, 29px);
-  font-weight: 680; font-variant-numeric: tabular-nums; line-height: 1.25; letter-spacing: -.025em;
-}
-.preopen-page .preopen-board-numbers small { color: var(--muted); font-size: 12px; font-weight: 500; }
-.preopen-page .preopen-date { display: flex; gap: 2px 12px; justify-content: flex-start; padding: 0; border: 0; margin: 0 0 4px; color: var(--ink); font-size: 12px; line-height: 1.7; }
-.preopen-page .preopen-date b { font-weight: 650; font-variant-numeric: tabular-nums; }
+.preopen-page .preopen-date b { font-weight: 550; }
 .preopen-page .preopen-notice, .preopen-page .preopen-stage { background: #f5f4ef; color: #50534b; }
 .preopen-page .preopen-pick h4::before { background: #eee9da; color: #634b18; }
-.preopen-page .preopen-evidence { border-color: #c9b98e; }
+.preopen-page .preopen-pick h4 { font-size: 17px; }
+.preopen-page .preopen-price-pair {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; margin: 10px 0 4px;
+  color: var(--muted); font-size: 14px; line-height: 1.65; font-variant-numeric: tabular-nums;
+}
+.preopen-page .preopen-price-pair strong { color: var(--ink); }
+.preopen-page .preopen-evidence { padding: 0; border: 0; }
 .preopen-page .preopen-details > summary, .preopen-page .preopen-example > summary { min-height: 44px; list-style: none; display: flex; align-items: center; gap: 7px; }
 .preopen-page details > summary::-webkit-details-marker { display: none; }
 .preopen-page details > summary::after {
@@ -61,17 +62,67 @@
 .radar-page .radar-top3-item:first-child .radar-top3-rank { box-shadow: none; color: #fff; background: #50462e; }
 .intraday-page .intraday-target { border-top-color: #96763d; }
 .intraday-page .intraday-target dd { color: #705a2f; }
+.intraday-page .intraday-board { padding: clamp(17px, 1.6vw, 25px); }
+.intraday-page .intraday-session { margin: 7px 0 0; }
+.intraday-page .intraday-scan { font-variant-numeric: tabular-nums; }
+.intraday-page .intraday-empty, .intraday-page .intraday-prices { background: #f5f4ef; color: #50534b; }
+.intraday-page .intraday-coverage { padding-top: 14px; margin-top: 16px; }
+.intraday-page .intraday-coverage dd { font-size: 19px; }
+.radar-market-picker { display: none; }
+@media (min-width: 901px) {
+  .preopen-page .preopen-boards {
+    grid-template-columns: 1fr; gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  }
+  .preopen-page .preopen-board {
+    display: grid; grid-template-columns: minmax(220px, 24%) 1fr; grid-template-rows: auto 1fr; gap: 0 32px;
+    padding: 20px 24px; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  }
+  .preopen-page .preopen-board + .preopen-board { border-top: 1px solid var(--line); }
+  .preopen-page .preopen-market-id > header { justify-content: flex-start; flex-wrap: wrap; }
+  .preopen-page .preopen-market-id .preopen-date { margin-bottom: 2px; }
+  .preopen-page .preopen-board > .preopen-details { grid-column: 1; align-self: start; border: 0; margin-top: 0; }
+  .preopen-page .preopen-board > .preopen-details > summary { width: fit-content; min-height: 36px; padding: 4px 0; }
+  .preopen-page .preopen-market-signals { min-width: 0; grid-column: 2; grid-row: 1 / span 2; }
+  .preopen-page .preopen-market-signals > :first-child { margin-top: 0; border-top: 0; }
+  .preopen-page .preopen-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 215px), 1fr)); gap: 16px; }
+  .preopen-page .preopen-pick { border: 0; padding: 0; }
+}
 @media (hover: hover) and (pointer: fine) {
   .preopen-page summary:hover { color: #463712; }
+  .radar-market-picker button:hover { color: var(--ink); }
 }
 @media (prefers-reduced-motion: no-preference) {
   .preopen-page details > summary:not(:focus-visible)::after { transition: transform 160ms cubic-bezier(.23, 1, .32, 1); }
+  .radar-market-picker button { transition: transform 120ms ease-out; }
+  .radar-market-picker button:active { transform: scale(.97); }
+}
+@media (max-width: 900px) {
+  .radar-market-picker {
+    display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); border-bottom: 1px solid var(--line-strong);
+    margin: 0 0 12px;
+  }
+  .radar-market-picker button {
+    display: grid; justify-items: center; align-content: center; gap: 2px; background: transparent; border: 0; border-bottom: 2px solid transparent;
+    min-height: 44px; padding: 6px 4px; font: inherit; font-size: 14px; color: var(--muted); cursor: pointer;
+  }
+  .radar-market-picker small { color: var(--muted); font-size: 12px; font-weight: 450; }
+  .radar-market-picker button[aria-pressed="true"] { color: var(--ink); border-bottom-color: #82652e; font-weight: 700; }
+  .radar-market-picker button:focus-visible { outline: 2px solid #82652e; outline-offset: -3px; }
+  .preopen-page .preopen-boards { grid-template-columns: 1fr; }
+  .preopen-page .preopen-board:not(.is-selected-market), .intraday-board:not(.is-selected-market) { display: none; }
+  .preopen-page .preopen-boards { margin-top: 0; }
 }
 @media (max-width: 660px) {
-  .preopen-page .preopen-brief { gap: 18px; }
-  .preopen-page .preopen-goal { width: 100%; border-top: 1px solid #52554a; padding: 14px 0 0; text-align: left; }
-  .preopen-page .preopen-goal strong { justify-self: end; }
-  .preopen-page .preopen-board-numbers { margin-top: 14px; }
+  .radar-page .radar-page-heading { gap: 10px; }
+  .radar-page .radar-scope-switch { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); width: 100%; margin: 0; }
+  .radar-page .radar-scope-switch button { padding-inline: 1px; }
+  .preopen-page .preopen-brief { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 14px; padding: 18px; }
+  .preopen-page .preopen-brief h2 { font-size: 21px; text-wrap: balance; }
+  .preopen-page .preopen-brief p { font-size: 13px; line-height: 1.65; }
+  .preopen-page .preopen-goal {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 2px; width: auto; padding: 0; border: 0;
+  }
+  .preopen-page .preopen-goal strong { order: -1; font-size: 34px; line-height: 1.1; }
   .preopen-page .preopen-table { min-width: 0; font-size: 12px; }
   .preopen-page .preopen-table th, .preopen-page .preopen-table td { padding: 10px 4px; white-space: normal; }
   .preopen-page .preopen-table th:first-child { width: 23%; }
@@ -84,5 +135,5 @@
 }
 .preopen-page .preopen-signal-names { margin: 8px 0 0; color: #554424; font-size: 13px; line-height: 1.7; font-weight: 650; }
 .preopen-page .preopen-pick .preopen-details { border: 0; margin: 0; }
-.preopen-page .preopen-pick .preopen-details > summary { justify-content: flex-start; gap: 12px; font-weight: 500; }
+.preopen-page .preopen-pick .preopen-details > summary { width: fit-content; max-width: 100%; justify-content: flex-start; gap: 12px; font-weight: 500; }
 .preopen-page .preopen-pick .preopen-details > summary::after { margin-left: 0; }

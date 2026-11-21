@@ -31,43 +31,9 @@ const PAGE_META = {
 // Keep invested cost fixed so a live FX refresh cannot change what was paid.
 const COST_REFERENCE_RATES = { CNY: 1, HKD: 0.92, USD: 7.22 };
 const FIXED_TRADE_FEE_USD = 20;
-const BRAND_MOTION_CYCLE = 6400;
-const BRAND_COIN_MIN = 4;
-const BRAND_COIN_MAX = 12;
-const PET_STATES = {
-  idle: { row: 0, frames: 6, frameMs: 420, holdMs: 2940, label: "平静眨眼" },
-  "running-right": { row: 1, frames: 8, frameMs: 190, holdMs: 3040, label: "开心迈步" },
-  "running-left": { row: 2, frames: 8, frameMs: 190, holdMs: 3040, label: "快乐散步" },
-  waving: { row: 3, frames: 4, frameMs: 260, holdMs: 2080, label: "开心挥手" },
-  jumping: { row: 4, frames: 5, frameMs: 210, holdMs: 2100, label: "兴奋跳跃" },
-  failed: { row: 5, frames: 8, frameMs: 300, holdMs: 3600, label: "有点难过" },
-  waiting: { row: 6, frames: 6, frameMs: 340, holdMs: 3060, label: "耐心等待" },
-  running: { row: 7, frames: 6, frameMs: 240, holdMs: 2880, label: "认真核算" },
-  review: { row: 8, frames: 6, frameMs: 360, holdMs: 2880, label: "专注复盘" }
-};
-const PET_MOOD_SEQUENCES = {
-  positive: ["waving", "running-right", "idle", "review", "running-left"],
-  negative: ["review", "waiting", "failed", "idle"],
-  neutral: ["idle", "waiting", "waving", "review"],
-  working: ["review"],
-  reviewing: ["review", "idle"]
-};
-const brandVisual = {
-  mood: "",
-  petState: "idle",
-  petFrame: 0,
-  petStateIndex: 0,
-  petStateStartedAt: Date.now(),
-  coinCount: BRAND_COIN_MIN,
-  justAddedCoin: -1
-};
-let brandAnimationTimer = 0;
-let displayedPetMood = "neutral";
 let brandPaused = readStorage("piggy-brand-paused", false) === true;
 let previousHeaderTools = "";
 let navTransition = null;
-let jarDepositTimer = 0;
-let jarCoinSettleTimer = 0;
 let holdingLookupTimer = 0;
 let holdingLookupController = null;
 let holdingSearchTimer = 0;
@@ -103,6 +69,7 @@ const state = {
   radarPage: 1,
   radarRows: [],
   radarScope: linkedRadarScope || "preopen",
+  radarBoardMarket: "A股",
   preopenData: null,
   preopenError: "",
   preopenLoading: false,
@@ -1160,107 +1127,14 @@ function currentPetMood() {
   return "neutral";
 }
 
-function petPosition(stateName, frame) {
-  const definition = PET_STATES[stateName] || PET_STATES.idle;
-  return {
-    x: (Math.max(0, Math.min(7, frame)) * 100 / 7).toFixed(4) + "%",
-    y: (definition.row * 100 / 8).toFixed(4) + "%"
-  };
-}
-
-function syncBrandPet(now) {
-  const reducedMotion = brandPaused || prefersReducedMotion();
-  const mood = reducedMotion ? "neutral" : displayedPetMood;
-  const sequence = PET_MOOD_SEQUENCES[mood] || PET_MOOD_SEQUENCES.neutral;
-  if (brandVisual.mood !== mood) {
-    brandVisual.mood = mood;
-    brandVisual.petStateIndex = 0;
-    brandVisual.petState = sequence[0];
-    brandVisual.petFrame = 0;
-    brandVisual.petStateStartedAt = now;
-  }
-  let definition = PET_STATES[brandVisual.petState] || PET_STATES.idle;
-  let elapsed = Math.max(0, now - brandVisual.petStateStartedAt);
-  if (!reducedMotion && elapsed >= definition.holdMs) {
-    brandVisual.petStateIndex = (brandVisual.petStateIndex + 1) % sequence.length;
-    brandVisual.petState = sequence[brandVisual.petStateIndex];
-    brandVisual.petStateStartedAt = now;
-    definition = PET_STATES[brandVisual.petState];
-    elapsed = 0;
-  }
-  brandVisual.petFrame = reducedMotion ? 0 : Math.floor(elapsed / definition.frameMs) % definition.frames;
-  const position = petPosition(brandVisual.petState, brandVisual.petFrame);
-  const stage = document.querySelector(".brand-pig-stage");
-  const sprite = document.querySelector(".brand-pig-sprite");
-  if (stage) {
-    stage.dataset.petState = brandVisual.petState;
-    stage.dataset.petLabel = definition.label;
-  }
-  if (sprite) {
-    sprite.style.setProperty("--pet-x", position.x);
-    sprite.style.setProperty("--pet-y", position.y);
-  }
-  const brand = document.querySelector(".brand");
-  if (brand) brand.setAttribute("aria-label", "猪猪存钱罐 · 小猪状态：" + definition.label + " · 返回总览");
-}
-
-function syncJarCoins() {
-  document.querySelectorAll("[data-stored-coin]").forEach(function (coin) {
-    const index = Number(coin.dataset.storedCoin);
-    coin.classList.toggle("is-stored", index < brandVisual.coinCount);
-    coin.classList.toggle("just-added", index === brandVisual.justAddedCoin);
-  });
-  const jar = document.querySelector(".brand-jar-stage");
-  if (jar) jar.classList.toggle("is-full", brandVisual.coinCount >= BRAND_COIN_MAX);
-}
-
-function depositJarCoin() {
-  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  if (brandVisual.coinCount < BRAND_COIN_MAX) brandVisual.coinCount += 1;
-  brandVisual.justAddedCoin = Math.max(0, brandVisual.coinCount - 1);
-  syncJarCoins();
-  window.clearTimeout(jarCoinSettleTimer);
-  jarCoinSettleTimer = window.setTimeout(function () {
-    brandVisual.justAddedCoin = -1;
-    syncJarCoins();
-  }, 760);
-}
-
-function scheduleJarDeposits() {
-  if (jarDepositTimer || brandPaused || document.hidden || prefersReducedMotion()) return;
-  jarDepositTimer = window.setTimeout(function depositLoop() {
-    depositJarCoin();
-    jarDepositTimer = window.setTimeout(depositLoop, BRAND_MOTION_CYCLE);
-  }, 4050);
-}
-
-function syncBrandVisuals() {
-  syncBrandPet(Date.now());
-  syncJarCoins();
-}
-
-function startBrandAnimations() {
-  if (brandAnimationTimer || brandPaused || document.hidden || prefersReducedMotion()) return;
-  syncBrandVisuals();
-  brandAnimationTimer = window.setInterval(() => syncBrandPet(Date.now()), 100);
-}
-
 function updateBrandPlayback() {
   if (prefersReducedMotion()) navTransition?.cancel();
-  window.clearInterval(brandAnimationTimer);
-  window.clearTimeout(jarDepositTimer);
-  window.clearTimeout(jarCoinSettleTimer);
-  brandAnimationTimer = jarDepositTimer = jarCoinSettleTimer = 0;
-  brandVisual.justAddedCoin = -1;
   document.documentElement.classList.toggle("brand-paused", brandPaused || document.hidden);
   const control = document.querySelector("[data-brand-playback]");
   if (control) {
     control.hidden = prefersReducedMotion();
     control.textContent = brandPaused ? "播放品牌动效" : "暂停品牌动效";
   }
-  syncBrandVisuals();
-  startBrandAnimations();
-  scheduleJarDeposits();
 }
 
 function prefersReducedMotion() {
@@ -1275,19 +1149,23 @@ function preferredScrollBehavior() {
 
 function headerTools() {
   const isBusy = state.tab === "radar" ? (dailyRadarScope() ? state[state.radarScope + "Loading"] : state.radarStatus === "loading") : state.isRefreshing;
-  const updateLabel = state.tab === "radar" && dailyRadarScope() ? (state[state.radarScope + "Data"]?.asOf ? radarTimestamp(state[state.radarScope + "Data"].asOf) : "待更新") : state.updatedAt;
-  const updateStatus = isBusy
-    ? "<span class=\"market-refresh-status\" role=\"status\" aria-live=\"polite\"><img src=\"assets/pig-logo.png\" alt=\"\"/>" + (state.tab === "radar" ? "小猪正在读取机会" : "小猪正在核算行情") + "</span>"
-    : "<span class=\"updated\" role=\"status\">更新于 " + escapeHtml(updateLabel || "待更新") + "</span>";
-  return updateStatus + "<div class=\"header-action-group\"><button class=\"header-action-button edit\" type=\"button\" data-open-holding-editor=\"holding\" data-editor-trigger=\"header\">" + headerActionIcon("edit") + "<span>记录交易</span></button><button class=\"header-action-button refresh\" type=\"button\" data-refresh=\"1\"" + (isBusy ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("refresh") + "<span>刷新</span></button><button class=\"header-action-button logout\" type=\"button\" data-logout aria-label=\"" + (state.isLoggingOut ? "正在退出登录" : "退出登录") + "\"" + (state.isLoggingOut ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("logout") + "<span>" + (state.isLoggingOut ? "退出中" : "退出") + "</span></button></div>";
+  const radarView = state.tab === "radar";
+  const snapshot = radarView && dailyRadarScope() ? state[state.radarScope + "Data"]?.asOf : null;
+  const updateLabel = radarView && dailyRadarScope() ? (snapshot && radarTimestamp(snapshot)) : state.updatedAt;
+  const status = isBusy ? (radarView ? "正在读取雷达数据" : "正在更新行情")
+    : updateLabel ? "更新于 " + updateLabel : (radarView ? "雷达待更新" : "行情待更新");
+  const updateStatus = '<span class="' + (isBusy ? 'market-refresh-status' : 'updated') +
+    '" role="status">' + escapeHtml(status) + '</span>';
+  return updateStatus + "<div class=\"header-action-group\"><button class=\"header-action-button edit\" type=\"button\" data-open-holding-editor=\"holding\" data-editor-trigger=\"header\">" + headerActionIcon("edit") + "<span>记录交易</span></button><button class=\"header-action-button refresh\" type=\"button\" title=\"刷新\" data-refresh=\"1\"" + (isBusy ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("refresh") + "<span>刷新</span></button><button class=\"header-action-button logout\" type=\"button\" data-logout title=\"退出登录\" aria-label=\"" + (state.isLoggingOut ? "正在退出登录" : "退出登录") + "\"" + (state.isLoggingOut ? " disabled aria-busy=\"true\"" : "") + ">" + headerActionIcon("logout") + "<span>" + (state.isLoggingOut ? "退出中" : "退出") + "</span></button></div>";
 }
 
 function topNav(tools = headerTools()) {
-  const petDefinition = PET_STATES[brandVisual.petState] || PET_STATES.idle;
-  const storedCoins = Array.from({ length: BRAND_COIN_MAX }, function (_, index) {
-    return "<i class=\"" + (index < brandVisual.coinCount ? "is-stored" : "") + "\" data-stored-coin=\"" + index + "\"></i>";
-  }).join("");
-  return "<header class=\"site-header\"><a class=\"brand\" href=\"#overview\" aria-label=\"猪猪存钱罐 · 小猪状态：" + escapeHtml(petDefinition.label) + " · 返回总览\"><span class=\"brand-scene\" aria-hidden=\"true\"><span class=\"brand-pig-stage\" data-pet-state=\"" + escapeHtml(brandVisual.petState) + "\" data-pet-label=\"" + escapeHtml(petDefinition.label) + "\"><span class=\"brand-pig-sprite\"></span></span><span class=\"brand-wordmark\"><strong data-text=\"猪猪存钱罐\">猪猪存钱罐</strong></span><span class=\"brand-jar-stage\"><span class=\"jar-coin-bank\">" + storedCoins + "</span><span class=\"brand-coins\"><i></i><i></i><i></i><i></i></span><img class=\"brand-jar\" src=\"assets/glass-savings-jar-v1.png\" alt=\"\"/></span></span></a><nav class=\"global-nav\" aria-label=\"主导航\">" +
+  const mark = '<svg class="identity-mark" viewBox="0 0 64 64" aria-hidden="true">' +
+    '<use href="/assets/savings-bank.svg#tile"></use><use class="identity-coin" href="/assets/savings-bank.svg#coin"></use>' +
+    '<use class="identity-bank" href="/assets/savings-bank.svg#bank"></use></svg>';
+  return '<header class="site-header"><a class="brand" href="#overview" aria-label="猪猪存钱罐 · 返回总览">' +
+    mark + '<img class="identity-word" src="/assets/savings-wordmark.svg" alt="猪猪存钱罐" width="135" height="24"></a>' +
+    '<nav class="global-nav" aria-label="主导航">' +
     NAV_ITEMS.map(function (item) { return "<button class=\"nav-link " + (state.tab === item[0] ? "active" : "") + "\" " + (state.tab === item[0] ? "aria-current=\"page\" " : "") + "type=\"button\" data-tab=\"" + item[0] + "\">" + navIcon(item[0]) + "<span class=\"nav-label\">" + item[1] + "</span><i class=\"nav-indicator\" aria-hidden=\"true\"></i></button>"; }).join("") +
     "</nav><div class=\"header-tools\">" + tools + "</div></header>";
 }
@@ -1373,7 +1251,7 @@ function holdingEditorModal() {
   const qtyName = isSell ? "sellQty" : "buyQty";
   const priceValue = isSell ? draft.sellPrice : draft.buyPrice;
   const qtyValue = isSell ? draft.sellQty : draft.buyQty;
-  return "<div class=\"holding-modal-layer\"><button class=\"holding-modal-backdrop\" type=\"button\" data-close-holding-editor aria-label=\"关闭记录交易\"" + (isSyncing ? " disabled" : "") + "></button><section class=\"holding-editor-dialog" + (isSyncing ? " is-syncing" : "") + "\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"holding-editor-title\" aria-describedby=\"holding-editor-description\"><header class=\"holding-editor-head\"><div><span>PORTFOLIO ENTRY</span><h2 id=\"holding-editor-title\">记录一笔交易</h2><p id=\"holding-editor-description\">每次只记录一次买入或卖出；名称、币种和行情代码自动识别。</p></div><button class=\"holding-modal-close\" type=\"button\" data-close-holding-editor aria-label=\"关闭\"" + (isSyncing ? " disabled" : "") + ">×</button></header><form id=\"holding-editor-form\" novalidate aria-busy=\"" + (isSyncing ? "true" : "false") + "\"><fieldset class=\"holding-fieldset\"><legend>1. 选择交易类型</legend><div class=\"holding-choice-grid status-choice\"><label><input type=\"radio\" name=\"operationType\" value=\"buy\"" + (!isSell ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span><b>买入 / 加仓</b><small>新增一笔买入批次</small></span></label><label><input type=\"radio\" name=\"operationType\" value=\"sell\"" + (isSell ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span><b>卖出 / 减仓</b><small>按先进先出扣减持仓</small></span></label></div></fieldset><fieldset class=\"holding-fieldset\"><legend>2. 选择市场</legend><div class=\"holding-choice-grid market-choice\">" + ["A股", "港股", "美股"].map(function (market) { return "<label><input type=\"radio\" name=\"market\" value=\"" + market + "\"" + (draft.market === market ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span>" + market + "</span></label>"; }).join("") + "</div></fieldset><fieldset class=\"holding-fieldset\"><legend>3. 输入股票代码</legend><label class=\"holding-code-field\" for=\"holding-code-input\"><span>股票代码</span><div><input id=\"holding-code-input\" name=\"code\" value=\"" + escapeHtml(draft.code) + "\" placeholder=\"例如 601138 / 1810 / NVDA\" autocomplete=\"off\" autocapitalize=\"characters\" spellcheck=\"false\" aria-describedby=\"holding-code-status\"" + (isSyncing ? " disabled" : "") + "/><button type=\"button\" data-retry-holding-lookup" + (isSyncing ? " disabled" : "") + ">识别</button></div></label><p id=\"holding-code-status\" class=\"holding-lookup-status " + escapeHtml(lookup.status) + "\" data-lookup-status aria-live=\"polite\">" + escapeHtml(lookup.message) + "</p>" + resultCard + "</fieldset><fieldset class=\"holding-fieldset\"><legend>4. 填写成交信息</legend><div class=\"holding-number-grid\"><label><span>成交日期</span><input id=\"holding-trade-date\" name=\"tradeDate\" type=\"date\" value=\"" + escapeHtml(draft.tradeDate) + "\" max=\"" + localDateString() + "\"" + (isSyncing ? " disabled" : "") + "/></label><label><span>" + (isSell ? "卖出价格" : "买入价格") + " <small data-currency-label>" + currency + "</small></span><input id=\"holding-trade-price\" name=\"" + priceName + "\" type=\"number\" min=\"0\" step=\"0.0001\" inputmode=\"decimal\" value=\"" + escapeHtml(priceValue) + "\" placeholder=\"0.00\"" + (isSyncing ? " disabled" : "") + "/></label><label><span>" + (isSell ? "卖出数量" : "买入数量") + (isSell ? " <small>可卖 " + availableQty + "</small>" : "") + "</span><input id=\"holding-trade-qty\" name=\"" + qtyName + "\" type=\"number\" min=\"0\" step=\"any\" inputmode=\"decimal\" value=\"" + escapeHtml(qtyValue) + "\" placeholder=\"0\"" + (isSell && availableQty > 0 ? " max=\"" + availableQty + "\"" : "") + (isSyncing ? " disabled" : "") + "/></label></div></fieldset><aside class=\"holding-fee-card\"><div><span>本次" + (isSell ? "卖出" : "买入") + "手续费</span><strong>US$20</strong></div><p>系统按本次汇率锁定人民币成本或卖出净额，无需手工填写名称、币种和行情代码。" + escapeHtml(policyDescription(state.holdingsDocument && state.holdingsDocument.costPolicy)) + "</p></aside><div class=\"github-sync-note\"><span class=\"github-sync-dot\"></span><div><strong>同步到 GitHub holdings.json</strong><small>服务器按交易流水更新，买入不会覆盖旧批次；卖出按先进先出扣减。同步失败时保留表单。</small></div></div>" + repositoryPrivacyMarkup() + "<p id=\"holding-form-error\" class=\"holding-form-error\" data-holding-form-error role=\"alert\">" + escapeHtml(saving.message || "") + "</p><footer class=\"holding-editor-actions\"><button type=\"button\" data-close-holding-editor" + (isSyncing ? " disabled" : "") + ">取消</button><button class=\"save-holding-button\" type=\"submit\"" + (saveDisabled ? " disabled" : "") + ">" + saveLabel + "</button></footer></form></section></div>";
+  return "<div class=\"holding-modal-layer\"><button class=\"holding-modal-backdrop\" type=\"button\" data-close-holding-editor aria-label=\"关闭记录交易\"" + (isSyncing ? " disabled" : "") + "></button><section class=\"holding-editor-dialog" + (isSyncing ? " is-syncing" : "") + "\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"holding-editor-title\" aria-describedby=\"holding-editor-description\"><header class=\"holding-editor-head\"><div><h2 id=\"holding-editor-title\">记录一笔交易</h2><p id=\"holding-editor-description\">选择市场并输入股票代码，名称和币种会自动识别。</p></div><button class=\"holding-modal-close\" type=\"button\" data-close-holding-editor aria-label=\"关闭\"" + (isSyncing ? " disabled" : "") + ">×</button></header><form id=\"holding-editor-form\" novalidate aria-busy=\"" + (isSyncing ? "true" : "false") + "\"><fieldset class=\"holding-fieldset\"><legend>1. 选择交易类型</legend><div class=\"holding-choice-grid status-choice\"><label><input type=\"radio\" name=\"operationType\" value=\"buy\"" + (!isSell ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span><b>买入 / 加仓</b><small>新增一笔买入批次</small></span></label><label><input type=\"radio\" name=\"operationType\" value=\"sell\"" + (isSell ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span><b>卖出 / 减仓</b><small>按先进先出扣减持仓</small></span></label></div></fieldset><fieldset class=\"holding-fieldset\"><legend>2. 选择市场</legend><div class=\"holding-choice-grid market-choice\">" + ["A股", "港股", "美股"].map(function (market) { return "<label><input type=\"radio\" name=\"market\" value=\"" + market + "\"" + (draft.market === market ? " checked" : "") + (isSyncing ? " disabled" : "") + "/><span>" + market + "</span></label>"; }).join("") + "</div></fieldset><fieldset class=\"holding-fieldset\"><legend>3. 输入股票代码</legend><label class=\"holding-code-field\" for=\"holding-code-input\"><span>股票代码</span><div><input id=\"holding-code-input\" name=\"code\" value=\"" + escapeHtml(draft.code) + "\" placeholder=\"例如 601138 / 1810 / NVDA\" autocomplete=\"off\" autocapitalize=\"characters\" spellcheck=\"false\" aria-describedby=\"holding-code-status\"" + (isSyncing ? " disabled" : "") + "/><button type=\"button\" data-retry-holding-lookup" + (isSyncing ? " disabled" : "") + ">识别</button></div></label><p id=\"holding-code-status\" class=\"holding-lookup-status " + escapeHtml(lookup.status) + "\" data-lookup-status aria-live=\"polite\">" + escapeHtml(lookup.message) + "</p>" + resultCard + "</fieldset><fieldset class=\"holding-fieldset\"><legend>4. 填写成交信息</legend><div class=\"holding-number-grid\"><label><span>成交日期</span><input id=\"holding-trade-date\" name=\"tradeDate\" type=\"date\" value=\"" + escapeHtml(draft.tradeDate) + "\" max=\"" + localDateString() + "\"" + (isSyncing ? " disabled" : "") + "/></label><label><span>" + (isSell ? "卖出价格" : "买入价格") + " <small data-currency-label>" + currency + "</small></span><input id=\"holding-trade-price\" name=\"" + priceName + "\" type=\"number\" min=\"0\" step=\"0.0001\" inputmode=\"decimal\" value=\"" + escapeHtml(priceValue) + "\" placeholder=\"0.00\"" + (isSyncing ? " disabled" : "") + "/></label><label><span>" + (isSell ? "卖出数量" : "买入数量") + (isSell ? " <small>可卖 " + availableQty + "</small>" : "") + "</span><input id=\"holding-trade-qty\" name=\"" + qtyName + "\" type=\"number\" min=\"0\" step=\"any\" inputmode=\"decimal\" value=\"" + escapeHtml(qtyValue) + "\" placeholder=\"0\"" + (isSell && availableQty > 0 ? " max=\"" + availableQty + "\"" : "") + (isSyncing ? " disabled" : "") + "/></label></div></fieldset><aside class=\"holding-fee-card\"><div><span>本次" + (isSell ? "卖出" : "买入") + "手续费</span><strong>US$20</strong></div><p>系统按本次汇率锁定人民币成本或卖出净额，无需手工填写名称、币种和行情代码。" + escapeHtml(policyDescription(state.holdingsDocument && state.holdingsDocument.costPolicy)) + "</p></aside><div class=\"github-sync-note\"><span class=\"github-sync-dot\"></span><div><strong>同步到 GitHub holdings.json</strong><small>服务器按交易流水更新，买入不会覆盖旧批次；卖出按先进先出扣减。同步失败时保留表单。</small></div></div>" + repositoryPrivacyMarkup() + "<p id=\"holding-form-error\" class=\"holding-form-error\" data-holding-form-error role=\"alert\">" + escapeHtml(saving.message || "") + "</p><footer class=\"holding-editor-actions\"><button type=\"button\" data-close-holding-editor" + (isSyncing ? " disabled" : "") + ">取消</button><button class=\"save-holding-button\" type=\"submit\"" + (saveDisabled ? " disabled" : "") + ">" + saveLabel + "</button></footer></form></section></div>";
 }
 
 function setHoldingLookup(status, message, security) {
@@ -1751,8 +1629,8 @@ function costPolicyPanel() {
   const policy = state.holdingsDocument && state.holdingsDocument.costPolicy;
   const editor = state.costPolicyEditor;
   const description = policyDescription(policy);
-  const feeText = "新增交易每笔买入或卖出另计 US$20 手续费。";
-  if (!editor) return '<div class="cost-policy-summary"><p class="fee-policy-note">' + description + feeText + '</p>' +
+  const feeText = "网页新录入的买卖每单计 US$20 手续费。";
+  if (!editor) return '<div class="cost-policy-summary"><span class="ledger-note-label">主账本成本</span><p class="fee-policy-note">' + description + feeText + '</p>' +
     (policy ? '<button type="button" class="text-link" data-open-cost-policy>调整成本规则</button>' : '') + '</div>';
   const pending = Boolean(editor.operation);
   const disabled = pending || !editor.fileSha ? " disabled" : "";
@@ -1881,12 +1759,12 @@ function orderFeeComparison(data) {
 
 function orderFeeNote(data) {
   const result = orderFeeComparison(data);
-  if (!result) return '<p class="order-fee-note">每单 2 美元的盈亏测算正在等待可核对的订单和费用数据。</p>';
+  if (!result) return '<p class="order-fee-note"><span class="ledger-note-label">费用对照</span><span>每单 2 美元的测算等待订单和费用数据。</span></p>';
   const detail = "每张已成交买单、卖单各计 2 美元，同一订单分多次成交只计一次。按订单汇率换算人民币，替换可核实的订单手续费，免计每只股票的定额成本。A 股历史订单和费用不全，历史交易成本沿用原表。网站新录入的各市场买卖也按单计费。";
   const date = result.asOf ? " · " + escapeHtml(result.asOf) + " 账本估值" : "";
-  return '<p class="order-fee-note">若每笔买入或卖出只收 2 美元，累计盈亏约为 <strong class="' +
+  return '<p class="order-fee-note"><span class="ledger-note-label">费用对照</span><span>按每单 2 美元测算，累计盈亏约 <strong class="' +
     tone(result.pnl) + '">' + signed(result.pnl, 2) + '</strong><span>（' + result.count +
-    ' 单，A 股历史费用沿用原表' + date + '）</span>' + infoTip(detail) + '</p>';
+    ' 单，A 股历史费用沿用原表' + date + '）</span>' + infoTip(detail) + '</span></p>';
 }
 
 function overviewPage() {
@@ -1898,27 +1776,24 @@ function overviewPage() {
   const todayComplete = data.todayCount === data.todayTotal;
   const valuationNote = valuationComplete ? "当前持仓按最新或最近有效行情与汇率折算" : "已取得 " + data.valuationCount + " / " + data.valuationTotal + " 笔持仓的有效估值";
   const todayNote = todayComplete ? "当日价差 × 当前持仓数量" : "已取得 " + data.todayCount + " / " + data.todayTotal + " 笔持仓的当日涨跌";
-  const ledger = state.holdingsDocument?.source;
-  const ledgerPnl = ledger?.reconciliation?.sourcePnlCny;
-  const pnlNote = valuationComplete ? "持仓市值 − 股票总投入" :
-    ledger?.asOf && Number.isFinite(ledgerPnl) ? escapeHtml(ledger.asOf) + " 原表盈亏 " + signed(ledgerPnl, 0) :
-    "等待全部持仓完成估值后计算";
   return "<main id=\"main-content\" class=\"page-shell overview-page\" tabindex=\"-1\">" +
-    "<section class=\"overview-section account-overview-section\"><div class=\"overview-section-heading account-section-heading\"><div><h1>账户整体</h1><span class=\"account-unit\">人民币 CNY</span></div>" + fxStatusLine() + "</div>" +
-    "<div class=\"account-metric-grid\">" +
+    "<section class=\"overview-section account-overview-section\"><div class=\"overview-section-heading account-section-heading\"><div><h1>账户总览</h1><span class=\"account-unit\">人民币 CNY</span></div>" + fxStatusLine() + "</div>" +
+    '<div class="account-metric-grid">' + overviewPnlStatement(data) + '<div class="account-secondary">' +
     overviewMetric("股票总投入", money(data.netInvested, 0), data.netInvested > 0 ? "资金基准 100%" : data.netInvested < 0 ? "卖出净额已超过买入成本" : "净投入为零", "买入总成本 " + money(data.grossBuys, 0) + " − 卖出净额 " + money(data.saleProceeds, 0), "neutral", METRIC_HELP.netInvested) +
     overviewMetric("持仓市值", valuationComplete ? money(data.value, 0) : "待估值", data.netInvested > 0 && Number.isFinite(data.value) ? "占总投入 " + ratioPct(data.value / data.netInvested * 100) : "", valuationNote, "neutral", METRIC_HELP.marketValue) +
-    overviewMetric("累计盈亏", valuationComplete ? signed(data.totalPnl, 0) : "待估值", Number.isFinite(data.totalRate) ? "累计收益率 " + pct(data.totalRate) : "", pnlNote, tone(data.totalPnl), METRIC_HELP.totalPnl) +
     overviewMetric("今日盈亏", todayComplete ? signed(data.today, 0) : "待行情", Number.isFinite(data.todayRate) ? "当日收益率 " + pct(data.todayRate) : "", todayNote, tone(data.today), METRIC_HELP.todayPnl) +
-    "</div>" + orderFeeNote(data) + costPolicyPanel() + "</section>" +
-    "<section class=\"overview-section market-overview-section\"><div class=\"overview-section-heading\"><div><h2>市场概览</h2></div><p>三地盈亏条共用人民币刻度，零点左侧为亏损、右侧为盈利。港美股人民币盈亏含成本调整和汇兑影响。</p></div><div class=\"overview-market-grid\">" + markets.map(item => marketBlock(item, comparisonMax)).join("") + "</div></section>" +
+    '</div></div><div class="account-fee-notes">' + costPolicyPanel() + orderFeeNote(data) + '</div></section>' +
+    '<section class="overview-section market-overview-section"><div class="overview-section-heading"><div><h2>市场概览</h2></div></div>' +
+    marketAllocation(markets) + '<div class="overview-market-grid">' + markets.map(item => marketBlock(item, comparisonMax)).join("") +
+    '</div><p class="market-scale-note">盈亏条共用人民币刻度，左亏右盈。港美股的人民币盈亏已含成本调整和汇兑影响。</p></section>' +
     '<section class="overview-section pnl-chart-section"><article class="card chart-card overview-chart-card">' +
     '<div class="chart-heading"><div><h2>累计盈亏走势' + infoTip(METRIC_HELP.chart) + '</h2>' +
     '<p class="chart-estimate-note">按当前持仓和汇率回溯估算，金额为人民币。</p></div>' + trendButtons() + '</div>' +
     longChartNote(chartPoints) + chartRangeSummary(chartPoints) +
-    '<div class="canvas-wrap overview-canvas-wrap"><canvas class="line-chart" data-chart="portfolio" tabindex="0" role="img" aria-label="' +
+    (chartPoints.length ? '<div class="canvas-wrap overview-canvas-wrap' + (chartPoints.length === 1 ? ' single-point' : '') + '"><canvas class="line-chart" data-chart="portfolio" tabindex="0" role="img" aria-label="' +
     state.trendDays + '日累计盈亏走势图" aria-keyshortcuts="ArrowLeft ArrowRight Home End" aria-describedby="portfolio-chart-summary"></canvas></div>' +
-    '<div class="chart-legend"><span class="legend-item"><i class="zero-line-key" aria-hidden="true"></i>盈亏平衡线 ¥0</span></div>' +
+    '<div class="chart-legend"><span class="legend-item"><i class="zero-line-key" aria-hidden="true"></i>盈亏平衡线 ¥0</span></div>' :
+    '<div class="overview-chart-empty"><strong>此区间暂无可绘制的估值</strong><p>走势需要同一天全部持仓的有效价格。可以切换区间查看。</p></div>') +
     portfolioChartA11yMarkup(chartPoints) + '</article></section>' +
     "<section class=\"overview-section ranking-section\"><div class=\"card overview-ranking-card\">" + rankCard() + "</div></section></main>";
 }
@@ -1951,16 +1826,65 @@ function infoTip(text) {
 }
 
 function overviewMetric(label, value, rate, formula, valueTone, helpText) {
-  return "<article class=\"card account-metric-card\"><span class=\"metric-label\">" + label + (helpText ? infoTip(helpText) : "") + "</span><div class=\"account-metric-main\"><strong class=\"metric-value " + valueTone + "\">" + value + "</strong><span class=\"account-metric-rate " + valueTone + "\">" + rate + "</span></div><p>" + formula + "</p></article>";
+  const pending = value === "待估值" || value === "待行情";
+  return '<article class="card account-metric-card' + (pending ? ' is-pending' : '') + '"><span class="metric-label">' +
+    label + (helpText ? infoTip(helpText) : '') + '</span><div class="account-metric-main"><strong class="metric-value ' +
+    valueTone + '">' + value + '</strong>' + (rate ? '<span class="account-metric-rate ' + valueTone + '">' + rate + '</span>' : '') +
+    '</div><p>' + formula + '</p></article>';
+}
+
+function overviewPnlStatement(data) {
+  const ledger = state.holdingsDocument?.source;
+  const snapshot = ledger?.reconciliation;
+  const policy = state.holdingsDocument?.costPolicy;
+  const hasSnapshot = ledger?.asOf && Number.isFinite(snapshot?.sourcePnlCny)
+    && Number.isSafeInteger(snapshot.securityCount) && Number.isSafeInteger(snapshot.soldSecurityCount)
+    && Number.isFinite(policy?.buyCny) && Number.isFinite(policy?.sellCny);
+  const complete = Number.isFinite(data.totalPnl);
+  let pnl = data.totalPnl;
+  let note = '当前估值覆盖 ' + data.valuationCount + ' / ' + data.valuationTotal + ' 笔持仓';
+  let breakdown = [];
+  if (complete) {
+    if (Number.isFinite(data.totalRate)) note = '累计收益率 ' + pct(data.totalRate) + ' · ' + note;
+    breakdown = [['已实现盈亏', data.soldPnl], ['持仓浮动盈亏', data.openPnl]];
+  } else if (hasSnapshot) {
+    const extraCosts = snapshot.securityCount * policy.buyCny + snapshot.soldSecurityCount * policy.sellCny;
+    pnl = snapshot.sourcePnlCny - extraCosts;
+    note = escapeHtml(ledger.asOf) + ' 账本估值 · ' + note;
+    breakdown = [['原表盈亏（含已知费用）', snapshot.sourcePnlCny], ['买卖附加成本', -extraCosts]];
+  }
+  const basis = complete ? '持仓估值' : hasSnapshot ? '账本快照' : '等待行情';
+  return '<article class="account-metric-card pnl-statement"><div class="statement-head"><span class="metric-label">累计盈亏' +
+    infoTip(METRIC_HELP.totalPnl) + '</span><span class="statement-basis">' + basis + '</span></div>' +
+    '<strong class="metric-value ' + tone(pnl) + '">' + (Number.isFinite(pnl) ? signed(pnl, 2) : '待估值') +
+    '</strong><p class="statement-note">' + note + '</p>' +
+    (breakdown.length ? '<dl class="statement-breakdown">' + breakdown.map(([label, amount]) =>
+      '<div><dt>' + label + '</dt><dd>' + signed(amount, 2) + '</dd></div>').join('') + '</dl>' : '') + '</article>';
+}
+
+function marketAllocation(markets) {
+  const byValue = markets.every(item => Number.isFinite(item.value) && item.value >= 0) && sum(markets, "value") > 0;
+  const key = byValue ? "value" : "count";
+  const total = sum(markets, key);
+  if (!total) return "";
+  const segments = markets.map(item => ({
+    market: item.market, share: item[key] / total * 100, color: marketClass(item.market)
+  }));
+  return '<figure class="market-allocation"><figcaption><strong>' + (byValue ? '持仓市值占比' : '持仓数量占比') +
+    '</strong><small>' + (byValue ? '按人民币市值计算' : '按 ' + total + ' 只持仓计算') + '</small></figcaption>' +
+    '<div class="allocation-breakdown"><div class="allocation-track" aria-hidden="true">' +
+    segments.map(item => '<i class="' + item.color + '" style="width:' + item.share + '%"></i>').join('') +
+    '</div><ul>' + segments.map(item => '<li><i aria-hidden="true" class="' + item.color + '"></i>' +
+      item.market + ' <b>' + ratioPct(item.share, 1) + '</b></li>').join('') + '</ul></div></figure>';
 }
 
 function fxStatusLine() {
   const meta = state.fxMeta || {};
   const fetched = meta.fetchedAt ? new Date(meta.fetchedAt) : null;
-  const fetchedText = fetched && Number.isFinite(fetched.getTime()) ? formatUpdatedAt(fetched) : "尚未刷新";
+  const refreshed = fetched && Number.isFinite(fetched.getTime()) ? ' · 刷新于 ' + formatUpdatedAt(fetched) : '';
   const sourceText = meta.fallback ? "参考汇率" : "最新汇率";
-  const asOfText = meta.asOf ? "汇率数据 " + escapeHtml(meta.asOf) : escapeHtml(meta.source || "固定参考汇率");
-  return "<div class=\"fx-status-line " + (meta.fallback ? "is-fallback" : "is-fresh") + "\"><span class=\"fx-status-badge\">" + sourceText + "</span><div class=\"fx-rate-values\"><b>1 USD = ¥" + Number(state.rates.USD || 0).toFixed(4) + "</b><b>1 HKD = ¥" + Number(state.rates.HKD || 0).toFixed(4) + "</b><span>" + asOfText + " · 更新于 " + fetchedText + "</span></div></div>";
+  const asOfText = meta.asOf ? "汇率日期 " + escapeHtml(String(meta.asOf).replace(/ Asia\/Shanghai$/, "（北京时间）")) : escapeHtml(meta.source || "固定参考汇率");
+  return "<div class=\"fx-status-line " + (meta.fallback ? "is-fallback" : "is-fresh") + "\"><span class=\"fx-status-badge\">" + sourceText + "</span><div class=\"fx-rate-values\"><b>1 USD = ¥" + Number(state.rates.USD || 0).toFixed(4) + "</b><b>1 HKD = ¥" + Number(state.rates.HKD || 0).toFixed(4) + "</b><span>" + asOfText + refreshed + "</span></div></div>";
 }
 
 function trendButtons() {
@@ -2192,11 +2116,12 @@ function holdingSnapshotMarkup(rows) {
   const data = holdingSnapshot(rows);
   const cost = rows.length && rows.every(row => Number.isFinite(row.purchaseCostCny))
     ? sum(rows, "purchaseCostCny") : NaN;
+  const valueStatus = data.count ? "待估值" : "—";
   const stats = [
-    ["持仓总成本", money(cost, 0), "尚持有批次的人民币成本", ""],
-    ["持仓市值", money(data.value, 0), "估值覆盖 " + data.valuedCount + " / " + data.count + " 只", ""],
-    ["今日盈亏", signed(data.today, 0), Number.isFinite(data.todayRate) ? "日收益率 " + pct(data.todayRate) : "当日行情覆盖 " + data.todayCount + " / " + data.count + " 只", tone(data.today)],
-    ["持仓浮动盈亏", signed(data.pnl, 0), Number.isFinite(data.pnlRate) ? "持仓收益率 " + pct(data.pnlRate) : "持仓市值 − 持仓总成本", tone(data.pnl)]
+    ["持仓市值", Number.isFinite(data.value) ? money(data.value, 0) : valueStatus, "估值覆盖 " + data.valuedCount + " / " + data.count + " 只", ""],
+    ["持仓浮动盈亏", Number.isFinite(data.pnl) ? signed(data.pnl, 0) : valueStatus, Number.isFinite(data.pnlRate) ? "持仓收益率 " + pct(data.pnlRate) : "持仓市值 − 持仓总成本", tone(data.pnl)],
+    ["今日盈亏", Number.isFinite(data.today) ? signed(data.today, 0) : data.count ? "待行情" : "—", Number.isFinite(data.todayRate) ? "日收益率 " + pct(data.todayRate) : "当日行情覆盖 " + data.todayCount + " / " + data.count + " 只", tone(data.today)],
+    ["持仓总成本", money(cost, 0), "尚持有批次的人民币成本", ""]
   ];
   return '<section class="card holding-snapshot-card" aria-label="持仓快照"><dl class="holding-snapshot-grid">' +
     stats.map(([label, value, note, color]) => '<div><dt>' + label + '</dt><dd class="' + color + '">' +
@@ -2219,12 +2144,14 @@ function holdingStructureMarkup(rows) {
     return '<div><dt><i aria-hidden="true" class="' + marketClass(item.market) + '"></i>' +
       item.market + '</dt><dd>' + share + '</dd><small>' + value + '</small></div>';
   }).join('');
-  return '<section class="card holding-structure-card" aria-labelledby="holding-structure-title"><div class="holding-structure-main">' +
-    '<header class="allocation-heading"><h2 id="holding-structure-title">仓位结构</h2><small>已估值 ' + data.valuedCount + ' / ' + data.totalCount + ' 只</small></header>' +
+  const previous = globalThis.document?.querySelector(".holding-structure-card");
+  const open = previous ? previous.open : !globalThis.matchMedia?.("(max-width: 760px)").matches;
+  return '<details class="card holding-structure-card"' + (open ? ' open' : '') + '><summary class="allocation-heading"><h2>仓位结构</h2><span>已估值 ' +
+    data.valuedCount + ' / ' + data.totalCount + ' 只</span></summary><div class="allocation-body"><div class="holding-structure-main">' +
     '<div class="holding-allocation-bar" aria-hidden="true">' + segments + '</div><dl class="allocation-legend">' + legend +
     '</dl></div><dl class="holding-concentration"><div><dt>最大单股仓位</dt><dd>' + (hasValue ? ratioPct(data.largest.holdingPct, 1) : "—") +
     '</dd><small>' + (hasValue ? escapeHtml(data.largest.name) : "等待有效估值") + '</small></div><div><dt>前五大仓位合计</dt><dd>' +
-    (hasValue ? ratioPct(data.topFive, 1) : "—") + '</dd><small>占已估值市值</small></div></dl></section>';
+    (hasValue ? ratioPct(data.topFive, 1) : "—") + '</dd><small>占已估值市值</small></div></dl></div></details>';
 }
 
 function holdingFilterButton(value, label, active, attribute) {
@@ -2250,9 +2177,13 @@ function holdingToolbarMarkup(allRows, rows) {
 function actionsPage() {
   const allRows = openSecurityRows();
   const rows = sortActionRows(filteredHoldingRows(allRows));
-  if (state.expandedHoldingKey && !rows.some(function (row) { return row.holdingKey === state.expandedHoldingKey; })) state.expandedHoldingKey = "";
-  return "<main id=\"main-content\" class=\"page-shell action-page\" tabindex=\"-1\"><header class=\"holding-page-heading\"><h1 class=\"page-title\">持仓明细</h1><p>持有 <b>" + allRows.length + "</b> 只股票 · 按人民币汇总</p></header>" + holdingSnapshotMarkup(allRows) + holdingStructureMarkup(allRows) + holdingToolbarMarkup(allRows, rows) +
-    "<section class=\"card holding-list-card\"><div class=\"holding-list-heading\"><div><h2>持仓列表</h2><p>盈亏首行按人民币核算，港美股另列原币交易盈亏。</p></div><strong>" + rows.length + " / " + allRows.length + "只</strong></div>" + holdingActionTable(rows) + "</section></main>";
+  if (state.expandedHoldingKey && !rows.some(row => row.holdingKey === state.expandedHoldingKey)) state.expandedHoldingKey = "";
+  return '<main id="main-content" class="page-shell action-page" tabindex="-1"><header class="holding-page-heading">' +
+    "<div><h1 class=\"page-title\">持仓明细</h1><p>持有 <b>" + allRows.length + '</b> 只股票 · 按人民币汇总</p></div>' +
+    '<button type="button" class="jump-holdings" data-jump-holding-list>查看个股<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v10m-4-4 4 4 4-4"/></svg></button></header>' +
+    holdingSnapshotMarkup(allRows) + holdingStructureMarkup(allRows) + holdingToolbarMarkup(allRows, rows) +
+    '<section class="card holding-list-card"><div class="holding-list-heading"><div><h2 id="holding-list-title" tabindex="-1">持仓列表</h2>' +
+    '<p>人民币盈亏列在首行，港美股另列原币金额。</p></div><strong>' + rows.length + ' / ' + allRows.length + ' 只</strong></div>' + holdingActionTable(rows) + '</section></main>';
 }
 
 function actionSortLabel(sort) {
@@ -2353,12 +2284,20 @@ function holdingMobileCard(row) {
   const expanded = state.expandedHoldingKey === row.holdingKey;
   const panelId = holdingPanelId(row, "mobile");
   const currentPrice = row.priceSource === "cost" ? "--" : nativeMoney(row.price, row.currency);
-  const priceNote = holdingPriceSourceLabel(row);
   const todayMarkup = row.hasTodayQuote
     ? holdingPnlMarkup(row.todayPnlCny, row.todayPnlNative, row.currency, row.changePct, "今日行情缺失")
     : holdingPnlMarkup(NaN, NaN, row.currency, NaN, "今日行情缺失");
   const cumulativeMarkup = holdingPnlMarkup(row.pnlCny, row.pnlNative, row.currency, row.pnlRate, "估值数据缺失");
-  return "<article class=\"holding-mobile-card" + (expanded ? " is-expanded" : "") + "\" role=\"listitem\"><header><div><strong>" + escapeHtml(row.name) + "</strong><span>" + escapeHtml(row.code) + marketSuffix(row) + "</span></div>" + marketLabel(row.market) + "</header><p class=\"holding-mobile-cost\">数量 " + row.qty.toLocaleString("zh-CN") + "股 · 总成本 " + money(row.purchaseCostCny, 0) + "<small>" + (row.currency === "CNY" ? "人民币" : nativeMoney(row.nativeTotalCost, row.currency)) + " · 人民币总成本含调整</small></p><dl><div><dt>买入均价 → 当前价</dt><dd>" + nativeMoney(row.cost, row.currency) + " → " + currentPrice + "<small class=\"holding-price-source\">" + priceNote + "</small></dd></div><div><dt>市值 · 仓位</dt><dd>" + money(row.valueCny, 0) + " · " + ratioPct(row.holdingPct, 2) + "</dd></div><div><dt>今日盈亏</dt><dd>" + todayMarkup + "</dd></div><div><dt>累计盈亏</dt><dd>" + cumulativeMarkup + "</dd></div></dl><button class=\"holding-mobile-expand\" type=\"button\" data-toggle-holding=\"" + escapeHtml(row.holdingKey) + "\" aria-expanded=\"" + expanded + "\"" + (expanded ? " aria-controls=\"" + panelId + "\"" : "") + ">" + (expanded ? "收起未来2周展望" : "查看未来2周展望") + "</button>" + (expanded ? holdingOutlookMarkup(row, "mobile") : "") + "</article>";
+  return '<article class="holding-mobile-card' + (expanded ? ' is-expanded' : '') + '" role="listitem"><header><div><strong>' +
+    escapeHtml(row.name) + '</strong><span>' + escapeHtml(row.code) + marketSuffix(row) + ' · ' + row.qty.toLocaleString("zh-CN") + ' 股</span></div>' +
+    marketLabel(row.market) + '</header><dl class="holding-mobile-performance"><div><dt>累计盈亏</dt><dd>' + cumulativeMarkup +
+    '</dd></div><div><dt>今日盈亏</dt><dd>' + todayMarkup + '</dd></div></dl><dl class="holding-mobile-facts">' +
+    '<div><dt>市值 · 仓位</dt><dd>' + money(row.valueCny, 0) + '<small>' + ratioPct(row.holdingPct, 2) + '</small></dd></div>' +
+    '<div><dt>总成本（含调整）</dt><dd>' + money(row.purchaseCostCny, 0) + (row.currency === "CNY" ? "" : '<small>' + nativeMoney(row.nativeTotalCost, row.currency) + '</small>') +
+    '</dd></div><div class="holding-mobile-price"><dt>买入均价 → 当前价</dt><dd>' + nativeMoney(row.cost, row.currency) + ' → ' + currentPrice +
+    '<small>' + holdingPriceSourceLabel(row) + '</small></dd></div></dl><button class="holding-mobile-expand" type="button" data-toggle-holding="' +
+    escapeHtml(row.holdingKey) + '" aria-expanded="' + expanded + '"' + (expanded ? ' aria-controls="' + panelId + '"' : '') + '>' +
+    (expanded ? "收起未来2周展望" : "查看未来2周展望") + '</button>' + (expanded ? holdingOutlookMarkup(row, "mobile") : '') + '</article>';
 }
 
 function cleanedDailyHistory(history) {
@@ -3154,6 +3093,22 @@ function radarScopeControls() {
       (state.radarScope === key) + '">' + label + '</button>').join("") + '</div>';
 }
 
+function radarMarketPicker() {
+  return '<div class="radar-market-picker" role="group" aria-label="选择观察市场">' +
+    RADAR_MARKETS.map(market => {
+      const snap = state.preopenData?.markets?.[market];
+      const status = state.radarScope === "preopen" && snap ? preopenStatus(snap) : "";
+      return '<button type="button" data-board-market="' + market + '" data-preopen-focus="board-' + market +
+        '" aria-controls="radar-board-' + market + '" aria-pressed="' + (state.radarBoardMarket === market) + '">' +
+        escapeHtml(RADAR_SEGMENT_LABELS[market]) + (status ? '<small>' + status + '</small>' : '') + '</button>';
+    }).join("") + '</div>';
+}
+
+function radarBoardStart(market, className) {
+  return '<article id="radar-board-' + market + '" class="card ' + className +
+    (state.radarBoardMarket === market ? ' is-selected-market' : '') + '">';
+}
+
 const INTRADAY_CLOCKS = {
   "A股": { zone: "Asia/Shanghai", label: "北京时间", lunch: [690, 780] },
   "港股": { zone: "Asia/Hong_Kong", label: "香港时间", lunch: [720, 780] },
@@ -3236,8 +3191,8 @@ function intradayHistory(last, market) {
 function intradayMarketCard(market, now) {
   const snap = state.intradayData?.markets?.[market];
   const label = RADAR_SEGMENT_LABELS[market];
-  if (!snap) return '<article class="card intraday-board"><h3>' + label + '</h3><p class="intraday-empty">' +
-    (state.intradayError ? "暂未取得该市场的盘中数据。" : "正在读取市场状态…") + '</p></article>';
+  if (!snap) return radarBoardStart(market, "intraday-board") + '<h3>' + label + '</h3><p class="intraday-empty">' +
+    (state.intradayError || state.intradayData ? "暂未取得该市场的盘中数据。" : "正在读取市场状态…") + '</p></article>';
   const { phase, live } = intradayMarketState(snap, market, now);
   const local = INTRADAY_CLOCKS[market].label;
   const scan = intradayClock(snap.scannedAt, market);
@@ -3250,14 +3205,15 @@ function intradayMarketCard(market, now) {
   let message = phaseMessage || snap.reason || (live ? "本轮没有同时满足信号和风控条件的股票。" : "等待新一轮有效行情。");
   if (phase === "open" && !live && snap.status === "live") message = "上次报价已过期，正在等待新的盘中信号。";
   if (state.intradayError) message = "行情读取未完成，暂缓展示盘中信号。";
-  return '<article class="card intraday-board"><header><div><small>' + market + ' · ' + local + '</small><h3>' +
-    escapeHtml(snap.label || label) + '</h3></div><span class="intraday-phase' + (live && !state.intradayError ? " is-live" : "") + '">' +
-    phaseLabel + '</span></header><p class="intraday-session">' + escapeHtml(snap.sessionDate || "") +
-    (close ? ' · 收盘 ' + close.time : '') + '</p><p class="intraday-scope">' + escapeHtml(snap.scope || "") + '</p>' +
+  return radarBoardStart(market, "intraday-board") + '<header><h3>' + escapeHtml(snap.label || label) +
+    '</h3><span class="intraday-phase' + (live && !state.intradayError ? " is-live" : "") + '">' +
+    phaseLabel + '</span></header><p class="intraday-session">' + local + ' ' + escapeHtml(snap.sessionDate || "日期待核") +
+    (close ? ' · ' + close.time + ' 收盘' : '') + '</p><p class="intraday-scan">最近扫描 ' +
+    (scan ? scan.date + ' ' + scan.time : '尚无记录') + '</p>' +
+    (rows.length ? intradaySignals(rows, market) : '<p class="intraday-empty">' + escapeHtml(message) + '</p>') +
     '<dl class="intraday-coverage"><div><dt>股票池</dt><dd>' + intradayNumber(snap.total) + '</dd></div><div><dt>有效报价</dt><dd>' +
     intradayNumber(snap.quotedCount) + '</dd></div><div><dt>参与评分</dt><dd>' + intradayNumber(snap.scoredCount) +
-    '</dd></div></dl><p class="intraday-scan">最近扫描 ' + (scan ? scan.date + ' ' + scan.time : '尚无记录') +
-    '</p>' + (rows.length ? intradaySignals(rows, market) : '<p class="intraday-empty">' + escapeHtml(message) + '</p>') +
+    '</dd></div></dl><p class="intraday-scope">' + escapeHtml(snap.scope || "") + '</p>' +
     intradayHistory(snap.lastSession, market) + '</article>';
 }
 
@@ -3285,7 +3241,7 @@ function intradayPage() {
     '<dl><div><dt>收盘较昨收</dt><dd>≥ 5%</dd></div><div><dt>收盘较触发价</dt><dd>≥ 3%</dd></div></dl></section>' +
     '<p class="intraday-updated" role="status">' + (state.intradayError ? escapeHtml(state.intradayError) :
       data ? '页面状态更新于 ' + escapeHtml(radarTimestamp(data.asOf)) + ' 北京' : '正在读取盘中扫描记录…') + '</p>' +
-    '<section class="intraday-grid" aria-label="三地盘中观察名单">' + RADAR_MARKETS.map(market => intradayMarketCard(market, now)).join("") +
+    radarMarketPicker() + '<section class="intraday-grid" aria-label="三地盘中观察名单">' + RADAR_MARKETS.map(market => intradayMarketCard(market, now)).join("") +
     '</section>' + intradayEvaluation() + '</main>';
 }
 
@@ -3323,25 +3279,26 @@ function preopenPick(pick, market, cutoffAt) {
   const quote = value => preopenPrice(value, market);
   const risk = pick.risk || (pick.risks || []).join("；");
   const evidenceNames = [...new Set(citations.map(e => e.label))];
-  const reasons = evidenceNames.length ? '<p class="preopen-signal-names">' + evidenceNames.map(escapeHtml).join(' · ') + '</p>' +
-    preopenDetails("pick-" + market + "-" + cutoffAt + "-" + pick.code, "查看依据与来源",
+  const reasons = evidenceNames.length ? '<p class="preopen-signal-names">' + evidenceNames.map(escapeHtml).join(' · ') + '</p>' : '';
+  const sources = evidenceNames.length ? preopenDetails("pick-" + market + "-" + cutoffAt + "-" + pick.code, "查看依据与来源",
       '<ul class="preopen-evidence">' + evidence + '</ul>') : '';
   return '<li class="preopen-pick"><h4>' + escapeHtml(pick.name || pick.code) + ' <small>' + escapeHtml(pick.code) +
-    '</small></h4><p class="preopen-target-price">' + (price > 0 ? '昨收 ' + quote(price) +
-      ' · 触及线 ' + quote(target > 0 ? target : price * 1.05) + '<br>' : '') +
+    '</small></h4>' + reasons + (price > 0 ? '<p class="preopen-price-pair"><span>昨收 ' + quote(price) +
+      '</span><strong>触及线 ' + quote(target > 0 ? target : price * 1.05) + '</strong></p>' : '') + '<p class="preopen-target-price">' +
     (prePrice > 0 ? '冻结前价格 ' + quote(prePrice) + (Number.isFinite(optionalNumber(pick.preChangePct)) ? '（' + pct(pick.preChangePct) + '）' : '') +
       (pick.prePriceAt ? ' · ' + preopenStamp(pick.prePriceAt, market) : '') : '盘前价待核对') + '</p>' +
-    reasons + (risk ? '<p class="preopen-risk">关注风险 · ' + escapeHtml(risk) + '</p>' : '') + '</li>';
+    (risk ? '<p class="preopen-risk">关注风险 · ' + escapeHtml(risk) + '</p>' : '') + sources + '</li>';
 }
 
 function preopenFrozen(snapshot, market) {
   const picks = Array.isArray(snapshot.candidates) ? snapshot.candidates : [];
   const jumped = Array.isArray(snapshot.jumped) ? snapshot.jumped : [];
   const id = "preopen-" + market + "-" + snapshot.tradeDate;
-  let html = '<p class="preopen-frozen-time">冻结截止 ' + preopenStamp(snapshot.cutoffAt, market) +
+  const timeline = '<p class="preopen-frozen-time">冻结截止 ' + preopenStamp(snapshot.cutoffAt, market) +
     (snapshot.observedAt ? '<br>输入采集时间 ' + preopenStamp(snapshot.observedAt, market) : '') +
     (snapshot.publishedAt ? '<br>名单发布时间 ' + preopenStamp(snapshot.publishedAt, market) : '') + '</p>';
-  if (snapshot.status === "frozen") {
+  let html = '';
+  if (snapshot.status === "frozen" && Array.isArray(snapshot.candidates)) {
     html += picks.length ? '<ol class="preopen-picks">' + picks.slice(0,3).map(item => preopenPick(item, market, snapshot.cutoffAt)).join("") + '</ol>'
       : '<p class="preopen-notice"><strong>本次冻结为空榜</strong>' + escapeHtml(snapshot.reason || "没有股票同时达到两类独立证据要求。") + '</p>';
   } else {
@@ -3355,46 +3312,54 @@ function preopenFrozen(snapshot, market) {
         '<p class="preopen-target-price">' + (jumpPct !== null ? '盘前达标价 ' + preopenPrice(row.jumpPrice, market) + '（' + pct(jumpPct) + '）' : '盘前达标价待核') + (row.jumpAt ? ' · ' + preopenStamp(row.jumpAt, market) : '') +
         source + (Number.isFinite(optionalNumber(row.preChangePct)) ? '<br>冻结前最新 ' + pct(row.preChangePct) : '') + '</p></div></li>';
     }).join("") + '</ul>');
-  if (snapshot.sources?.length || snapshot.coverage) {
-    const c = snapshot.coverage;
-    const coverage = c ? '<p class="preopen-scope">昨收可核 ' + intradayNumber(c.referenceCount) + ' 只' +
-      (Number.isInteger(c.eligibleCount) ? ' · 通过流动性等门槛 ' + intradayNumber(c.eligibleCount) + ' 只' : '') + ' · 竞价或盘前成交 ' + intradayNumber(c.auctionCount) + ' 只 · 当日事件 ' + intradayNumber(c.eventCount) + ' 只 · 同业线索 ' + intradayNumber(c.contextCount) + ' 只' +
-      (Number.isInteger(c.auctionAttempted) ? '<br>已尝试读取竞价 ' + intradayNumber(c.auctionAttempted) + ' 只 · 同时点异常放量 ' + intradayNumber(c.abnormalVolumeCount) + ' 只' : '') +
-      (market === "美股" ? '<br>美股每轮最多逐只核验 8 只的盘前成交。' : '') +
-      (c.comparablePriceRejected > 0 ? '<br>剔除昨收口径不一致 ' + intradayNumber(c.comparablePriceRejected) + ' 只' : '') + '</p>' : '';
-    const statuses = {available:"可用", partial:"部分可用", unavailable:"未取得"};
-    html += preopenDetails(id + "-sources", "数据来源与覆盖", coverage + '<ul class="preopen-source-list">' +
-      (snapshot.sources || []).map(s => '<li><b>' + preopenSourceLink(s.label || s.source, s.url) + '</b> · ' + (statuses[s.status] || "待核") +
-        '<p>' + escapeHtml(s.detail || "覆盖情况待核") + '</p></li>').join("") + '</ul>');
-  }
+  const c = snapshot.coverage;
+  const coverage = c ? '<p class="preopen-scope">昨收可核 ' + intradayNumber(c.referenceCount) + ' 只' +
+    (Number.isInteger(c.eligibleCount) ? ' · 通过流动性等门槛 ' + intradayNumber(c.eligibleCount) + ' 只' : '') + ' · 竞价或盘前成交 ' + intradayNumber(c.auctionCount) + ' 只 · 当日事件 ' + intradayNumber(c.eventCount) + ' 只 · 同业线索 ' + intradayNumber(c.contextCount) + ' 只' +
+    (Number.isInteger(c.auctionAttempted) ? '<br>已尝试读取竞价 ' + intradayNumber(c.auctionAttempted) + ' 只 · 同时点异常放量 ' + intradayNumber(c.abnormalVolumeCount) + ' 只' : '') +
+    (market === "美股" ? '<br>美股每轮最多逐只核验 8 只的盘前成交。' : '') +
+    (c.comparablePriceRejected > 0 ? '<br>剔除昨收口径不一致 ' + intradayNumber(c.comparablePriceRejected) + ' 只' : '') + '</p>' : '';
+  const statuses = {available:"可用", partial:"部分可用", unavailable:"未取得"};
+  html += preopenDetails(id + "-sources", "冻结时间与数据来源", timeline + coverage + '<ul class="preopen-source-list">' +
+    (snapshot.sources || []).map(s => '<li><b>' + preopenSourceLink(s.label || s.source, s.url) + '</b> · ' + (statuses[s.status] || "待核") +
+      '<p>' + escapeHtml(s.detail || "覆盖情况待核") + '</p></li>').join("") + '</ul>');
   return html;
+}
+
+function preopenStatus(snap) {
+  const current = snap.latest?.tradeDate === snap.sessionDate ? snap.latest : null;
+  if (current?.status === "frozen" && Array.isArray(current.candidates)) {
+    const count = Math.min(3, current.candidates.length);
+    return count ? count + " 只入选" : "已冻结 · 空榜";
+  }
+  if (snap.phase === "frozen") return "名单待核";
+  return {waiting:"待冻结", missed:"本次缺档", unavailable:"数据待核"}[snap.phase] || "待核对";
 }
 
 function preopenMarketCard(market) {
   const snap = state.preopenData?.markets?.[market];
   const label = RADAR_SEGMENT_LABELS[market];
-  if (!snap) return '<article class="card preopen-board"><h3>' + label + '</h3><p class="preopen-stage">' +
-    (state.preopenError || state.preopenData ? '暂未取得该市场的冻结记录，请刷新重试。' : '正在读取冻结记录…') + '</p></article>';
+  if (!snap) return radarBoardStart(market, "preopen-board") + '<div class="preopen-market-id"><header><h3>' + label + '</h3>' +
+    '<span class="preopen-tag">' + (state.preopenError || state.preopenData ? '记录待核' : '读取中') + '</span></header></div></article>';
   const current = snap.latest?.tradeDate === snap.sessionDate ? snap.latest : null;
   const older = snap.latest && !current ? snap.latest : null;
-  const count = current?.status === "frozen" && Array.isArray(current.candidates) ? current.candidates.length : null;
-  const status = {"waiting":"待冻结","frozen":"已冻结","missed":"本次缺档","unavailable":"数据待核"}[snap.phase] || "待核对";
-  const statusText = count !== null ? (count > 0 ? "已冻结 · " + count + " 只入选" : "已冻结 · 空榜") : status;
   const anchor = intradayClock(snap.cutoffAt || snap.nextCutoffAt, market);
   const date = anchor?.date || snap.sessionDate;
   const zone = INTRADAY_CLOCKS[market].label;
-  let body = current ? preopenFrozen(current, market) : '<p class="preopen-notice">' +
-    escapeHtml(snap.reason || (snap.phase === "waiting" ? "等待本场开盘前的冻结时点。" : "该交易日尚无可核实的盘前名单。")) + '</p>';
+  let body = current ? preopenFrozen(current, market) : '';
+  if (!current && snap.phase !== "waiting") {
+    body += '<p class="preopen-notice">' + escapeHtml(snap.reason || "该交易日尚无可核实的盘前名单。") + '</p>';
+  }
   if (older) body += preopenDetails("preopen-prev-" + market, "上一次记录 · " + older.tradeDate, preopenFrozen(older, market));
   if (!snap.latest && snap.phase === "waiting") body += '<p class="preopen-first">尚无历史冻结记录。</p>';
-  return '<article class="card preopen-board"><header><div><small>' + market + ' · ' + zone + '</small><h3>' + escapeHtml(snap.label || label) +
-    '</h3></div><span class="preopen-tag" data-phase="' + escapeHtml(snap.phase || "unknown") + '">' + statusText + '</span></header>' +
-    '<dl class="preopen-board-numbers"><div><dt>候选名册</dt><dd>' + intradayNumber(snap.total) +
-    ' <small>只</small></dd></div><div><dt>当地冻结时间</dt><dd>' + escapeHtml(anchor?.time || "—") + '</dd></div></dl>' +
-    '<p class="preopen-clock preopen-date"><span>交易日 <b>' + escapeHtml(date || "待定") + '</b></span>' +
-    (market === "美股" && anchor ? '<span>北京时间 ' + preopenStamp(snap.cutoffAt || snap.nextCutoffAt, "A股") + '</span>' : '') + '</p>' +
-    '<p class="preopen-scope">' + escapeHtml(snap.scope || label) +
-    (snap.membershipAsOf ? '<br>候选名册更新于 ' + escapeHtml(String(snap.membershipAsOf).slice(0,10)) : '') + '</p>' + body + '</article>';
+  const scope = '<p class="preopen-scope">' + escapeHtml(snap.scope || label) +
+    (snap.membershipAsOf ? '<br>候选名册更新于 ' + escapeHtml(String(snap.membershipAsOf).slice(0,10)) : '') + '</p>';
+  return radarBoardStart(market, "preopen-board") + '<div class="preopen-market-id"><header><h3>' + escapeHtml(snap.label || label) +
+    '</h3><span class="preopen-tag" data-phase="' + escapeHtml(snap.phase || "unknown") + '">' + preopenStatus(snap) + '</span></header>' +
+    '<p class="preopen-clock preopen-date"><span>' + zone + ' <b>' + escapeHtml(date || "日期待定") + ' ' +
+    escapeHtml(anchor?.time || "—") + '</b> 截止</span>' +
+    (market === "美股" && anchor ? '<span>北京时间 ' + preopenStamp(snap.cutoffAt || snap.nextCutoffAt, "A股") + '</span>' : '') + '</p></div>' +
+    '<div class="preopen-market-signals">' + body + '</div>' +
+    preopenDetails("pool-" + market, "候选名册 · " + intradayNumber(snap.total) + " 只", scope) + '</article>';
 
 }
 
@@ -3447,18 +3412,32 @@ function preopenReview(snap, market) {
     (details ? preopenDetails("preopen-outcomes-" + market, "最近收盘明细 · " + detail.tradeDate, '<ul class="preopen-journal">' + details + '</ul>') : '');
 }
 
+function preopenHeadline() {
+  if (state.preopenError) return state.preopenData ? "上次读取的盘前名单" : "盘前名单暂未取得";
+  if (!state.preopenData) return "正在读取盘前名单";
+  const markets = RADAR_MARKETS.map(market => state.preopenData.markets?.[market]);
+  const frozen = markets.filter(market => market?.latest?.status === "frozen" &&
+    market.latest.tradeDate === market.sessionDate && Array.isArray(market.latest.candidates));
+  const count = frozen.reduce((total, market) => total + market.latest.candidates.slice(0, 3).length, 0);
+  if (count) return "本期 " + count + " 只股票入选";
+  if (frozen.length === markets.length) return "三地已冻结，本期空榜";
+  if (frozen.length) return "已冻结的市场暂时空榜";
+  if (markets.every(market => market?.phase === "waiting")) return "等待下一场盘前冻结";
+  return "本期尚无可核实的名单";
+}
+
 function preopenPage() {
   const market = state.preopenReviewMarket;
   const tabs = RADAR_MARKETS.map(m => '<button type="button" data-preopen-focus="review-' + m + '" data-preopen-market="' + m +
     '" aria-pressed="' + (m === market) + '">' + escapeHtml(RADAR_SEGMENT_LABELS[m]) + '</button>').join("");
   return '<main id="main-content" tabindex="-1" class="page-shell radar-page preopen-page"><header class="radar-page-heading"><div><h1>机会雷达</h1>' +
     '<p>创业板 · 港股科技 · 纳斯达克</p></div>' + radarScopeControls() + '</header>' +
-    '<section class="card preopen-brief"><div><h2>当日大涨预测</h2><p>开盘前 5 分钟冻结名单。公司公告、盘前买盘、同业走势至少有两类信号相互印证，才进入主榜。每个市场最多 3 只，允许空榜。</p></div>' +
+    '<section class="card preopen-brief"><div><h2>' + preopenHeadline() + '</h2><p>开盘前 5 分钟冻结，每个市场最多 3 只。公司公告、盘前买盘、同业走势至少两类相互印证才入选。</p></div>' +
     '<div class="preopen-goal"><span>盘中触及线</span><strong>+5<small>%</small></strong><span>相对可比昨收</span></div></section>' +
     '<div class="preopen-section-heading"><h2>盘前冻结名单</h2>' +
     (state.preopenData?.asOf ? '<p class="preopen-updated">读取于北京时间 ' + preopenStamp(state.preopenData.asOf, "A股") + '</p>' : '') + '</div>' +
     (state.preopenError ? '<p class="preopen-error" role="status">' + escapeHtml(state.preopenError) + (state.preopenData ? ' 当前展示上次读取的记录。' : '') + '</p>' : '') +
-    '<section class="preopen-boards" aria-label="三地盘前冻结名单">' + RADAR_MARKETS.map(preopenMarketCard).join("") + '</section>' +
+    radarMarketPicker() + '<section class="preopen-boards" aria-label="三地盘前冻结名单">' + RADAR_MARKETS.map(preopenMarketCard).join("") + '</section>' +
     preopenExample() + '<section class="card preopen-review"><header><div><h2>收盘验证</h2><p>按市场比较最近 20 个已记录交易日。触及率按盘中涨到 +5% 的笔数除以已核实笔数计算。</p></div>' +
     '<div class="preopen-review-tabs" role="group" aria-label="选择验证市场">' + tabs + '</div></header>' +
     preopenReview(state.preopenData?.markets?.[market],market) + '</section></main>';
@@ -3607,8 +3586,11 @@ function tradesPage() {
   const headings = columns.map(([title, key]) => {
     const active = key === state.tradeSort;
     const order = state.tradeSortDirection === "asc" ? "ascending" : "descending";
-    return '<th scope="col"' + (active ? ' aria-sort="' + order + '"' : '') + '>' + title +
-      (active ? '<span aria-hidden="true" class="sold-sort-indicator">' + (order === 'ascending' ? '↑' : '↓') + '</span>' : '') + '</th>';
+    if (!key) return '<th scope="col">' + title + '</th>';
+    const next = active && order === 'descending' ? '升序' : '降序';
+    return '<th scope="col" aria-sort="' + (active ? order : 'none') + '"><button type="button" class="table-sort-button' +
+      (active ? ' active' : '') + '" data-sold-column="' + key + '" aria-label="按' + title + next + '排序">' + title +
+      '<svg class="sort-arrow ' + (active && order === 'ascending' ? 'asc' : 'desc') + '" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2v8M3.5 4.5 6 2l2.5 2.5"/></svg></button></th>';
   }).join('');
   return '<main class="page-shell sold-page"><header class="filter-bar"><div><h1 class="page-title">卖出记录</h1>' +
     '<p class="section-helper">按卖出批次统计，金额以人民币核算。</p></div><button class="primary-button" type="button" data-open-holding-editor="sold" data-editor-trigger="trades">录入卖出</button></header>' +
@@ -3643,8 +3625,16 @@ function soldRecordRow(row) {
 
 function soldRecordMobileCard(row) {
   const nativePnl = tradingPnlNative(row), returnRate = soldReturnRate(row);
-  const missingDetails = tradeDetailsMissing(row);
-  return "<article class=\"sold-record-card\"><header><div>" + marketLabel(row.market) + "<span><strong>" + escapeHtml(row.name) + "</strong><small>" + escapeHtml(row.code) + "</small></span></div><time datetime=\"" + escapeHtml(soldDateValue(row)) + "\">" + escapeHtml(row.sellDate || "日期待补") + "</time></header><dl><div><dt>买入价</dt><dd>" + (missingDetails ? "—" : nativeMoney(row.cost, row.currency)) + "</dd></div><div><dt>卖出价</dt><dd>" + (missingDetails ? "—" : nativeMoney(row.sellPrice, row.currency)) + "</dd></div><div><dt>数量</dt><dd>" + (missingDetails ? "—" : row.qty.toLocaleString("zh-CN")) + "</dd></div><div><dt>买入成本</dt><dd>" + money(row.purchaseCostCny, 0) + "</dd></div><div><dt>卖出净额</dt><dd>" + money(row.saleProceedsCny, 0) + "</dd></div></dl><footer><div><span>已实现盈亏</span><strong class=\"" + tone(row.pnlCny) + "\">" + signed(row.pnlCny, 0) + "</strong><small class=\"" + tone(nativePnl) + "\">" + (row.currency === "CNY" ? "人民币" : signedNative(nativePnl, row.currency)) + "</small></div><div><span>收益率</span><strong class=\"" + tone(returnRate) + "\">" + pct(returnRate) + "</strong></div></footer></article>";
+  const missing = tradeDetailsMissing(row);
+  const term = (label, value) => '<div><dt>' + label + '</dt><dd>' + value + '</dd></div>';
+  const saleDate = '<time datetime="' + escapeHtml(soldDateValue(row)) + '">' + escapeHtml(row.sellDate || "日期待补") + '</time>';
+  const quantity = missing ? '<span>—</span>' : row.qty.toLocaleString("zh-CN") + ' 股';
+  return '<article class="sold-record-card"><header><div><span><strong>' + escapeHtml(row.name) + '</strong><small>' + escapeHtml(row.code) +
+    ' · ' + saleDate + ' · ' + quantity + '</small></span></div>' + marketLabel(row.market) + '</header><div class="sale-card-performance"><div><span>已实现盈亏</span><strong class="' +
+    tone(row.pnlCny) + '">' + signed(row.pnlCny, 0) + '</strong><small>' + (row.currency === "CNY" ? "人民币" : signedNative(nativePnl, row.currency)) +
+    '</small></div><div><span>收益率</span><strong class="' + tone(returnRate) + '">' + pct(returnRate) + '</strong></div></div><dl>' +
+    term("买入价", missing ? "—" : nativeMoney(row.cost, row.currency)) + term("卖出价", missing ? "—" : nativeMoney(row.sellPrice, row.currency)) +
+    term("买入成本", money(row.purchaseCostCny, 0)) + term("卖出净额", money(row.saleProceedsCny, 0)) + '</dl></article>';
 }
 
 function tradeDetailsMissing(row) {
@@ -3952,7 +3942,7 @@ function render(announceRoute) {
     }
   }
   previousHeaderTools = tools;
-  displayedPetMood = currentPetMood();
+  app.querySelector(".brand").dataset.mood = currentPetMood();
   document.body.classList.toggle("modal-open", state.holdingEditorOpen);
   while (app.lastElementChild !== app.firstElementChild) app.lastElementChild.remove();
   const footer = '<footer class="page-footer"><span>公开行情可能延迟。港美持仓市值及今日盈亏按最新可用汇率折算，历史交易成本使用记录汇率或参考汇率。页面分析仅供研究。</span>' +
@@ -3978,9 +3968,7 @@ function render(announceRoute) {
   normalizeHoldingEditorSemantics();
   applyPageMeta(Boolean(announceRoute));
   syncModalIsolation();
-  syncBrandVisuals();
   if (state.holdingEditorOpen) window.requestAnimationFrame(syncHoldingFormUi);
-  scheduleJarDeposits();
   requestAnimationFrame(drawCharts);
   if (state.tab === "radar" && !dailyRadarScope()) requestAnimationFrame(scheduleVisibleRadarHistoryLoad);
   if (state.tab === "overview" && state.trendDays >= 365) void loadLongChart(state.trendDays);
@@ -4332,6 +4320,13 @@ function eventHandlers() {
     if (retryLookup) { scheduleHoldingLookup(true); return; }
     const tab = event.target.closest("[data-tab]");
     if (tab) { location.hash = tab.dataset.tab; return; }
+    const boardButton = event.target.closest("[data-board-market]");
+    if (boardButton && RADAR_MARKETS.includes(boardButton.dataset.boardMarket)) {
+      state.radarBoardMarket = boardButton.dataset.boardMarket;
+      if (state.radarScope === "preopen") state.preopenReviewMarket = state.radarBoardMarket;
+      render();
+      return;
+    }
     const reviewButton = event.target.closest("[data-preopen-market]");
     if (reviewButton && RADAR_MARKETS.includes(reviewButton.dataset.preopenMarket)) {
       state.preopenReviewMarket = reviewButton.dataset.preopenMarket;
@@ -4479,6 +4474,12 @@ function eventHandlers() {
       window.requestAnimationFrame(function () { const search = document.querySelector("[data-holding-search]"); if (search) search.focus(); });
       return;
     }
+    if (event.target.closest("[data-jump-holding-list]")) {
+      const heading = document.querySelector("#holding-list-title");
+      heading?.focus({ preventScroll: true });
+      heading?.scrollIntoView({ block: "start" });
+      return;
+    }
     const toggleHolding = event.target.closest("[data-toggle-holding]");
     if (toggleHolding) {
       const key = toggleHolding.dataset.toggleHolding || "";
@@ -4496,6 +4497,16 @@ function eventHandlers() {
     if (tradeMarket) {
       state.tradeMarket = ["全部", "A股", "港股", "美股"].includes(tradeMarket.dataset.tradeMarket) ? tradeMarket.dataset.tradeMarket : "全部";
       render();
+      document.querySelector('[data-trade-market="' + state.tradeMarket + '"]')?.focus({ preventScroll: true });
+      return;
+    }
+    const soldColumn = event.target.closest("[data-sold-column]");
+    if (soldColumn) {
+      const key = soldColumn.dataset.soldColumn;
+      state.tradeSortDirection = state.tradeSort === key && state.tradeSortDirection === "desc" ? "asc" : "desc";
+      state.tradeSort = key;
+      render();
+      document.querySelector('[data-sold-column="' + key + '"]')?.focus({ preventScroll: true });
       return;
     }
     const tradeSortDirection = event.target.closest("[data-trade-sort-direction]");
@@ -4826,7 +4837,6 @@ async function start() {
     rebuildRows();
     eventHandlers();
     render();
-    startBrandAnimations();
     if (state.tab === "radar") loadRadar(false);
     currentSource = "local";
     marketRefresh = refreshData();
@@ -4842,7 +4852,6 @@ async function start() {
     rebuildRows();
     eventHandlers();
     render();
-    startBrandAnimations();
     if (state.tab === "radar") loadRadar(false);
     currentSource = initial.source;
     marketRefresh = refreshData();

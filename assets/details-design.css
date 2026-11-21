@@ -1,7 +1,6 @@
 .action-page, .sold-page {
   --ledger-line: #deded5;
   --ledger-muted: #62655b;
-  --ledger-ink: #242822;
   --ledger-tint: #f6f5ef;
   --ledger-hk: #a17f42;
   --ledger-cn: #536963;
@@ -45,7 +44,7 @@
 .holding-share-legend i, .allocation-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
 .share-gain { background: var(--red); } .share-loss { background: var(--green); }
 .share-flat { background: #71756b; } .share-unknown { background: #d0d1c7; }
-.action-page .holding-structure-card { padding: 20px clamp(18px, 2.3vw, 34px); }
+.action-page .holding-structure-card { display: block; padding: 0 clamp(16px, 2.3vw, 34px); }
 .allocation-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
 .allocation-heading h2 { margin: 0; }
 .allocation-heading small, .allocation-legend small, .holding-concentration small { color: var(--ledger-muted); font-size: 12px; }
@@ -70,7 +69,7 @@
 .action-page .holding-list-heading p { margin: 5px 0 0; font-size: 12px; color: var(--ledger-muted); }
 .action-page .holding-list-heading strong { font-size: 13px; white-space: nowrap; color: var(--ledger-muted); }
 .action-page .holding-action-table th[aria-sort]:not([aria-sort="none"]),
-.sold-page .sold-record-table th[aria-sort] { background: #eeeade; }
+.sold-page .sold-record-table th[aria-sort]:not([aria-sort="none"]) { background: #eeeade; }
 .action-page .table-sort-button.active { color: var(--ledger-ink); }
 .action-page .holding-price-pair, .action-page .holding-value-cell, .action-page .holding-pnl-cell {
   display: flex; flex-direction: column; align-items: flex-start; gap: 3px; line-height: 1.4;
@@ -157,4 +156,131 @@
   .action-page .holding-result-status { grid-column: 1 / 4; text-align: left; }
   .action-page .holding-clear-filter { justify-self: end; }
   .action-page .holding-action-table :is(th,td) { padding-inline: 8px; }
+}
+
+/* Ledger headings, account readouts, and the disclosure shared by mobile and desktop. */
+.action-page .holding-page-heading, .sold-page > .filter-bar {
+  display: flex; flex-flow: row nowrap; align-items: center; justify-content: space-between; gap: 12px;
+}
+.action-page .holding-page-heading p, .sold-page .section-helper { margin: 6px 0 0; }
+.jump-holdings {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 12px;
+  border: 1px solid var(--ledger-line); border-radius: 8px; background: #fff;
+  font: inherit; font-size: 13px; font-weight: 650; color: var(--ledger-ink); white-space: nowrap;
+}
+#holding-list-title { scroll-margin-top: 100px; }
+.action-page .holding-snapshot-grid > :first-child, .sold-page .sale-summary-body > :first-child { background: #f7f3e9; }
+.action-page .holding-snapshot-grid > :first-child dt, .sold-page .sale-summary-body > :first-child > span { color: #705923; }
+.holding-structure-card .allocation-heading {
+  display: flex; min-height: 54px; align-items: center; justify-content: flex-start; gap: 10px;
+  margin: 0; padding-block: 8px; list-style: none; cursor: pointer;
+}
+.holding-structure-card .allocation-heading::-webkit-details-marker { display: none; }
+.holding-structure-card .allocation-heading::after {
+  content: ""; width: 7px; height: 7px; border: solid var(--ledger-muted); border-width: 0 1.5px 1.5px 0;
+  margin: -4px 3px 0 2px; transform: rotate(45deg);
+}
+.holding-structure-card[open] .allocation-heading::after { transform: rotate(225deg); margin-top: 4px; }
+.holding-structure-card .allocation-heading h2 { font-size: 17px; }
+.holding-structure-card .allocation-heading span { margin-left: auto; color: var(--ledger-muted); font-size: 12px; }
+.allocation-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(275px, .42fr); align-items: start; gap: 28px; padding-bottom: 20px; }
+.action-page .holding-concentration { min-height: auto; }
+.action-page .holding-stock-cell { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.action-page .holding-stock-cell > div, .sold-page .sold-record-table td:nth-child(3) { white-space: normal; overflow-wrap: anywhere; }
+.action-page .holding-stock-cell .stock-name { display: block; white-space: normal; overflow-wrap: anywhere; font-size: 14px; line-height: 1.45; }
+.action-page .holding-stock-cell .stock-code { display: block; margin: 4px 0 0; }
+.action-page .holding-stock-cell .stock-code, .action-page .holding-price-pair small, .sold-page .sold-record-table .stock-code { color: var(--ledger-muted); }
+.sold-page .sold-record-table td:first-child, .sold-page .number-cell, .action-page .number-cell { font-variant-numeric: tabular-nums; }
+.action-page .holding-desktop-table .holding-pnl-cell > b, .sold-page .sold-record-table .number-cell > strong { font-size: 14px; }
+.sold-page .trade-toolbar-heading .tab-group { box-shadow: none; }
+.sold-page .tab-group button.active { box-shadow: none; }
+:is(.action-page,.sold-page) :is(.market-badge.hk,.market-badge.a,.market-badge.us) { font-weight: 650; }
+:is(.action-page,.sold-page) .market-badge.hk { background: #f5eddd; color: #755726; }
+:is(.action-page,.sold-page) .market-badge.a { background: #eaf0eb; color: #3d5c50; }
+:is(.action-page,.sold-page) .market-badge.us { background: #eeedf3; color: #535368; }
+.sold-page .sold-record-table .table-sort-button { color: inherit; }
+.sold-page .sold-record-section .tab-group { flex-wrap: nowrap; }
+.sold-page .trade-toolbar-heading .tab-group > button { min-width: 0; }
+.action-page .holding-snapshot-card, .sold-page .sale-summary { border-color: #cfcabd; box-shadow: none; }
+.sold-page .sold-record-card > header small span { display: inline; }
+.action-page .holding-list-heading { align-items: center; }
+.action-page .holding-snapshot-grid dt, .sold-page .trade-kpi > span { letter-spacing: .01em; }
+@media (min-width:761px) {
+  .action-page .holding-snapshot-grid, .sold-page .sale-summary-body { grid-template-columns: 1.48fr 1fr 1fr 1fr; align-items: stretch; }
+  .action-page .holding-snapshot-grid > div, .sold-page .trade-kpi { display: flex; flex-direction: column; justify-content: center; padding: 22px min(2vw,30px); }
+  .action-page .holding-snapshot-grid dd, .sold-page .trade-kpi > strong { font-size: clamp(22px,2.1vw,30px); }
+  .action-page .holding-snapshot-grid > :first-child dd, .sold-page .sale-summary-body > :first-child strong { font-size: clamp(33px,3.6vw,54px); }
+}
+@media (min-width:1101px) {
+  .action-page .holding-list-card .holding-action-table { line-height: 1.5; }
+  .action-page .holding-action-table .holding-col-stock { width: 19%; }
+  .action-page .holding-action-table .holding-col-price { width: 13%; }
+  .action-page .holding-action-table .holding-col-pnl { width: 14%; }
+}
+:is(.action-page,.sold-page) :is(button, input, select, summary):focus-visible {
+  outline: 2px solid #80602b; outline-offset: 2px;
+}
+@media (hover:hover) and (pointer:fine) {
+  .jump-holdings:hover, .sold-page .sold-record-table .table-sort-button:hover { background: #f4f1e9; }
+  .holding-structure-card summary:hover h2 { color: #745923; }
+}
+@media (min-width:1101px) {
+  .sold-page .sold-record-section .trade-toolbar { flex-direction: row; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+}
+@media (max-width:1100px) {
+  .action-page .holding-mobile-card, .sold-page .sold-record-card { border-color: var(--ledger-line); box-shadow: none; }
+  .action-page .holding-mobile-card > header, .sold-page .sold-record-card > header { align-items: flex-start; }
+  .action-page .holding-mobile-card > header strong, .sold-page .sold-record-card > header strong {
+    display: block; font-size: 17px; line-height: 1.4; font-weight: 700; color: var(--ledger-ink); white-space: normal; overflow-wrap: anywhere;
+  }
+  .action-page .holding-mobile-card > header span:not(.market-badge), .sold-page .sold-record-card > header small {
+    display: block; margin: 3px 0 0; color: var(--ledger-muted); font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+  .action-page .holding-mobile-card > dl, .sold-page .sale-card-performance {
+    display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px;
+  }
+  .action-page .holding-mobile-card > dl > div, .action-page .holding-mobile-card > dl > div:nth-child(even) {
+    min-height: 0; padding: 0; border: 0;
+  }
+  .action-page .holding-mobile-card > .holding-mobile-performance, .sold-page .sale-card-performance {
+    margin: 14px -4px 12px; padding: 12px; border: 0; border-radius: 8px; background: var(--ledger-tint);
+  }
+  .action-page .holding-mobile-performance dt, .sold-page .sale-card-performance span { color: var(--ledger-muted); font-size: 12px; font-weight: 600; }
+  .action-page .holding-mobile-performance dd { margin-top: 4px; }
+  .action-page .holding-mobile-card .holding-pnl-cell b, .sold-page .sale-card-performance strong {
+    display: block; font-size: 19px; font-weight: 700; line-height: 1.35; letter-spacing: -.025em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+  }
+  .action-page .holding-pnl-cell.is-missing b { color: var(--ledger-muted); }
+  .action-page .holding-mobile-card > .holding-mobile-facts { gap: 10px 14px; margin: 0; border: 0; }
+  .action-page .holding-mobile-facts .holding-mobile-price { grid-column: 1/-1; }
+  .action-page .holding-mobile-facts dd small, .sold-page .sale-card-performance small {
+    display: block; margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--ledger-muted); font-weight: 500;
+  }
+  .action-page .holding-mobile-facts dd, .sold-page .sold-record-card dd { margin-top: 3px; font-size: 14px; line-height: 1.4; font-variant-numeric: tabular-nums; }
+  .action-page .holding-mobile-card.is-expanded { border-color: #a8946d; box-shadow: none; }
+  .sold-page .sale-card-performance > div { min-width: 0; }
+  .sold-page .sale-card-performance strong { margin-top: 4px; }
+  .sold-page .sold-record-card dl { margin: 0; padding: 0; border: 0; gap: 10px 14px; }
+  .sold-page .sold-record-card dt, .action-page .holding-mobile-facts dt { color: var(--ledger-muted); font-size: 12px; }
+  .sold-page .sold-record-card time { color: inherit; font-size: inherit; font-weight: inherit; }
+}
+@media (max-width:760px) {
+  #holding-list-title { scroll-margin-top: 16px; }
+  .action-page .holding-page-heading, .sold-page > .filter-bar { margin-bottom: 16px; }
+  .sold-page .filter-bar .primary-button { flex-shrink: 0; min-height: 44px; }
+  .action-page .holding-snapshot-grid > div, .sold-page .trade-kpi { padding: 14px; }
+  .action-page .holding-snapshot-grid small, .sold-page .trade-kpi small { margin-top: 4px; }
+  .holding-breadth-pair .holding-breadth { display: grid; grid-template-columns: 89px minmax(0,1fr); align-items: center; padding: 12px 14px; gap: 4px 10px; }
+  .holding-breadth-pair .holding-breadth h3 { grid-row: 1/3; font-size: 13px; }
+  .holding-breadth-pair .holding-share-track, .holding-breadth-pair .holding-share-legend { grid-column: 2; }
+  .holding-breadth-pair .holding-share-legend { font-size: 11px; gap: 2px 7px; }
+  .holding-structure-card .allocation-heading { min-height: 48px; }
+  .allocation-body { grid-template-columns: 1fr; gap: 14px; padding-bottom: 15px; }
+  .action-page .holding-toolbar { gap: 10px; }
+  .action-page .holding-filter-group { display: block; position: relative; min-height: 44px; padding: 0 0 0 48px; }
+  .action-page .holding-filter-group legend { position: absolute; left: 0; top: 50%; transform: translateY(-50%); margin: 0; }
+  .action-page .holding-filter-group > div { width: 100%; }
+  .sold-page .trade-toolbar-heading .tab-group { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 5px; }
+  .sold-page .trade-toolbar-heading .tab-group > button { min-height: 44px; padding: 0 3px; font-size: 12px; }
+  .sold-page .trade-sort-direction, .sold-page .trade-date-range input, .sold-page .trade-sort-field select { min-height: 44px; }
 }
