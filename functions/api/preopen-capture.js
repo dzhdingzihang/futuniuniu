@@ -1,0 +1,41 @@
+// Read-only provenance for closed sessions. Never expose unfinished pre-open stages.
+import { intradaySession, loadSessionCalendar } from "../lib/intraday-session.js";
+import { PREOPEN_VERSION } from "../lib/preopen-cycle.js";
+
+const DAY = 86400000;
+const headers = {"Cache-Control":"private, no-store"};
+const reply = (body, status=200) => Response.json(body, {status, headers});
+
+export async function onRequestGet({request, env, now=()=>new Date(), fetcher=fetch}) {
+  const params = new URL(request.url).searchParams;
+  const market = params.get("market"), date = params.get("date");
+  if (!["A股","港股","美股"].includes(market) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return reply({error:"市场或日期无效。"},400);
+  const noon = Date.parse(date + "T12:00:00Z");
+  if (!Number.isFinite(noon) || new Date(noon).toISOString().slice(0,10) !== date) return reply({error:"日期无效。"},400);
+  if (!env?.RADAR_SNAPSHOTS) return reply({error:"存储不可用。"},503);
+  try {
+    const readAt = now();
+    const calendar = await loadSessionCalendar(fetcher, readAt);
+    const session = intradaySession(market,noon,calendar);
+    if (!session.closeAt || Date.parse(session.closeAt) > +readAt) return reply({error:"仅可查询已收盘的交易日。"},400);
+    let previous;
+    for (let back=1; back<=20; back++) {
+      const day = intradaySession(market,noon-back*DAY,calendar);
+      if (!day.calendarKnown) break;
+      if (day.closeAt) { previous = day.tradeDate; break; }
+    }
+    const get = suffix => env.RADAR_SNAPSHOTS.get(PREOPEN_VERSION + ":" + market + ":" + suffix, "json");
+    const archive = await get("frozen:" + date);
+    const reference = previous ? await get("ref:" + previous) : null;
+    const stages = [];
+    for (const slot of [555,560,562,563,564]) {
+      const row = await get("stage:" + date + ":" + slot);
+      if (row?.tradeDate === date) stages.push({slot,observedAt:row.observedAt || null,frozenAt:row.frozenAt || null,
+        referenceDate:row.referenceDate || null,eligibleCount:row.coverage?.eligibleCount ?? null});
+    }
+    return reply({market,date,readAt:readAt.toISOString(),referenceDate:previous || null,
+      reference:reference?.referenceDate===previous && reference ? {observedAt:reference.observedAt,validCount:reference.rows?.length,total:reference.total} : null,
+      stages,publishedAt:archive?.publishedAt || null,archiveStatus:archive?.status || null,
+      captureDiagnostics:archive?.captureDiagnostics || null});
+  } catch { return reply({error:"采集诊断暂时无法读取。"},503); }
+}
