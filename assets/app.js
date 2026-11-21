@@ -2357,7 +2357,6 @@ function holdingReviewChecks(rows, now = new Date()) {
       if (state.isHistoryLoading && !outlook.dataReady) {
         return result("missing", 3, "日线更新中", gaps.join("，") + "。", "本轮正在分批更新，行情返回后自动复核。");
       }
-      if (state.isHistoryLoading) return result("missing", 3, "日线更新中", gaps.join("，") + "。", "行情返回后会自动更新这只股票的判断。");
       return result("missing", 3, "行情待核实", gaps.join("，") + "。", "刷新行情后再看。仍缺数据时，核对交易市场的最新收盘记录。");
     }
     return result("observe", 4, outlook.status === "up" ? "两周走势偏强" : "趋势信号分歧",
