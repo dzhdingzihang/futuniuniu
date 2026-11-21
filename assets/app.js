@@ -3824,31 +3824,88 @@ function preopenPick(pick, market, cutoffAt, current) {
     (risk ? '<p class="preopen-risk">关注风险 · ' + escapeHtml(risk) + '</p>' : '') + sources + '</li>';
 }
 
-function preopenProvenance(snapshot, market) {
+function preopenNoPickStatus(row) {
+  if (row?.selectionStatus === "confirmed_empty") return "confirmed_empty";
+  return row?.coverage || row?.status === "frozen" ? "incomplete" : "unavailable";
+}
+
+function preopenCoverageLine(c) {
+  if (!c || !Number.isInteger(c.eligibleCount)) return "";
+  const parts = ["通过基础门槛 " + intradayNumber(c.eligibleCount) + " 只"];
+  if (Number.isInteger(c.auctionAttempted) && Number.isInteger(c.auctionCount)) {
+    parts.push("盘前成交已查 " + intradayNumber(c.auctionAttempted) + " 只，可核验 " + intradayNumber(c.auctionCount) + " 只");
+  }
+  if (Number.isInteger(c.eventCount)) parts.push("事件命中 " + intradayNumber(c.eventCount) + " 只");
+  if (Number.isInteger(c.contextCount)) parts.push("同行共振 " + intradayNumber(c.contextCount) + " 只");
+  return parts.join("；") + "。";
+}
+
+function preopenNoPickText(snapshot) {
+  if (preopenNoPickStatus(snapshot) === "confirmed_empty") return "已核对候选范围内的股票，本期没有符合双证据要求且尚未跳涨的股票。";
+  const coverageLine = preopenCoverageLine(snapshot.coverage);
+  return (coverageLine ? coverageLine + " " : "") + "没有确认入选的股票，现有数据不足以判断其余股票是否符合。";
+}
+
+const preopenCaptureCache = new Map();
+
+function preopenCaptureSummary(data) {
+  const when = preopenStamp(data.reference?.observedAt, data.market);
+  const reference = data.reference ? data.referenceDate + " 的昨收参考在 " + when + " 入库，共 " +
+    intradayNumber(data.reference.validCount) + " 只。" : (data.referenceDate || "上一交易日") + " 的昨收参考目前查不到。";
+  const slots = data.stages.map(row => String(Math.floor(row.slot/60)).padStart(2,"0") + ":" + String(row.slot%60).padStart(2,"0"));
+  const samples = slots.length ? "仍可读取的采样档为 " + slots.join("、") + "。" : "目前查不到截止前完成的采样档。";
+  const reasons = [...new Set((data.captureDiagnostics || []).map(item=>item.reason).filter(Boolean))];
+  return reference + samples + (reasons.length ? " 历次采集记录：" + reasons.join(" ") : " 逐档快照保留 2 天，昨收参考保留 14 天。");
+}
+
+async function loadPreopenCapture(el) {
+  if (!el || el.dataset.loading === "true") return;
+  const key = el.dataset.market + ":" + el.dataset.date;
+  el.dataset.loading = "true";
+  if (!preopenCaptureCache.has(key)) {
+    const params = new URLSearchParams({market:el.dataset.market,date:el.dataset.date});
+    preopenCaptureCache.set(key, fetch("/api/preopen-capture?" + params).then(async response=>{
+      if (!response.ok) throw Error("capture");
+      return preopenCaptureSummary(await response.json());
+    }));
+  }
+  try { el.textContent = await preopenCaptureCache.get(key); }
+  catch { preopenCaptureCache.delete(key); el.textContent = "暂时读不到采集记录。重新展开可重试。"; }
+  finally { delete el.dataset.loading; }
+}
+
+function preopenProvenance(snapshot, market, closed = false) {
   const timeline = '<p class="preopen-frozen-time">冻结截止 ' + preopenStamp(snapshot.cutoffAt, market) +
     (snapshot.observedAt ? '<br>输入采集时间 ' + preopenStamp(snapshot.observedAt, market) : '') +
     (snapshot.publishedAt ? '<br>名单发布时间 ' + preopenStamp(snapshot.publishedAt, market) : '') + '</p>';
   const c = snapshot.coverage;
-  const coverage = c ? '<p class="preopen-scope">昨收可核 ' + intradayNumber(c.referenceCount) + ' 只' +
-    (Number.isInteger(c.eligibleCount) ? ' · 通过流动性等门槛 ' + intradayNumber(c.eligibleCount) + ' 只' : '') + ' · 竞价或盘前成交 ' + intradayNumber(c.auctionCount) + ' 只 · 当日事件 ' + intradayNumber(c.eventCount) + ' 只 · 同业线索 ' + intradayNumber(c.contextCount) + ' 只' +
-    (Number.isInteger(c.auctionAttempted) ? '<br>已尝试读取竞价 ' + intradayNumber(c.auctionAttempted) + ' 只 · 同时点异常放量 ' + intradayNumber(c.abnormalVolumeCount) + ' 只' : '') +
-    (market === "美股" ? '<br>美股每轮最多逐只核验 8 只的盘前成交。' : '') +
+  const coverage = c ? '<p class="preopen-scope">昨收可核 ' + intradayNumber(c.referenceCount) +
+    ' 只 · 竞价或盘前成交 ' + intradayNumber(c.auctionCount) + ' 只' +
+    (Number.isInteger(c.auctionTestableCount) ? ' · 有同一时点量能基线 ' + intradayNumber(c.volumeBaselineCount ?? c.auctionTestableCount) + ' 只' : '') +
+    (Number.isInteger(c.cnbcAttempted) ? '<br>批量报价查询 ' + intradayNumber(c.cnbcAttempted) + ' 只 · 有本期盘前成交 ' + intradayNumber(c.cnbcSessionCount) + ' 只 · 五分钟内 ' + intradayNumber(c.cnbcFreshCount) + ' 只' : '') +
+    (Number.isInteger(c.tapeAttempted) && market === "美股" ? '<br>逐只核对成交 ' + intradayNumber(c.tapeAttempted) + ' 只 · 返回成交记录 ' + intradayNumber(c.tapeReturnedCount) + ' 只' : '') +
+    (Number.isInteger(c.contextTestableCount) ? '<br>可比同行样本 ' + intradayNumber(c.contextTestableCount) + ' 只 · 同行共振 ' + intradayNumber(c.contextCount) + ' 只' : '') +
+    (Number.isInteger(c.unresolvedCount) ? '<br>通过门槛后仍缺证据 ' + intradayNumber(c.unresolvedCount) + ' 只 · 已核实不符合 ' + intradayNumber(c.confirmedMissCount) + ' 只' : '') +
+    (c.missingReferenceCount > 0 ? '<br>缺前收参考 ' + intradayNumber(c.missingReferenceCount) + ' 只' : '') +
     (c.comparablePriceRejected > 0 ? '<br>剔除昨收口径不一致 ' + intradayNumber(c.comparablePriceRejected) + ' 只' : '') + '</p>' : '';
+  const diagnostic = closed ? '<p class="preopen-scope" role="status" data-capture-audit data-market="' + escapeHtml(market) +
+    '" data-date="' + escapeHtml(snapshot.tradeDate) + '">正在核对昨收参考和采样档…</p>' : '';
   const statuses = {available:"可用", partial:"部分可用", unavailable:"未取得"};
-  return preopenDetails("preopen-" + market + "-" + snapshot.tradeDate + "-sources", "采集时间与数据来源", timeline + coverage + '<ul class="preopen-source-list">' +
+  return preopenDetails("preopen-" + market + "-" + snapshot.tradeDate + "-sources", "采集时间与数据来源", timeline + coverage + diagnostic + '<ul class="preopen-source-list">' +
     (snapshot.sources || []).map(s => '<li><b>' + preopenSourceLink(s.label || s.source, s.url) + '</b> · ' + (statuses[s.status] || "待核") +
       '<p>' + escapeHtml(s.detail || "覆盖情况待核") + '</p></li>').join("") + '</ul>');
 }
 
-function preopenFrozen(snapshot, market, current = false) {
+function preopenFrozen(snapshot, market, current = false, closed = false) {
   const picks = preopenVerifiedPicks(snapshot);
   const jumped = Array.isArray(snapshot.jumped) ? snapshot.jumped : [];
   const id = "preopen-" + market + "-" + snapshot.tradeDate;
   let html = '';
-  if (snapshot.status === "frozen" && Array.isArray(snapshot.candidates)) {
+  if ((snapshot.status === "frozen" || preopenNoPickStatus(snapshot) === "incomplete") && Array.isArray(snapshot.candidates)) {
     html += picks.length ? '<ol class="preopen-picks">' + picks.map(item => preopenPick(item, market, snapshot.cutoffAt, current)).join("") + '</ol>'
       : snapshot.candidates.length ? '<p class="preopen-notice"><strong>候选证据待核实</strong>冻结前的两类独立依据暂时无法核对。</p>'
-      : '<p class="preopen-notice"><strong>本次冻结为空榜</strong>' + escapeHtml(snapshot.reason || "没有股票同时达到两类独立证据要求。") + '</p>';
+      : '<p class="preopen-notice"><strong>' + (preopenNoPickStatus(snapshot) === "confirmed_empty" ? '本次冻结为空榜' : '证据覆盖不足') +
+        '</strong>' + escapeHtml(preopenNoPickText(snapshot)) + '</p>';
   } else {
     html += '<p class="preopen-notice"><strong>本次预测缺少可核实数据</strong>' + escapeHtml(snapshot.reason || "本次未生成可用名单。") + '</p>';
   }
@@ -3860,7 +3917,7 @@ function preopenFrozen(snapshot, market, current = false) {
         '<p class="preopen-target-price">' + (jumpPct !== null ? '盘前达标价 ' + preopenPrice(row.jumpPrice, market) + '（' + radarChangeMarkup(jumpPct) + '）' : '盘前达标价待核') + (row.jumpAt ? ' · ' + preopenStamp(row.jumpAt, market) : '') +
         source + (Number.isFinite(optionalNumber(row.preChangePct)) ? '<br>冻结前最新 ' + radarChangeMarkup(row.preChangePct) : '') + '</p></div></li>';
     }).join("") + '</ul>');
-  return html + preopenProvenance(snapshot, market);
+  return html + preopenProvenance(snapshot, market, closed);
 }
 
 function preopenSessionUsable(snap, market) {
@@ -3879,7 +3936,7 @@ function preopenStatus(snap, market) {
   const current = snap.latest?.tradeDate === snap.sessionDate ? snap.latest : null;
   if (current?.status === "frozen" && Array.isArray(current.candidates)) {
     const count = preopenVerifiedPicks(current).length;
-    return count ? count + " 只入选" : current.candidates.length ? "依据待核" : "已冻结 · 空榜";
+    return count ? count + " 只入选" : current.candidates.length ? "依据待核" : preopenNoPickStatus(current) === "confirmed_empty" ? "已冻结 · 空榜" : "证据覆盖不足";
   }
   if (snap.phase === "frozen") return "名单待核";
   return {waiting:"待冻结", missed:"本次缺档", unavailable:"数据待核"}[snap.phase] || "待核对";
@@ -3940,7 +3997,7 @@ function preopenClosedIssue(snap, market) {
 function preopenArchive({ market, date, record, picks, matched, verified, hits }) {
   if (!date) return '<p class="preopen-notice">尚无历史冻结记录。</p>';
   const dateLabel = '<p class="radar-record-date">最近收盘日 <time>' + escapeHtml(date) + '</time></p>';
-  if (!record || record.status !== "frozen" || !Array.isArray(record.candidates)) {
+  if (!record || !Array.isArray(record.candidates) || (record.status !== "frozen" && preopenNoPickStatus(record) === "unavailable")) {
     const title = record?.status === "unavailable" ? "盘前数据不足" : "盘前记录缺档";
     const cutoff = intradayClock(record?.cutoffAt, market);
     const reason = record?.reason?.includes("可审计的盘前输入")
@@ -3951,9 +4008,9 @@ function preopenArchive({ market, date, record, picks, matched, verified, hits }
   }
   if (!picks.length) {
     return dateLabel + '<strong class="radar-record-title">' +
-      (record.candidates.length ? '入选依据待核实' : '已发布空榜') + '</strong><p class="radar-record-note">' +
+      (record.candidates.length ? '入选依据待核实' : preopenNoPickStatus(record) === "confirmed_empty" ? '已发布空榜' : '证据覆盖不足') + '</strong><p class="radar-record-note">' +
       (record.candidates.length ? '冻结时的证据不足以复原名单，本期结果待核。' :
-        escapeHtml(record.reason || "没有股票同时满足两类独立证据要求。") + ' 本期有 0 只候选。') + '</p>';
+        escapeHtml(preopenNoPickText(record))) + '</p>';
   }
   return dateLabel + '<strong class="radar-record-title">上期入选 ' + picks.length + ' 只</strong><ul class="radar-record-picks">' +
     picks.map((pick, index) => {
@@ -3987,8 +4044,8 @@ function preopenMarketCard(market) {
     const issue = preopenClosedIssue(snap, market);
     const prior = issue.record;
     body = preopenArchive(issue);
-    if (prior) body += issue.picks.length || prior.jumped?.length ? preopenDetails("preopen-prev-" + market, "查看上期入选依据与记录", preopenFrozen(prior, market)) :
-      preopenProvenance(prior, market);
+    if (prior) body += issue.picks.length || prior.jumped?.length ? preopenDetails("preopen-prev-" + market, "查看上期入选依据与记录", preopenFrozen(prior, market, false, true)) :
+      preopenProvenance(prior, market, true);
   } else if (current) {
     body = '<p class="radar-record-date">' + escapeHtml(current.tradeDate) + ' 盘前名单 · ' + preopenStatus(snap, market) + '</p>' +
       preopenFrozen(current, market, true);
@@ -4055,7 +4112,8 @@ function preopenReview(snap, market) {
       pct(r.openToClosePct) + (r.hit ? ' · ' + preopenFirstTouch(r, market) + ' · ' + (r.held ? '守住涨幅' : '收盘回落') : ' · 未触及')
       : escapeHtml(r.reason || "行情缺失，待核实")) + '</p></li>').join("");
   return '<p class="preopen-sample">' + escapeHtml(e.fromDate || "") + ' 至 ' + escapeHtml(e.toDate || "") + ' · ' +
-    intradayNumber(e.days) + ' 个交易日 · 空榜 ' + intradayNumber(e.emptyDays) + ' 天</p>' +
+    intradayNumber(e.days) + ' 个交易日 · 核实空榜 ' + intradayNumber(e.emptyDays) + ' 天' +
+    (e.incompleteDays ? ' · 未能判定 ' + intradayNumber(e.incompleteDays) + ' 天' : '') + '</p>' +
     '<div class="preopen-table-wrap" tabindex="0" role="region" aria-label="预测主榜与对照组的收盘验证"><table class="preopen-table"><thead><tr><th>样本组</th>' +
     '<th>触及 / 已核</th><th>触及率</th><th>收盘守住</th><th>缺数据</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
     (picks ? '<p class="preopen-breakdown">主榜共 ' + intradayNumber(picks.count) + ' 笔，开盘即触及 ' + intradayNumber(picks.openHits) + ' 笔，盘中才触及 ' +
@@ -4072,6 +4130,8 @@ function preopenHeadline() {
   const count = frozen.reduce((total, market) => total + preopenVerifiedPicks(market.latest).length, 0);
   if (count) return "本期 " + count + " 只股票入选";
   if (frozen.some(market => market.latest.candidates.length)) return "盘前候选依据待核实";
+  if (markets.some((m, i) => preopenSessionUsable(m, RADAR_MARKETS[i]) && m.latest?.tradeDate === m.sessionDate &&
+      preopenNoPickStatus(m.latest) === "incomplete")) return "本期暂无入选，部分证据未能核实";
   if (frozen.length === markets.length) return "三地已冻结，本期空榜";
   if (frozen.length) return "已冻结的市场暂时空榜";
   if (markets.every((market, i) => preopenSessionUsable(market, RADAR_MARKETS[i]) && market?.phase === "waiting")) return "等待下一场盘前冻结";
@@ -4098,15 +4158,16 @@ function preopenClosedSummary(markets) {
   const names = issues.reduce((n, issue) => n + issue.picks.length, 0);
   const verified = issues.reduce((n, issue) => n + issue.verified.length, 0);
   const hits = issues.reduce((n, issue) => n + issue.hits, 0);
-  if (!frozen.length) return "三个市场的上期盘前名单均缺少可核实记录，暂无候选可验证。";
+
   if (names) return "上期可核对的名单共 " + names + " 只。已验证 " + verified + " 只" +
     (verified ? "，其中 " + hits + " 只盘中触及昨收 +5%。" : "，等待收盘行情核对。");
-  const empty = frozen.filter(issue => !issue.record.candidates.length);
+  const empty = frozen.filter(issue => !issue.record.candidates.length && preopenNoPickStatus(issue.record) === "confirmed_empty");
   if (empty.length === 3) return "三个市场上期均发布空榜，没有股票满足入选条件。";
   const groups = [
     [empty, "上期空榜"],
     [issues.filter(issue => !issue.record), "盘前记录缺档"],
-    [issues.filter(issue => issue.record && issue.record.status !== "frozen"), "盘前数据不足"],
+    [issues.filter(issue => issue.record && preopenNoPickStatus(issue.record) === "unavailable"), "盘前数据不足"],
+    [issues.filter(issue => issue.record && !issue.record.candidates?.length && preopenNoPickStatus(issue.record) === "incomplete"), "证据覆盖不足"],
     [frozen.filter(issue => issue.record.candidates.length), "入选依据待核"]
   ];
   return groups.filter(([items]) => items.length).map(([items, label]) =>
@@ -5104,6 +5165,12 @@ function eventHandlers() {
     }
     if (tab === "radar") loadRadar(false);
   });
+  document.addEventListener("toggle", function(event) {
+    const details = event.target;
+    if (details.open && details.matches?.("[data-preopen-details]")) {
+      loadPreopenCapture(details.querySelector(":scope > div > [data-capture-audit]"));
+    }
+  }, true);
   document.addEventListener("click", function (event) {
     const drilldown = event.target.closest("main a[href]");
     if (drilldown && !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {

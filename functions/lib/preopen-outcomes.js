@@ -1,6 +1,8 @@
 // All three groups use the same frozen membership and the same unadjusted daily price basis.
 import { intradaySession } from "./intraday-session.js";
 
+import { classifyPreopenSelection } from "./preopen-selection.js";
+
 const GROUPS = ["picks", "pool", "yesterdayLeaders"];
 const COUNTS = ["count", "verified", "missing", "hits", "openHits", "intradayHits", "held", "faded"];
 const FIVE_MIN = 300_000;
@@ -150,7 +152,7 @@ export function evaluatePreopenDay({frozen,bars,closedAt,asOf,minutesByCode={},c
     }
   }
   rows.sort((a,b) => (a.ranks.picks ?? 9)-(b.ranks.picks ?? 9) || (a.ranks.yesterdayLeaders ?? 9)-(b.ranks.yesterdayLeaders ?? 9));
-  return {market:frozen.market,tradeDate:frozen.tradeDate,asOf:new Date(knownAt).toISOString(),rows,
+  return {market:frozen.market,tradeDate:frozen.tradeDate,asOf:new Date(knownAt).toISOString(),selectionStatus:classifyPreopenSelection(frozen),rows,
     groups:Object.fromEntries(GROUPS.map(key=>[key,rates(groups[key])]))};
 }
 
@@ -166,14 +168,17 @@ export function summarizePreopenHistory(results, limit=20) {
   }
   const dates = [...byDate.keys()].sort().reverse().slice(0,Math.max(0,limit));
   const groups = Object.fromEntries(GROUPS.map(k=>[k,counts()]));
-  let emptyDays = 0;
+  let emptyDays = 0, incompleteDays = 0;
   for (const date of dates) {
     const day = byDate.get(date);
-    if (!day.groups.picks.count) emptyDays++;
+    if (!day.groups.picks.count) {
+      if (day.selectionStatus === "confirmed_empty") emptyDays++;
+      else incompleteDays++;
+    }
     for (const key of GROUPS) {
       for (const metric of COUNTS) groups[key][metric] += day.groups[key][metric];
     }
   }
-  return {market,days:dates.length,emptyDays,fromDate:dates.at(-1) || null,toDate:dates[0] || null,
+  return {market,days:dates.length,emptyDays,incompleteDays,fromDate:dates.at(-1) || null,toDate:dates[0] || null,
     groups:Object.fromEntries(GROUPS.map(key=>[key,rates(groups[key])]))};
 }

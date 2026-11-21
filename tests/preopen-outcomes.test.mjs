@@ -59,7 +59,16 @@ test("regular-session five-minute observations localize the first hit, ignore lu
 
 test("only observed days count, zero picks have no hit rate, market rates pool verified denominators, and same-day retries count once",()=>{
   const initial=evaluate({bars:[]}), final=evaluate({asOf:day+"T10:00:00Z"});
-  const empty=evaluate({frozen:{...frozen,candidates:[]}});
+  const fullyTested={referenceCount:5,missingReferenceCount:0,eligibleCount:5,confirmedMissCount:4,jumpedCount:1,unresolvedCount:0,qualifyingCount:0};
+  const empty=evaluate({frozen:{...frozen,total:5,coverage:fullyTested,candidates:[]}});
+  const old=evaluate({frozen:{...frozen,candidates:[]}});
+  const partial=evaluate({frozen:{...frozen,total:6,coverage:{...fullyTested,missingReferenceCount:1},candidates:[]}});
+  for (const result of [old, partial, {...empty,selectionStatus:undefined}]) {
+    const history=summarizePreopenHistory([result]);
+    assert.equal(history.emptyDays,0);
+    assert.equal(history.incompleteDays,1);
+    assert.equal(history.groups.picks.hitRate,null);
+  }
   assert.equal(summarizePreopenHistory([empty]).groups.picks.hitRate,null);
   assert.equal(summarizePreopenHistory([]).days,0);
   const summary=summarizePreopenHistory([initial,final,initial,{...empty,tradeDate:"2026-11-17"}]);

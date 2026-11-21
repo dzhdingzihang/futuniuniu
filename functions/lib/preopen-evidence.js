@@ -29,7 +29,7 @@ function closeRows(rows, market, previousClose, previousDate, asOf) {
 }
 
 function liquidStock(row, market) {
-  return row.metrics.amount >= GROWTH_SEGMENTS[market].amountFloor &&
+  return row.excluded!==true && row.metrics.amount >= GROWTH_SEGMENTS[market].amountFloor &&
     (market !== "美股" || row.metrics.price >= 3) && !/^(?:S\*?ST|\*?ST)|退市/.test(row.name);
 }
 
@@ -76,10 +76,10 @@ function acceptedEvents(news, previousClose, now, pool) {
   return events;
 }
 
-function readVolumeRatio(history, tradeDate, amount) {
+function readVolumeRatio(history, tradeDate, amount, basis) {
   const days = new Map();
   for (const point of history || []) {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(point.date) && point.date < tradeDate &&
+    if (point.basis===basis && /^\d{4}-\d{2}-\d{2}$/.test(point.date) && point.date < tradeDate &&
         Date.parse(tradeDate)-Date.parse(point.date)<=40*day && finite(point.amount) && point.amount > 0) days.set(point.date, point.amount);
   }
   if (days.size < 5) return null;
@@ -92,23 +92,29 @@ function eventItem(event) {
 }
 
 const feeds = {readNews, readIndustries, readAuction};
-export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, previousCloseAt, previousTradeDate, rows = [],
+export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, previousCloseAt, previousTradeDate, rows = [], total = rows.length,
   historyAmounts = {}, fetcher = fetch, providers = feeds}) {
   const now = Date.parse(asOf), cutoff = Date.parse(cutoffAt), previousClose = Date.parse(previousCloseAt);
   const coverage = {referenceCount:0, eligibleCount:0, industryCount:0, auctionAttempted:0, auctionCount:0,
-    eventCount:0, contextCount:0, abnormalVolumeCount:0, comparablePriceRejected:0};
+    eventCount:0, contextCount:0, abnormalVolumeCount:0, comparablePriceRejected:0, missingReferenceCount:total,
+    confirmedMissCount:0, unresolvedCount:0, qualifyingCount:0, jumpedCount:0, twoClassTestableCount:0};
   const result = {candidates:[], jumped:[], evidenceAvailable:false, reason:"", sources:[], coverage, observations:{}};
   if (![now,cutoff,previousClose].every(finite) || now > cutoff || now <= previousClose || !Object.hasOwn(GROWTH_SEGMENTS,market)) {
     result.reason="缺少可核实的盘前时点或前收。"; return result;
   }
   const refs = closeRows(rows, market, previousClose, previousTradeDate, now);
   coverage.referenceCount = refs.length;
+  coverage.missingReferenceCount = Math.max(0,total-refs.length);
   const eligible = refs.filter(r=>liquidStock(r,market));
   coverage.eligibleCount = eligible.length;
-  if (!eligible.length) {result.reason="缺少同一交易日前收和符合流动性门槛的股票。";return result;}
+  if (!eligible.length) {
+    result.evidenceAvailable=refs.length>0 && coverage.missingReferenceCount===0;
+    result.reason=result.evidenceAvailable ? "已逐只核对前收，全部股票均未通过流动性或证券资格门槛。" : "候选池前收不完整，无法确认本期空榜。";
+    return result;
+  }
   const allCodes = refs.map(r=>r.code);
   const [newsResult, industryResult] = await Promise.allSettled([
-    providers.readNews(market,fetcher), providers.readIndustries(market,allCodes,fetcher,now),
+    providers.readNews(market,fetcher,{previousClose,asOf:now}), providers.readIndustries(market,allCodes,fetcher,now),
   ]);
   const news = newsResult.status==="fulfilled" ? newsResult.value : {rows:[],available:false,label:"公司公告／新闻稿",detail:"本次来源请求失败。"};
   const events = acceptedEvents(news,previousClose,now,new Set(eligible.map(r=>r.code)));
@@ -118,15 +124,28 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
   coverage.contextCount=eligible.filter(r=>contexts.has(r.code)).length;
   coverage.contextTestableCount=eligible.filter(r=>tested.has(r.code)).length;
   coverage.auctionTestableCount=0;
+  coverage.volumeBaselineCount=0;
   const ordered = eligible.slice().sort((a,b)=>Number(events.has(b.code))-Number(events.has(a.code)) ||
     (contexts.get(b.code)?.strength||0)-(contexts.get(a.code)?.strength||0) ||
     b.metrics.amount-a.metrics.amount || a.code.localeCompare(b.code));
-  // Nasdaq's exchange tape is per security. The Asian matched-price feed supports bulk quotes.
-  const codes = ordered.slice(0,market==="美股" ? 8 : 3000).map(row=>row.code);
+  const codes = ordered.map(row=>row.code);
   let auction;
-  try {auction=await providers.readAuction(market,codes,tradeDate,cutoffAt,fetcher);}
-  catch {auction={rows:[],attempted:codes.length,available:false};}
+  try {auction=await providers.readAuction(market,codes,tradeDate,cutoffAt,fetcher,{asOf:now,eventCodes:events,contextCodes:contexts,references:new Map(eligible.map(row=>[row.code,row.metrics.price]))});}
+  catch {auction={rows:[],attempted:0,available:false};}
   coverage.auctionAttempted=auction.attempted;
+  coverage.tapeAttempted=auction.tapeAttempted || 0;
+  coverage.discoveryCount=auction.discoveryCount || 0;
+  if(market==="美股"){
+    coverage.cnbcAttempted=auction.attempted;
+    coverage.cnbcReturnedCount=auction.cnbcReturnedCount || 0;
+    coverage.cnbcSessionCount=auction.cnbcSessionCount || 0;
+    coverage.cnbcFreshCount=auction.cnbcFreshCount || 0;
+    coverage.tapeReturnedCount=auction.tapeReturnedCount || 0;
+  } else coverage.providerQuotedCount=auction.providerQuotedCount || 0;
+  coverage.auctionReturnedCount=auction.rows.length;
+  coverage.auctionFailedCount=auction.failedCount || 0;
+  coverage.auctionStaleCount=0;
+  coverage.eventTestableCount=0;
   const byCode = new Map(auction.rows.map(q=>[q.code,q]));
   // Only executed trades can establish an auction price. HK begins matching at 09:20.
   // A-share auction indications before 09:25 are not executions.
@@ -137,9 +156,10 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
     const raw = byCode.get(code);
     const sessionQuote = raw?.at >= start && raw.at <= now && raw.price>0 ? raw : null;
     const quote = sessionQuote && now-raw.at<=5*minute ? sessionQuote : null;
+    if(raw && !quote) coverage.auctionStaleCount++;
     // A different ex-date reference can create a fictitious jump. Exclude the affected security entirely.
     if (sessionQuote && (!(sessionQuote.prevClose>0) || Math.abs(sessionQuote.prevClose/prevClose-1)>0.001)) {
-      coverage.comparablePriceRejected++; continue;
+      coverage.comparablePriceRejected++; coverage.unresolvedCount++; continue;
     }
     const change = quote ? (quote.price/prevClose-1)*100 : null;
     const targetPrice=prevClose*1.05;
@@ -151,12 +171,10 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
     if (quote) {
       coverage.auctionCount++;
       if (quote.amountAt>=start && quote.amountAt<=now && now-quote.amountAt<=5*minute && finite(quote.amount) && quote.amount>0) {
-        result.observations[code]={amount:quote.amount,at:iso(quote.amountAt),price:quote.price};
-        ratio=readVolumeRatio(historyAmounts[code],tradeDate,quote.amount);
+        result.observations[code]={amount:quote.amount,at:iso(quote.amountAt),price:quote.price,basis:quote.basis};
+        ratio=readVolumeRatio(historyAmounts[code],tradeDate,quote.amount,quote.basis);
       }
     } else risks.push(alreadyJumped ? "当前价待核对；已取得较早的盘前触及记录。" : "盘前价未核实，无法排除已跳涨。");
-    if (ratio) coverage.auctionTestableCount++;
-    if (Number(news.available) + Number(tested.has(code)) + Number(Boolean(ratio)) >= 2) result.evidenceAvailable=true;
     const event=events.get(code);
     if (event) items.push(eventItem(event));
     if (quote && ratio?.ratio>=1.8 && quote.liquid && quote.multiple && change>=0.5 && change<5) {
@@ -166,14 +184,28 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
     } else if(quote && !ratio) risks.push("同一时点的历史成交样本不足，或累计成交尚无可核实的时间。");
     const context=contexts.get(code);
     if(context) items.push(context.item);
-    if(!alreadyJumped && items.length<2) continue;
+    // An RSS channel with zero matches never establishes a negative for every issuer.
+    // A single failing necessary auction criterion does establish a negative, even while the volume baseline warms up.
+    const eventKnown=Boolean(event) || news.windowComplete===true || Boolean(news.coveredCodes?.has(code));
+    const auctionKnown=Boolean(quote && (change<0.5 || change>=5 || ratio && (
+      ratio.ratio<1.8 || quote.liquid===false || quote.liquid===true && quote.multiple===true)));
+    if(ratio) coverage.volumeBaselineCount++;
+    if(eventKnown) coverage.eventTestableCount++;
+    if(auctionKnown) coverage.auctionTestableCount++;
+    const knownCount=Number(eventKnown)+Number(tested.has(code))+Number(auctionKnown);
+    if(knownCount>=2) coverage.twoClassTestableCount++;
+    if(!alreadyJumped && items.length<2) {
+      if(items.length+3-knownCount<2) coverage.confirmedMissCount++;
+      else coverage.unresolvedCount++;
+      continue;
+    }
     const candidate={code,name,currency,prevClose,targetPrice,prePrice:quote?.price??null,preChangePct:change,
       prePriceAt:quote ? iso(quote.at):null, evidence:items,reasons:items.map(e=>e.detail),risks};
     if(alreadyJumped) {
       const highCrossed=observedHigh!==null && observedHigh>=targetPrice;
       candidate.jumpPrice=highCrossed ? observedHigh : raw.price;
       candidate.jumpAt=iso(highCrossed ? raw.highAt : raw.at);
-      candidate.jumpSource=raw.source; candidate.jumpUrl=raw.url;
+      candidate.jumpSource=highCrossed && raw.highSource || raw.source; candidate.jumpUrl=highCrossed && raw.highUrl || raw.url;
       result.jumped.push(candidate);
     } else {
       // Evidence count dominates; confirmed participation then peer breadth break ties.
@@ -182,20 +214,24 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
     }
   }
   result.candidates.sort((a,b)=>b.score-a.score || a.code.localeCompare(b.code));
+  coverage.qualifyingCount=result.candidates.length;
+  coverage.jumpedCount=result.jumped.length;
+  result.evidenceAvailable=coverage.qualifyingCount>0 || (coverage.unresolvedCount===0 && coverage.missingReferenceCount===0);
   result.candidates=result.candidates.slice(0,3).map((r,i)=>({...r,rank:i+1}));
   result.jumped.sort((a,b)=>b.jumpPrice/b.prevClose-a.jumpPrice/a.prevClose || a.code.localeCompare(b.code));
-  const auctionLabel=market==="美股"?"Nasdaq 盘前成交":"开盘集合竞价成交";
+  const auctionLabel=market==="美股"?"CNBC 盘前报价与 Nasdaq 成交":"开盘集合竞价成交";
   result.sources=[
     {kind:"event",label:news.label,status:news.available?"partial":"unavailable",url:news.url,detail:news.detail+" 时间窗内命中 "+events.size+" 只。"},
     {kind:"context",label:"细分行业与昨日收盘",status:industries.size===0?"unavailable":industries.size===refs.length?"available":"partial",
       url:"https://www.tradingview.com/screener/",detail:(industries.description || "")+"已取得 "+industries.size+"/"+refs.length+" 只的行业映射，"+coverage.contextCount+" 只符合同行共振条件。"},
     {kind:"auction",label:auctionLabel,status:!coverage.auctionCount?"unavailable":coverage.auctionCount===eligible.length?"available":"partial",
       url:market==="美股"?"https://www.nasdaq.com/market-activity/pre-market":"https://gu.qq.com/",
-      detail:"已查询 "+codes.length+"/"+eligible.length+" 只，"+coverage.auctionCount+" 只有新鲜可比成交。"+
-        (market==="美股"?"按公司事件、昨日同行共振和流动性优先逐只核验。":market==="A股"?"09:25 撮合前的虚拟申报价不计入成交。":"只采用 09:20 起已撮合且能核对前收的报价。")+
-        " 其中 "+coverage.abnormalVolumeCount+" 只确认异常资金；前收不一致排除 "+coverage.comparablePriceRejected+" 只。"},
+      detail:(market==="美股"?"整池发现 "+coverage.discoveryCount+" 只盘前线索，其中 CNBC 返回 "+coverage.cnbcReturnedCount+" 只证券，有时标盘前成交 "+coverage.cnbcSessionCount+" 只。":"")+"已查询 "+coverage.auctionAttempted+"/"+eligible.length+" 只成交，"+coverage.auctionCount+" 只有新鲜可比报价。"+
+        (market==="美股"?"对 " +coverage.tapeAttempted+ " 只优先核验的股票另查 Nasdaq 逐笔；交易所公开行情至少延迟 15 分钟。":market==="A股"?"09:25 撮合前的虚拟申报价不计入成交。":"腾讯与东方财富行情可能延迟，只采用 09:20 起已撮合且能核对前收的报价。")+
+        " 来源请求失败 "+coverage.auctionFailedCount+" 次，非本时段或过时报价 "+coverage.auctionStaleCount+" 只。其中 "+coverage.abnormalVolumeCount+" 只确认异常资金；前收不一致排除 "+coverage.comparablePriceRejected+" 只。"},
   ];
-  result.reason=!result.evidenceAvailable ? "没有任何股票可同时核验两类独立证据，本次缺数据。" : result.candidates.length ? "至少两类独立证据同时成立，按证据数量、盘前放量和同行强度排序。" :
-    "本次采集范围内，尚未跳涨且同时满足两类独立证据的股票为 0 只。";
+  result.reason=result.candidates.length ? "至少两类独立证据同时成立，按证据数量、盘前放量和同行强度排序。" :
+    result.evidenceAvailable ? "已逐只核对，本期没有尚未跳涨且同时满足两类证据的股票。" :
+    "已排除 "+coverage.confirmedMissCount+" 只，"+coverage.unresolvedCount+" 只合格股票的证据不足，另有 "+coverage.missingReferenceCount+" 只缺少前收，无法确认本期空榜。";
   return result;
 }

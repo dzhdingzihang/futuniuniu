@@ -1,9 +1,11 @@
 // Read-only provenance for closed sessions. Never expose unfinished pre-open stages.
 import { intradaySession, loadSessionCalendar } from "../lib/intraday-session.js";
-import { PREOPEN_VERSION } from "../lib/preopen-cycle.js";
+import { PREOPEN_VERSION, adjacentPreopenSession, preopenSampleMinutes } from "../lib/preopen-cycle.js";
 
-const DAY = 86400000;
 const headers = {"Cache-Control":"private, no-store"};
+function referenceSummary(reference, date) {
+  return reference && reference.referenceDate === date ? {observedAt:reference.observedAt,validCount:reference.rows?.length,total:reference.total} : null;
+}
 const reply = (body, status=200) => Response.json(body, {status, headers});
 
 export async function onRequestGet({request, env, now=()=>new Date(), fetcher=fetch}) {
@@ -18,23 +20,19 @@ export async function onRequestGet({request, env, now=()=>new Date(), fetcher=fe
     const calendar = await loadSessionCalendar(fetcher, readAt);
     const session = intradaySession(market,noon,calendar);
     if (!session.closeAt || Date.parse(session.closeAt) > +readAt) return reply({error:"仅可查询已收盘的交易日。"},400);
-    let previous;
-    for (let back=1; back<=20; back++) {
-      const day = intradaySession(market,noon-back*DAY,calendar);
-      if (!day.calendarKnown) break;
-      if (day.closeAt) { previous = day.tradeDate; break; }
-    }
+    const previous = adjacentPreopenSession(market,date,calendar,-1)?.tradeDate;
     const get = suffix => env.RADAR_SNAPSHOTS.get(PREOPEN_VERSION + ":" + market + ":" + suffix, "json");
     const archive = await get("frozen:" + date);
     const reference = previous ? await get("ref:" + previous) : null;
+    const closingReference = await get("ref:" + date);
     const stages = [];
-    for (const slot of [555,560,562,563,564]) {
+    for (const slot of preopenSampleMinutes) {
       const row = await get("stage:" + date + ":" + slot);
       if (row?.tradeDate === date) stages.push({slot,observedAt:row.observedAt || null,frozenAt:row.frozenAt || null,
         referenceDate:row.referenceDate || null,eligibleCount:row.coverage?.eligibleCount ?? null});
     }
     return reply({market,date,readAt:readAt.toISOString(),referenceDate:previous || null,
-      reference:reference?.referenceDate===previous && reference ? {observedAt:reference.observedAt,validCount:reference.rows?.length,total:reference.total} : null,
+      reference:referenceSummary(reference,previous),closingReference:referenceSummary(closingReference,date),
       stages,publishedAt:archive?.publishedAt || null,archiveStatus:archive?.status || null,
       captureDiagnostics:archive?.captureDiagnostics || null});
   } catch { return reply({error:"采集诊断暂时无法读取。"},503); }

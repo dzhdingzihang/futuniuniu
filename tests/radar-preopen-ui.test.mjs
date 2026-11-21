@@ -30,7 +30,7 @@ test("default radar offers pre-open predictions, distinct confirmations and a se
 test("frozen cards show sourced timed evidence, coverage and separate gaps with no invented missing preprice",()=>{
   const html=ui()('preopenFrozen(data,"美股")',snapshot);
   const visibleText=html.replace(/<[^>]+>/g, "");
-  for(const label of ["业绩指引","同业线索","08:30","09:23","盘前价待核对","流动性","测试跳涨","盘前达标价","（+6.10%）","最多逐只核验 8 只","冻结前最新 +2.00%","竞价或盘前成交 0 只","部分可用"]) assert.ok(visibleText.includes(label),label);
+  for(const label of ["业绩指引","同业线索","08:30","09:23","盘前价待核对","流动性","测试跳涨","盘前达标价","（+6.10%）","冻结前最新 +2.00%","竞价或盘前成交 0 只","部分可用"]) assert.ok(visibleText.includes(label),label);
   assert.match(html,/href="https:\/\/example.org\/event"/);
   assert.doesNotMatch(html,/javascript:|盘后信息/);
   assert.match(html,/触及线[^<]*13\.1565/);
@@ -43,7 +43,7 @@ test("upcoming sessions keep last published date separate and distinguish a froz
   const draw=data=>run('(state.preopenData={markets:{"美股":data}},preopenMarketCard("美股"))',data);
   assert.match(draw(board),/最近收盘日 <time>2026-11-13<\/time>/);
   assert.match(draw({...board,latest:null}),/尚无历史冻结记录/);
-  const empty={...snapshot,tradeDate:board.sessionDate,cutoffAt:board.cutoffAt,candidates:[],jumped:[],reason:"证据不足"};
+  const empty={...snapshot,tradeDate:board.sessionDate,cutoffAt:board.cutoffAt,selectionStatus:"confirmed_empty",candidates:[],jumped:[],reason:"证据不足"};
   assert.match(draw({...board,phase:"frozen",latest:empty}),/本次冻结为空榜/);
   assert.doesNotMatch(draw({...board,phase:"missed",reason:"冻结缺档",latest:null}),/本次冻结为空榜/);
 });
@@ -113,7 +113,7 @@ test("weekend lead distinguishes exact-date unverified names, confirmed non-hits
   const run=ui();
   run('Date.now=(time=>()=>time)(Date.parse(data))',saturday);
   const us=restingBoard("美股",snapshot);
-  const cn=restingBoard("A股",{...snapshot,candidates:[]});
+  const cn=restingBoard("A股",{...snapshot,selectionStatus:"confirmed_empty",candidates:[]});
   const hk=restingBoard("港股",{...snapshot,tradeDate:"2026-11-12"});
   us.results=[{tradeDate:"2026-11-12",rows:[{code:"DEMO",name:"错日记录",groups:["picks"],status:"verified",hit:true}]}];
   const draw=()=>run('(state.preopenData=data,preopenPage())',{asOf:saturday,markets:{"A股":cn,"港股":hk,"美股":us}});
@@ -158,4 +158,26 @@ test("the latest pointer cannot replace a missing previous trading date; an exac
   assert.doesNotMatch(closed(),/测试样本/);
   snap.lastClosedRecord=snapshot;
   assert.match(closed(),/测试样本/);
+});
+
+test("legacy zero-pick archives report actual coverage in the market cards, current heading and weekend digest",()=>{
+  const run=ui();
+  const empty=(market,eligibleCount,auctionAttempted) => ({...snapshot,market,candidates:[],jumped:[],
+    coverage:{eligibleCount,auctionAttempted,auctionCount:0,eventCount:market==="港股"?1:0,contextCount:0}});
+  const hk=empty("港股",228,228), us=empty("美股",1215,8);
+  run('Date.now=(time=>()=>time)(Date.parse(data))',saturday);
+  const boards={"港股":restingBoard("港股",hk),"美股":restingBoard("美股",us),"A股":restingBoard("A股",{...snapshot,status:"unavailable",coverage:null,candidates:[]})};
+  const page=run('(state.preopenData={markets:data},preopenPage())',boards);
+  assert.match(page,/港股科技、纳斯达克证据覆盖不足/);
+  assert.match(page,/已查 8 只，可核验 0 只/);
+  assert.match(page,/事件命中 1 只/);
+  assert.doesNotMatch(page,/已发布空榜|上期空榜/);
+  run('Date.now=()=>Date.parse("2026-11-13T15:00:00Z")');
+  assert.match(run('(state.preopenData={markets:{"美股":data}},preopenHeadline())',{sessionDate:friday,phase:"frozen",latest:us}),/部分证据未能核实/);
+});
+
+test("archived capture detail distinguishes missing close references from retained successful slots",()=>{
+  const run=ui();
+  assert.match(run("preopenCaptureSummary(data)",{market:"A股",referenceDate:"2026-11-19",reference:null,stages:[]}),/11-19 的昨收参考目前查不到。.*查不到截止前完成的采样档/);
+  assert.match(run("preopenCaptureSummary(data)",{market:"港股",referenceDate:"2026-11-19",reference:{observedAt:"2026-11-20T01:11:00Z",validCount:268},stages:[{slot:555},{slot:560}]}),/09:11 入库，共 268 只。.*09:15、09:20/);
 });

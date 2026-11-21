@@ -31,12 +31,14 @@ async function reference(kv,rows = members) {
 }
 function fixtureReport(rows) {
   return {candidates:rows.map(r=>({code:r.code,name:r.name,prevClose:100,evidence:[],risk:""})),jumped:[],
-    sources:[],coverage:{total:200},reason:rows.length?"达标":"证据不足",observations:{}};
+    evidenceAvailable:true,sources:[],coverage:{referenceCount:200,eligibleCount:200,confirmedMissCount:200-rows.length,
+      unresolvedCount:0,qualifyingCount:rows.length,missingReferenceCount:0,jumpedCount:0},reason:rows.length?"达标":"证据不足",observations:{}};
 }
 async function prepare(kv,slot,time,selected,override={}) {
   return preparePreopen({...base(kv),slot,clock:clock(time),build:async input=>{
     assert.equal(input.previousTradeDate,previous);
     assert.equal(input.rows.length,200);
+    assert.equal(input.total,200);
     assert.equal(input.cutoffAt,date+"T01:25:00.000Z");
     return fixtureReport(selected);
   },...override});
@@ -89,12 +91,16 @@ test("a real empty forecast is distinct from a missing forecast, and a delayed p
   const times=[at("01:24:55"),at("01:25:02")];
   await prepare(kv,564,"01:24:55",[members[0]],{clock:()=>times.shift() || at("01:25:02")});
   await publish(kv,"01:25:05");
-  const empty=(await read(kv,"01:26:00")).latest;
+  assert.equal((await read(kv,"01:26:00")).latest,null);
+  await publish(kv,"01:28:05");
+  const empty=(await read(kv,"01:29:00")).latest;
+  assert.equal(empty.selectionStatus,"confirmed_empty");
+  assert.match(empty.captureDiagnostics[0].reason,/超过截止/);
   assert.equal(empty.status,"frozen");
   assert.equal(empty.candidates.length,0);
   assert.equal(empty.frozenAt,date+"T01:15:03.000Z");
   const noFreeze=new KV();
-  await publish(noFreeze,"01:25:02");
+  await publish(noFreeze,"01:28:02");
   assert.equal((await read(noFreeze,"01:26:00")).latest.status,"unavailable");
   assert.equal((await read(noFreeze,"01:26:00")).evaluation.days,0);
   const restart=new KV();
@@ -130,12 +136,13 @@ test("shared cron dispatches only jobs due at this UTC tick",async()=>{
   const scheduler=createRadarScheduler(...["daily","intraday","preopen"].map(id=>async opts=>calls.push([id,opts])));
   const {triggers}=JSON.parse(await readFile(new URL("../workers/radar-scheduler/wrangler.jsonc",import.meta.url),"utf8"));
   for(const [time,expected] of [["00:10:00",["daily"]],["00:40:00",["daily"]],
-    ["01:24:00",["preopen"]],["01:25:00",["intraday","preopen"]],["01:30:00",["intraday"]],
+    ["01:22:58",["preopen"]],["01:24:00",["preopen"]],["01:28:58",["preopen"]],["01:25:00",["intraday","preopen"]],["01:30:00",["intraday"]],
     ["07:35:00",["intraday","preopen"]],["01:45:00",["intraday"]]]) {
     calls.length=0;
     let done;
     const scheduled=at(time);
-    scheduler.scheduled({cron:triggers.crons[scheduled.getUTCHours()===0 ? 0 : 1],scheduledTime:+scheduled},
+    const cronIndex=scheduled.getUTCHours()===0 ? 0 : [22,28].includes(scheduled.getUTCMinutes()) ? 2 : 1;
+    scheduler.scheduled({cron:triggers.crons[cronIndex],scheduledTime:+scheduled},
       {RADAR_SNAPSHOTS:{}},{waitUntil:p=>{done=p;}});
     await done;
     assert.deepEqual(calls.map(c=>c[0]),expected,time);
@@ -173,7 +180,7 @@ test("an archived issue survives a failed latest-pointer write, and a later publ
   }
   const kv = new PartialKV();
   await reference(kv);
-  await prepare(kv,560,"01:20:12",[members[4]]);
+  await prepare(kv,564,"01:24:12",[members[4]]);
   await assert.rejects(publish(kv,"01:25:01"), /simulated/);
   const archived = (await read(kv,"01:25:08")).latest;
   assert.equal(archived.candidates[0].code, members[4].code);
@@ -186,7 +193,7 @@ test("an archived issue survives a failed latest-pointer write, and a later publ
 test("a later retry with weaker minute coverage cannot erase a previously verified first-touch interval", async () => {
   const kv = new KV();
   await reference(kv);
-  await prepare(kv,560,"01:20:10",[members[4]]);
+  await prepare(kv,564,"01:24:10",[members[4]]);
   await publish(kv,"01:25:02");
   const getRows = async () => members.map((r,i) => ({...r,quoteUpdatedAt:date+"T07:05:00Z",
     metrics:{...r.metrics,prevClose:100,open:100,high:i===4?106:103,low:98,price:101}}));
@@ -212,4 +219,96 @@ test("public radar exposes the actual closing session and restores its archive w
   assert.equal(weekend.lastClosedDate,"2026-11-27");
   assert.equal(weekend.lastClosedRecord.status,"unavailable");
   assert.equal(weekend.lastClosedRecord.universe,undefined);
+});
+
+test("a delayed close cron captures the reference; an afternoon retry accepts delayed final timestamps",async()=>{
+  const kv=new KV();
+  const date="2026-11-20";
+  const session=intradaySession(market,new Date(date+"T07:35:58Z"));
+  const makeFetch=stamp=>async url=>{
+    if(String(url).includes("radar-universe.json")) return Response.json(directory);
+    if(String(url).includes("qt.gtimg.cn")) {
+      const rows=members.map(({code})=>{
+        const fields=Array(72).fill("");
+        Object.assign(fields,{1:"企业",2:code,3:"100",4:"90",5:"91",30:stamp,32:"10",33:"101",34:"89",35:"1/2/100000000",45:"10"});
+        return 'v_sz'+code+'="'+fields.join("~")+'";';
+      });
+      return new Response(rows.join("\n"));
+    }
+    throw Error("unexpected fetch "+url);
+  };
+  const calendar=JSON.parse(await readFile(new URL("../assets/radar-calendar.json",import.meta.url),"utf8"));
+  const run=(time,stamp)=>{
+    const tick=new Date(date+"T"+time+"Z");
+    return runPreopenCycle({env:{RADAR_SNAPSHOTS:kv},scheduledAt:tick,clock:()=>tick,calendar,fetcher:makeFetch(stamp)});
+  };
+  await assert.rejects(run("07:35:58","20261120161400"),/覆盖不足/);
+  const attempt=await kv.get("preopen-v1:A股:reference-attempt:"+session.tradeDate);
+  assert.deepEqual(attempt.counts,{total:200,received:200,closing:0,usable:0});
+  assert.equal(await kv.get("preopen-v1:A股:ref:"+date),null);
+  await run("07:55:58","20261120155100");
+  const id="preopen-v1:A股:ref:"+date;
+  assert.equal((await kv.get(id)).rows.length,200);
+  kv.data.delete(id);
+  await run("08:45:58","20261120161400");
+  assert.equal((await kv.get(id)).rows[0].quoteUpdatedAt,date+"T08:14:00.000Z");
+});
+
+test("missing previous close is reported for each sample and survives publication",async()=>{
+  const kv=new KV();
+  for(const [slot,time] of [[555,"01:15:58"],[562,"01:22:58"],[564,"01:24:58"]]){
+    await prepare(kv,slot,time,[]);
+  }
+  await publish(kv,"01:25:58");
+  assert.equal(await kv.get("preopen-v1:A股:frozen:"+date),null);
+  await publish(kv,"01:28:58");
+  const snapshot=(await read(kv,"01:29:30")).latest;
+  assert.equal(snapshot.status,"unavailable");
+  assert.equal(snapshot.selectionStatus,"unavailable");
+  assert.deepEqual(snapshot.captureDiagnostics.map(a=>a.slot),[555,562,564]);
+  assert.match(snapshot.reason,/前一交易日的有效收盘参考/);
+});
+
+test("09:28 publication can recover a pre-cutoff stage that only becomes visible after 09:25",async()=>{
+  const kv=new KV();
+  await reference(kv);
+  await prepare(kv,562,"01:22:58",[members[0]]);
+  await publish(kv,"01:25:58");
+  assert.equal(await kv.get("preopen-v1:A股:frozen:"+date),null);
+  await prepare(kv,564,"01:24:59",[members[1]]);
+  await publish(kv,"01:28:58");
+  const snapshot=(await read(kv,"01:29:00")).latest;
+  assert.equal(snapshot.candidates[0].code,members[1].code);
+  assert.equal(snapshot.sampleMinute,564);
+});
+
+test("a newer incomplete sample with a verified prior jump supersedes an earlier pick",async()=>{
+  const kv=new KV();
+  await reference(kv);
+  await prepare(kv,562,"01:22:58",[members[0]]);
+  await prepare(kv,564,"01:24:50",[],{build:async()=>({
+    ...fixtureReport([]),evidenceAvailable:false,jumped:[{code:members[0].code}],
+    coverage:{referenceCount:200,eligibleCount:200,unresolvedCount:199,jumpedCount:1},
+  })});
+  await publish(kv,"01:25:58");
+  const snapshot=(await read(kv,"01:26:10")).latest;
+  assert.equal(snapshot.selectionStatus,"incomplete");
+  assert.equal(snapshot.candidates.length,0);
+  assert.equal(snapshot.jumped[0].code,members[0].code);
+});
+
+test("same-slot volume history preserves each provider basis and reads legacy numeric observations",async()=>{
+  const kv=new KV();
+  await reference(kv);
+  const key="preopen-v1:A股:amounts:562", code=members[0].code;
+  await kv.put(key,JSON.stringify([
+    {date:"2026-11-12",amounts:{[code]:500}},
+    {date:"2026-11-13",amounts:{[code]:{amount:1100,basis:"new-feed"}}}
+  ]));
+  await prepare(kv,562,"01:22:50",[],{build:async ({historyAmounts,asOf})=>{
+    assert.deepEqual(historyAmounts[code],[{date:"2026-11-12",amount:500,basis:undefined},
+      {date:"2026-11-13",amount:1100,basis:"new-feed"}]);
+    return {...fixtureReport([]),observations:{[code]:{amount:1200,at:asOf,basis:"new-feed"}}};
+  }});
+  assert.deepEqual((await kv.get(key)).at(-1).amounts[code],{amount:1200,basis:"new-feed"});
 });
