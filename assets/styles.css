@@ -1966,8 +1966,8 @@ input, textarea { caret-color: var(--blue); }
 .quote-strip-heading { flex: 0 1 220px; gap: 3px; }
 .quote-strip-heading strong { color: var(--ink); font-size: 13px; }
 .quote-strip-heading small { font-size: 11px; }
-.quote-strip-item { flex: 1 1 0; border-left: 1px solid var(--line); gap: 4px; }
-.quote-strip-meta, .quote-strip-data { display: flex; align-items: baseline; gap: 10px; justify-content: space-between; }
+.quote-strip-item { grid-template-columns: minmax(0, 1fr); flex: 1 1 0; border-left: 1px solid var(--line); gap: 4px; }
+.quote-strip-meta, .quote-strip-data { min-width: 0; display: flex; align-items: baseline; gap: 10px; justify-content: space-between; }
 .quote-strip-meta { font-size: 11px; }
 .quote-strip-data, .quote-strip-meta time { font-family: var(--terminal-mono); font-variant-numeric: tabular-nums; }
 .quote-strip-data { font-size: 15px; line-height: 1.35; }
