@@ -1,3 +1,9 @@
+.ledger-unavailable .card { margin: clamp(26px, 6vw, 80px) auto; padding: clamp(22px, 4vw, 44px); max-width: 560px; border: 1px solid var(--line); }
+.ledger-unavailable h1 { margin: 0; font-size: 24px; }
+.ledger-unavailable p { color: var(--muted); line-height: 1.7; margin: 12px 0 22px; }
+.ledger-unavailable .card > div { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
+.ledger-unavailable a { color: var(--blue); text-underline-offset: 3px; }
+
 .overview-page {
   --overview-rule: #2a394b;
   --overview-muted: #a5b5c8;
@@ -89,6 +95,29 @@
 .account-fee-notes .text-link { color: var(--overview-accent); text-decoration: underline; text-underline-offset: 3px; }
 .account-fee-notes .order-fee-note strong + span { color: var(--overview-muted); }
 .overview-page .account-fee-notes .cost-policy-form { margin: 8px 0; }
+.overview-contributions {
+  display: grid; grid-template-columns: minmax(170px, .8fr) minmax(0, 1.6fr);
+  align-items: center; column-gap: clamp(18px, 3vw, 55px); margin-top: 16px;
+  padding: 20px 22px; background: var(--overview-deep); border: 1px solid var(--overview-rule); border-radius: 10px;
+}
+.overview-contributions header { display: grid; align-content: start; gap: 5px; }
+.overview-contributions h2 { margin: 0; font-size: 17px; line-height: 1.5; }
+.overview-contributions p, .overview-contributions small, .contribution-item dt {
+  margin: 3px 0 0; color: var(--overview-muted); font-size: 12px; line-height: 1.6;
+}
+.overview-contributions a { color: var(--overview-accent); text-decoration: none; text-underline-offset: 3px; }
+.overview-contributions header a { justify-self: start; padding-block: 3px; font-size: 12px; }
+.overview-contributions a:is(:hover, :focus-visible) { text-decoration: underline; }
+.overview-contributions dl { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%, 180px), 1fr)); gap: 16px; margin: 0; }
+.contribution-item { min-width: 0; border-inline-start: 1px solid var(--overview-rule); padding-inline-start: clamp(12px, 2vw, 36px); }
+.contribution-item dd { margin: 3px 0 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.contribution-item dd :is(strong, a) { color: var(--overview-text); overflow-wrap: anywhere; font-size: 16px; font-weight: 650; }
+.overview-page :is(.contribution-item dd, .ranking-security) a { color: inherit; text-decoration: underline dotted #587189; text-underline-offset: 4px; min-width: 0; }
+.overview-page :is(.contribution-item dd, .ranking-security) a:is(:hover, :focus-visible) { color: var(--overview-accent); text-decoration: underline; }
+.contribution-item b { font: 600 18px/1.45 var(--overview-numbers); overflow-wrap: anywhere; }
+.overview-cost-details > summary { cursor: pointer; color: var(--overview-muted); width: fit-content; font-size: 12px; padding: 5px 0; }
+.overview-cost-details > summary:is(:hover, :focus-visible) { color: var(--overview-accent); }
+.overview-page .statement-note .info-tip { vertical-align: baseline; }
 .overview-page .market-overview-section .overview-section-heading { align-items: baseline; }
 .overview-page .overview-section-heading p { max-width: 48em; }
 .market-allocation {
@@ -197,15 +226,6 @@
 .overview-page .info-icon { border-color: #637d96; color: #b1c8de; }
 .overview-page .info-popover { color: #edf3fa; background: #1a2b3d; border-color: #46617d; }
 .overview-page .chart-legend, .overview-page .market-scale-note { color: var(--overview-muted); }
-.overview-page .holding-breadth {
-  display: grid; grid-template-columns: max-content minmax(70px,1fr) auto; align-items: center; gap: 16px;
-  margin: 10px 0 0; padding: 13px 18px; border: 1px solid var(--overview-rule); border-radius: 8px; background: var(--overview-deep);
-}
-.overview-page .holding-breadth h3 { color: #d6e4f1; margin: 0; font-size: 13px; font-weight: 650; }
-.overview-page .holding-share-track { height: 6px; background: #243342; }
-.overview-page .holding-share-legend { color: var(--overview-muted); }
-.overview-page .holding-share-legend b { color: var(--overview-text); }
-.overview-page .holding-share-legend b::after { content: " 只"; font-family: system-ui, sans-serif; font-size: 10px; font-weight: 400; color: var(--overview-muted); }
 .statement-quote { display: flex; flex-wrap: wrap; width: 100%; gap: 0 18px; align-items: center; justify-content: space-between; }
 .statement-spark { width: 125px; flex-shrink: 0; margin: 8px 0; }
 .statement-spark svg { display: block; width: 100%; height: 34px; }
@@ -214,15 +234,17 @@
   .statement-spark { width: 92px; }
 }
 @media (max-width: 740px) {
-  .overview-page .holding-breadth { grid-template-columns: minmax(0,1fr) auto; gap: 9px 12px; padding: 12px 14px; }
-  .overview-page .holding-share-track { grid-row: 2; grid-column: 1 / -1; }
-  .overview-page .holding-share-legend { gap: 4px 9px; }
+  .overview-contributions { grid-template-columns: 1fr; row-gap: 12px; padding: 15px; }
+  .overview-contributions header { display: flex; justify-content: space-between; gap: 8px; }
+  .overview-contributions header a { white-space: nowrap; align-self: start; }
+  .overview-contributions dl { grid-template-columns: repeat(2, minmax(0,1fr)); padding-top: 12px; border-top: 1px solid var(--overview-rule); gap: 12px; }
+  .overview-contributions .contribution-item:first-child { border-inline-start: 0; padding-inline-start: 0; }
+  .overview-contributions .contribution-item:only-child { grid-column: 1 / -1; }
+  .contribution-item dd { display: grid; gap: 2px; }
   .statement-quote { gap: 0 8px; }
 }
 @media (max-width: 440px) {
-  .overview-page .holding-breadth { grid-template-columns: minmax(0,1fr); }
-  .overview-page .holding-share-track { grid-row: 2; }
-  .overview-page .holding-share-legend { grid-row: 3; }
+  .contribution-item b { font-size: 16px; }
   .statement-spark { width: 76px; }
 }
 
@@ -253,9 +275,9 @@
   .overview-page .trend-segmented button { flex: 1; min-width: 0; }
 }
 @media (max-width: 600px) {
-  .overview-page :is(.statement-head,.account-secondary .metric-label,.chart-heading > div:first-child) { position: relative; }
-  .overview-page :is(.statement-head,.account-secondary .metric-label,.chart-heading) .info-tip { position: static; }
-  .overview-page :is(.statement-head,.account-secondary .metric-label,.chart-heading) .info-popover {
+  .overview-page :is(.statement-head,.statement-note,.account-secondary .metric-label,.chart-heading > div:first-child) { position: relative; }
+  .overview-page :is(.statement-head,.statement-note,.account-secondary .metric-label,.chart-heading) .info-tip { position: static; }
+  .overview-page :is(.statement-head,.statement-note,.account-secondary .metric-label,.chart-heading) .info-popover {
     top: calc(100% + 3px); bottom: auto; right: auto; left: 0; width: min(244px, 72vw);
   }
   .overview-page .overview-section-heading h1 { font-size: 27px; }

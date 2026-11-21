@@ -43,6 +43,8 @@ function parseKlines(payload, days, strictOhlc) {
         high: Math.max(highPrice, openPrice, close),
         low: Math.min(lowPrice, openPrice, close),
         close,
+        ...(![open, high, low].every(value => value > 0) || high < Math.max(open, close) || low > Math.min(open, close)
+          ? { estimatedRange: true } : {}),
       } : null;
     })
     .filter(Boolean)
@@ -84,6 +86,8 @@ function parseYahooPayload(payload, days, strictOhlc) {
         high: Math.max(high, open, close),
         low: Math.min(low, open, close),
         close,
+        ...(![opens[index], highs[index], lows[index]].every(value => Number.isFinite(value) && value > 0)
+          || high < Math.max(open, close) || low > Math.min(open, close) ? { estimatedRange: true } : {}),
       };
     })
     .filter(Boolean)
@@ -228,19 +232,19 @@ async function fetchHistory(symbol, days, fetcher, startDate, strictOhlc) {
   const providers = symbol.startsWith("gb_") ? [yahoo, ...eastmoney] : [...eastmoney, yahoo];
   providers.push(...tencentKeysFor(symbol).map(key => fetch => fetchTencentKey(key, days, fetch, strictOhlc)));
   const now = Date.now();
-  const deadline = now + 18000;
+  const ordinary = !startDate && !strictOhlc;
+  const deadline = now + (ordinary ? 15000 : 18000);
   const today = new Date(now).toISOString().slice(0, 10);
   const recent = new Date(now - 10 * 86400000).toISOString().slice(0, 10);
-  const radarCutoff = strictOhlc ? latestClosedWeekday(symbol, now) : "";
-  const bounded = Boolean(startDate || strictOhlc);
+  const radarCutoff = !startDate ? latestClosedWeekday(symbol, now) : "";
   let best = [];
   let bestScore = 0;
 
   for (const provider of providers) {
     try {
       const remaining = deadline - Date.now();
-      if (bounded && remaining <= 0) break;
-      const result = bounded ? await timedHistory(provider, fetcher, Math.min(4000, remaining)) : await provider(fetcher);
+      if (remaining <= 0) break;
+      const result = await timedHistory(provider, fetcher, Math.min(ordinary ? 2500 : 4000, remaining));
       const bars = Array.isArray(result) ? result : result.series;
       if (strictOhlc) {
         const series = radarBars(bars, radarCutoff);
@@ -258,8 +262,19 @@ async function fetchHistory(symbol, days, fetcher, startDate, strictOhlc) {
         continue;
       }
       if (!startDate) {
-        if (bars.length >= Math.min(days, 61)) return bars;
-        if (bars.length > best.length) best = bars;
+        const series = bars.filter(bar => /^\d{4}-\d{2}-\d{2}$/.test(bar.date) && bar.date <= radarCutoff && bar.close > 0)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        const last = series.at(-1)?.date;
+        if (!last) continue;
+        const enough = series.length >= Math.min(days, 61);
+        const genuine = series.slice(-Math.min(60, days)).every(bar => !bar.estimatedRange);
+        if (last === radarCutoff && enough && genuine) return series;
+        const tier = (last >= recent ? 4 : 0) + (enough && genuine ? 3 : genuine ? 2 : 1);
+        const bestDate = best.at(-1)?.date;
+        if (tier > bestScore || tier === bestScore && (last > bestDate || last === bestDate && series.length > best.length)) {
+          best = series;
+          bestScore = tier;
+        }
         continue;
       }
       const series = bars.filter(bar => bar.date <= today && Number.isFinite(Date.parse(bar.date)) && bar.close > 0)

@@ -1814,6 +1814,7 @@ details.radar-detail { padding-top: 0; }
 .identity-mark { width: 42px; height: 42px; flex: none; }
 .identity-word { display: block; width: 134px; height: auto; }
 .global-nav { align-items: center; }
+.global-nav a.nav-link { text-decoration: none; }
 .global-nav .nav-link {
   align-self: center;
   min-height: 40px;
@@ -1967,6 +1968,16 @@ input, textarea { caret-color: var(--blue); }
 .quote-strip-heading strong { color: var(--ink); font-size: 13px; }
 .quote-strip-heading small { font-size: 11px; }
 .quote-strip-item { grid-template-columns: minmax(0, 1fr); flex: 1 1 0; border-left: 1px solid var(--line); gap: 4px; }
+.quote-strip-item[href] { text-decoration: none; color: inherit; }
+.quote-strip-item[href]:focus-visible { outline: 2px solid #8fc8ff; outline-offset: -2px; }
+@media (hover: hover) {
+  .quote-strip-item[href]:hover { background: #172637; }
+  .quote-strip-item[href]:hover .quote-strip-data > span { text-decoration: underline; text-underline-offset: .24em; }
+}
+.holding-route-note { padding: 10px 14px; color: var(--ink); border-left: 2px solid var(--muted); }
+.sold-scope { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 16px; color: var(--ink); }
+.sold-scope a { color: #9acaff; text-underline-offset: .22em; }
+.holding-main-row, .holding-mobile-card { scroll-margin-top: 80px; }
 .quote-strip-meta, .quote-strip-data { min-width: 0; display: flex; align-items: baseline; gap: 10px; justify-content: space-between; }
 .quote-strip-meta { font-size: 11px; }
 .quote-strip-data, .quote-strip-meta time { font-family: var(--terminal-mono); font-variant-numeric: tabular-nums; }

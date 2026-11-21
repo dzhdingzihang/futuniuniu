@@ -37,12 +37,13 @@ test("frozen cards show sourced timed evidence, coverage and separate gaps with 
 });
 test("upcoming sessions keep last published date separate and distinguish a frozen empty list from a missed archive",()=>{
   const run=ui();
+  run('Date.now = () => Date.parse("2026-11-16T15:00:00Z")');
   const board={market:"美股",label:"纳斯达克",sessionDate:"2026-11-16",scope:"测试范围",total:220,
     cutoffAt:"2026-11-16T14:25:00Z",phase:"waiting",reason:"等待盘前窗口",latest:snapshot};
   const draw=data=>run('(state.preopenData={markets:{"美股":data}},preopenMarketCard("美股"))',data);
   assert.match(draw(board),/上一次记录 · 2026-11-13/);
   assert.match(draw({...board,latest:null}),/尚无历史冻结记录/);
-  const empty={...snapshot,tradeDate:board.sessionDate,candidates:[],jumped:[],reason:"证据不足"};
+  const empty={...snapshot,tradeDate:board.sessionDate,cutoffAt:board.cutoffAt,candidates:[],jumped:[],reason:"证据不足"};
   assert.match(draw({...board,phase:"frozen",latest:empty}),/本次冻结为空榜/);
   assert.doesNotMatch(draw({...board,phase:"missed",reason:"冻结缺档",latest:null}),/本次冻结为空榜/);
 });
@@ -55,4 +56,47 @@ test("evaluation reports denominators, missing quotes, opening hits and fading d
   const html=ui()('preopenReview(data,"美股")',args);
   for(const label of ["盘前主榜","全候选池","昨日涨幅前三","4 / 5","80.0%","开盘即触及 1 笔","收盘回落 2 笔","甲测试","缺数据"]) assert.ok(html.includes(label),label);
   assert.match(html,/0 \/ 0<\/td><td>—/);
+});
+
+test("a prior session or failed refresh never presents archived names as current candidates", () => {
+  const run=ui();
+  run('Date.now = () => Date.parse("2026-11-16T15:00:00Z")');
+  const board={market:"美股",sessionDate:snapshot.tradeDate,phase:"frozen",latest:snapshot};
+  const draw=()=>run('(state.preopenData={markets:{"美股":data}}, [preopenHeadline(), preopenMarketCard("美股")])', board);
+  const [headline, card]=draw();
+  assert.doesNotMatch(headline,/股票入选/);
+  assert.match(card,/上一次记录 · 2026-11-13/);
+  assert.doesNotMatch(card,/核对盘中信号/);
+  run('Date.now = () => Date.parse("2026-11-13T15:00:00Z"); state.preopenError="读取失败"');
+  assert.doesNotMatch(draw()[1],/核对盘中信号/);
+});
+
+test("verified candidates have a specific next step and aggregate only open lots in the same market", () => {
+  const run=ui();
+  run('Date.now = () => Date.parse("2026-11-13T15:00:00Z")');
+  run('state.holdings = data', [
+    {market:"美股",code:"DEMO",qty:5},{market:"美股",code:"demo",qty:2},
+    {market:"美股",code:"DEMO",qty:4,status:"sold"},{market:"港股",code:"DEMO",qty:20}
+  ]);
+  const html=run('(state.preopenData={markets:{"美股":{sessionDate:data.tradeDate,phase:"frozen",latest:data}}}, preopenMarketCard("美股"))',snapshot);
+  assert.match(html,/已持有 7 股/);
+  assert.match(html,/data-radar-jump="intraday" data-research-market="美股"/);
+  assert.match(html,/调高预期/);
+  const broken={...snapshot,candidates:[{...snapshot.candidates[0],evidence:[snapshot.candidates[0].evidence[0]]}]};
+  const card=run('(state.preopenData={markets:{"美股":{sessionDate:data.tradeDate,phase:"frozen",latest:data}}}, preopenMarketCard("美股"))',broken);
+  assert.match(card,/候选证据待核实/);
+  assert.doesNotMatch(card,/本次冻结为空榜|核对盘中信号/);
+});
+
+test("intraday state excludes an earlier trigger from a fresh scan and earlier-session archives from the headline",()=>{
+  const run=ui();
+  const now="2026-11-13T15:00:00Z";
+  const row={code:"DEMO",name:"模拟标的",triggerAt:now,triggerPrice:10,targetPrice:10.5};
+  const snap={market:"美股",sessionDate:"2026-11-13",phase:"open",status:"live",scannedAt:now,
+    closeAt:"2026-11-13T21:00:00Z",candidates:[row,{...row,code:"STALE",triggerAt:"2026-11-13T13:45:00Z"}]};
+  run('Date.now=()=>Date.parse("2026-11-13T15:00:01Z");state.intradayData={markets:{"美股":data}}',snap);
+  assert.match(run('intradayPage()'),/本轮有 1 只股票触发/);
+  assert.doesNotMatch(run('intradayPage()'),/STALE/);
+  run('state.intradayError="读取失败"');
+  assert.doesNotMatch(run('intradayPage()'),/本轮已触发|本轮有 1 只股票触发/);
 });

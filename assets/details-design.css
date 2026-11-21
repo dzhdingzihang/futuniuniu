@@ -15,6 +15,49 @@
 }
 .action-page .holding-page-heading, .sold-page > header { margin-bottom: 19px; }
 .action-page .holding-page-heading p, .sold-page .section-helper { color: var(--ledger-muted); }
+.action-page .holding-check {
+  margin: 0 0 18px; padding: clamp(16px, 2.4vw, 32px);
+  color: var(--ledger-ink); background: var(--ledger-panel); border-color: var(--ledger-line);
+}
+.holding-check > header { display: flex; align-items: center; justify-content: space-between; gap: 14px 24px; flex-wrap: wrap; }
+.holding-check h2 { margin: 0; font-size: clamp(19px, 2vw, 25px); letter-spacing: -.035em; }
+.holding-check-switch { display: flex; gap: 6px; flex-wrap: wrap; }
+.holding-check-switch button, .holding-check-more {
+  appearance: none; color: var(--ledger-muted); background: transparent; font: inherit;
+  font-size: 13px; padding: 7px 10px; min-height: 36px; border: 1px solid var(--ledger-line); border-radius: 6px; cursor: pointer;
+}
+.holding-check-switch b { margin-left: 2px; font-family: var(--desk-numbers); }
+.holding-check-switch [aria-pressed="true"], .holding-check-more:hover { color: #b7e1fc; background: var(--desk-selected); border-color: #52839b; }
+.holding-check-switch [data-holding-check-group="review"][aria-pressed="true"] { color: #ffd19a; background: #31291f; border-color: #796345; }
+.holding-check-list { list-style: none; margin: 18px 0 0; padding: 0; }
+.holding-check-list li {
+  display: grid; grid-template-columns: minmax(122px, .85fr) minmax(160px, 1.4fr) minmax(200px, 1.8fr) auto;
+  align-items: start; gap: 6px clamp(12px, 2vw, 28px); padding: 15px 0; border-top: 1px solid var(--ledger-line);
+}
+.holding-check-stock { display: grid; gap: 5px; min-width: 0; }
+.holding-check-stock strong { font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+.holding-check-reason b, .holding-check-detail b { font-size: 14px; }
+.holding-check-list p, .holding-adjustment p, .holding-check-detail p { margin: 3px 0 0; color: var(--ledger-muted); line-height: 1.6; font-size: 13px; }
+.holding-check-list small { color: var(--ledger-muted); font: 12px/1.5 var(--desk-numbers); }
+.holding-check-next > span, .holding-adjustment h4 { color: var(--ledger-ink); font-size: 13px; font-weight: 650; }
+.holding-check-next small { display: block; margin-top: 3px; }
+.holding-check-list a { color: var(--desk-accent); font-size: 13px; padding: 7px 0; text-decoration: none; white-space: nowrap; }
+.holding-check-list a:hover { text-decoration: underline; }
+.holding-check-more { display: block; margin: 5px auto 0; }
+.holding-check-empty { margin: 15px 0 0; color: var(--ledger-muted); }
+.holding-check-detail, .holding-adjustment { padding: 12px 0; border-bottom: 1px solid var(--ledger-line); }
+.holding-check-detail { margin-bottom: 10px; }
+.holding-adjustment h4 { margin: 0; }
+@media (max-width: 760px) {
+  .holding-check > header { display: grid; }
+  .holding-check-switch { gap: 4px; }
+  .holding-check-switch button { padding: 6px 8px; min-height: 40px; }
+  .holding-check-list li { grid-template-columns: minmax(0, 1fr) auto; row-gap: 8px; padding: 14px 0; }
+  .holding-check-stock { grid-area: 1 / 1; gap: 2px; }
+  .holding-check-list a { grid-area: 1 / 2; align-self: start; }
+  .holding-check-reason, .holding-check-next { grid-column: 1 / -1; }
+  .holding-check-list p { display: inline; margin-left: 6px; }
+}
 .sold-page > header .page-title { margin: 0; }
 .action-page .holding-snapshot-card, .sold-page .sale-summary { padding: 0; overflow: hidden; }
 .action-page .holding-snapshot-grid, .sale-summary-body {

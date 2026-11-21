@@ -98,7 +98,8 @@ test("rates API labels fixed fallback rates without claiming a market date", asy
   });
 });
 
-test("history API returns 90 daily points from a six-month Yahoo request", async () => {
+test("history API returns 90 daily points from a six-month Yahoo request", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-04-11T02:00:00Z") });
   const timestamps = Array.from({ length: 100 }, (_, index) => Date.UTC(2026, 0, index + 1) / 1000);
   const closes = timestamps.map((_, index) => 100 + index);
   const requests = [];
@@ -142,7 +143,8 @@ test("history API returns 90 daily points from a six-month Yahoo request", async
   assert.equal(payload.histories.gb_nvda.at(-1).close, 199);
 });
 
-test("history API accepts the three portfolio benchmark aliases", async () => {
+test("history API accepts the three portfolio benchmark aliases", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-08-11T01:00:00Z") });
   const requestedSecids = [];
   const response = await getHistory({
     request: new Request("https://example.test/api/history?symbols=idx_csi300,idx_hsi,idx_sp500,idx_unknown,__proto__&days=10"),
@@ -199,7 +201,8 @@ test("benchmark history aliases keep their Yahoo fallback symbols", async () => 
   ]);
 });
 
-test("history API clamps long requests to 120 daily points", async () => {
+test("history API clamps long requests to 120 daily points", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-05-16T01:00:00Z") });
   let requestedLimit = "";
   const klines = Array.from({ length: 135 }, (_, index) => {
     const date = new Date(Date.UTC(2026, 0, index + 1)).toISOString().slice(0, 10);
@@ -278,7 +281,8 @@ test("history API falls back to Tencent qfq daily bars with direct A-share and H
   });
 });
 
-test("US Tencent fallback tries OQ then N and stops once 61 valid bars are available", async () => {
+test("US Tencent fallback tries OQ then N and stops once 61 valid bars are available", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2025-03-04T01:00:00Z") });
   const tencentKeys = [];
   const response = await getHistory({
     request: new Request("https://example.test/api/history?symbols=gb_nvda&days=90"),
@@ -428,6 +432,23 @@ test("holdings movers use the latest quoted day per market and preserve signed m
     {...quote("SOLD", "港股", "2026-11-20", 100), status: "sold"},
   ];
   const tape = render(rows);
+  assert.match(tape, /href="#actions\/US\/DOWN"/);
+  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(portfolioRoute("#actions/US/BRK.B"))', context)),
+    {tab: "actions", holding: {market: "美股", code: "BRK.B"}});
+  assert.equal(vm.runInContext('portfolioRoute("#actions/US/<script>").tab', context), "");
+  const opened = vm.runInContext(`pendingHolding = portfolioRoute("#actions/HK/00700").holding;
+    state.tab = "actions"; state.holdingPnlFilter = "loss"; state.holdingQuery = "NVDA"; state.market = "美股";
+    state.rows = [{ market: "港股", code: "00700", status: "sold" }];
+    const whileMissing = selectLinkedHolding();
+    state.rows.push({ market: "港股", code: "00700", status: "holding", sina: "hk00700" });
+    [whileMissing, selectLinkedHolding(), state.expandedHoldingKey, state.market, state.holdingQuery,
+      state.holdingPnlFilter, pendingHolding]`, context);
+  assert.deepEqual(Array.from(opened), ["", "港股:hk00700", "港股:hk00700", "全部", "", "all", null]);
+  const sold = vm.runInContext(`state.tradeSecurity = portfolioRoute("#trades/US/AAA").holding;
+    state.rows = [{ market: "美股", code: "AAA", status: "sold" }, { market: "美股", code: "BBB", status: "sold" },
+      { market: "港股", code: "AAA", status: "sold" }, { market: "美股", code: "AAA", status: "holding" }];
+    filteredSortedSoldRows().map(row => holdingDetailHref(row, "trades"))`, context);
+  assert.deepEqual(Array.from(sold), ["#trades/US/AAA"]);
   assert.match(tape, /class="positive">\+4\.00%/);
   assert.match(tape, /class="negative">-3\.00%/);
   assert.doesNotMatch(tape, /OLD|>UP<|MISSING|STALE|SOLD/);
@@ -812,8 +833,8 @@ test("startup paints local holdings before background authority checks", async (
   assert.ok(staticWait > 0 && staticWait < syncWait);
   assert.match(source, /interactiveSnapshot === startupStateFingerprint\(\)/);
   assert.match(source, /readMarketCache\(\);\s+readRadarCache\(\);\s+rebuildRows\(\);/);
-  assert.match(source, /const historyRequest = getJson\("\/api\/history/);
-  assert.ok(source.indexOf("const historyRequest = getJson") < source.indexOf("const result = await Promise.all"));
+  assert.match(source, /const historyRequest = loadHoldingHistories\(holdingSymbols, signal\)/);
+  assert.ok(source.indexOf("const historyRequest = loadHoldingHistories") < source.indexOf("const result = await Promise.all"));
 });
 
 test("client applies the global RMB policy once, exports raw costs and previews changes", async () => {
@@ -963,13 +984,15 @@ test("overview client uses consistent fees, return ratios, 90-day history, and m
   assert.equal(staleAction.action, "等待行情");
   assert.match(staleAction.text, /等待当前或最近有效行情/);
   assert.match(source, /\/api\/history\?symbols=.*&days=90/);
-  assert.match(source, /\[7, 30, 90, 365, 1095\]/);
+  const periods = vm.runInContext("trendButtons()", context);
+  assert.deepEqual(Array.from(periods.matchAll(/data-trend-days="(\d+)"/g), match => Number(match[1])), [7, 30, 90, 365]);
+  assert.equal(vm.runInContext("selectableChartPeriod(1095)", context), 30);
   assert.match(source, /data-rank-market/);
   assert.match(source, /new Map\(\[\]\.concat\(Array\.from\(state\.quotes\.entries\(\)\), quoteEntries\)\)/);
   assert.match(source, /state\.quoteMeta\[entry\[0\]\] = fetchedAt/);
   assert.match(source, /if \(state\.tab === "radar"\) loadRadar\(true\); else refreshData\(\)/);
   assert.match(source, /quoteHasRecentPrice\(local\.sina, quote\)/);
-  assert.match(source, /Object\.assign\(\{\}, state\.histories, historyResult\.histories\)/);
+  assert.match(source, /state\.histories\[symbol\] = merged/);
   assert.doesNotMatch(source, /state\.quotes = new Map\(Object\.entries\(result\[0\]\.quotes\)\)/);
   assert.doesNotMatch(source, /state\.histories = historyResult\.histories/);
   assert.match(source, /cnyMode === "cost" \? "成本 "/);
@@ -1098,6 +1121,82 @@ test("holdings detail aggregates lots, filters, sorts, and renders an honest two
   assert.match(source, /未来2周技术展望/);
   assert.match(source, /方向概率尚未经过历史校准/);
   assert.doesNotMatch(source, /上涨概率\s*[：:]\s*\d|下跌概率\s*[：:]\s*\d/);
+});
+
+test("portfolio history batches publish independently, ignore superseded runs and preserve verified bars", async () => {
+  const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
+  const context = vm.createContext({ location: { hash: "#actions" }, localStorage: { getItem: () => null }, AbortController });
+  new vm.Script(source.slice(0, source.lastIndexOf("\nstart().catch("))).runInContext(context);
+  const pending = [];
+  context.request = url => new Promise(resolve => pending.push({ symbols: new URL(url, "https://test.invalid").searchParams.get("symbols").split(","), resolve }));
+  vm.runInContext(`getJson = request; rebuildRows = () => {}; saveMarketCache = () => {}; render = () => {};
+    globalThis.document = { activeElement: null }; globalThis.refresh = new AbortController();
+    globalThis.symbols = Array.from({length: 30}, (_, i) => "sh" + (600000 + i));`, context);
+  const loading = vm.runInContext(`loadHoldingHistories([...symbols, symbols[0]], refresh.signal)`, context);
+  assert.equal(pending.length, 3);
+  assert.ok(pending.every(batch => batch.symbols.length === 5));
+  assert.deepEqual(pending[0].symbols.slice(0, 3).sort(), ["idx_csi300", "idx_hsi", "idx_sp500"]);
+  const bars = [{ date: "2026-11-20", close: 100, high: 101, low: 99, open: 100 }];
+  pending[0].resolve({ histories: { idx_csi300: bars } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pending.length, 4);
+  assert.equal(vm.runInContext("state.histories.idx_csi300.length", context), 1);
+  vm.runInContext("refresh.abort()", context);
+  pending.slice(1).forEach(batch => batch.resolve({ histories: { [batch.symbols[0]]: bars } }));
+  await loading;
+  assert.equal(vm.runInContext("Object.keys(state.histories).length", context), 1);
+  const merged = vm.runInContext(`(() => {
+    const bar = (date, close) => ({ date, close, open: close, low: close - 1, high: close + 1 });
+    const old = [bar("2026-11-17", 98), bar("2026-11-18", 99), bar("2026-11-19", 100)];
+    const only = mergeHoldingHistory(old, [bar("2026-11-19", 100)]);
+    const updated = mergeHoldingHistory(old, [bar("2026-11-19", 100), bar("2026-11-20", 101)]);
+    const detached = mergeHoldingHistory(old, [bar("2026-11-20", 50)]);
+    const changedBasis = mergeHoldingHistory(old, [bar("2026-11-19", 50)]);
+    return [only.length, updated.length, detached.length, continuousHoldingHistory(detached).length, changedBasis.at(-1).close];
+  })()`, context);
+  assert.deepEqual(Array.from(merged), [3, 4, 4, 1, 100]);
+});
+
+test("holding checks use completed prices, a prior support level and complete portfolio weights", async () => {
+  const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
+  const context = vm.createContext({ location: { hash: "#actions" }, localStorage: { getItem: () => null } });
+  new vm.Script(source.slice(0, source.lastIndexOf("\nstart().catch("))).runInContext(context);
+  const result = vm.runInContext(`(() => {
+    const now = new Date("2026-11-20T08:00:00Z");
+    const bars = Array.from({ length: 70 }, (_, i) => {
+      const date = new Date(now);
+      date.setUTCDate(date.getUTCDate() - 69 + i);
+      const price = 100 + Math.sin(i);
+      return { date: date.toISOString().slice(0, 10), open: price, close: price, low: price - 1, high: price + 1 };
+    });
+    bars.at(-1).close = 93;
+    bars.at(-1).low = 92;
+    const row = { market: "A股", code: "000001", qty: 1, price: 93, priceAsOf: "2026-11-20", history: bars,
+      currency: "CNY", valueCny: 93, purchaseCostCny: 90, hasValuation: true, holdingPct: 25 };
+    const check = (rows, time = now) => holdingReviewChecks(rows, time)[0];
+    const broken = check([row]);
+    const intraday = check([row], new Date("2026-11-20T05:30:00Z"));
+    const noHistory = { ...row, history: [] };
+    const stale = { ...noHistory, code: "000002", priceAsOf: "2026-11-08" };
+    const current = { ...row, history: bars.slice(0, -1), holdingPct: 5 };
+    state.holdingsDocument = { costPolicy: { buyCny: 2000, sellCny: 1000 } };
+    const firstSale = holdingAdjustmentMarkup(row);
+    state.holdings = [{ status: "sold", market: row.market, code: row.code }];
+    return {
+      broken: [broken.group, broken.order, broken.outlook.latestDate, broken.outlook.previousSupport > bars.at(-1).close],
+      intraday: [intraday.order, intraday.outlook.latestDate],
+      missingOther: holdingReviewChecks([noHistory, stale], now).map(item => item.group),
+      staleAnalysis: check([row], new Date("2026-12-02T08:00:00Z")).group,
+      observe: check([current]).group, firstSale, laterSale: holdingAdjustmentMarkup(row)
+    };
+  })()`, context);
+  assert.deepEqual(Array.from(result.broken), ["review", 0, "2026-11-20", true]);
+  assert.deepEqual(Array.from(result.intraday), [2, "2026-11-19"]);
+  assert.deepEqual(Array.from(result.missingOther), ["missing", "missing"]);
+  assert.equal(result.staleAnalysis, "missing");
+  assert.equal(result.observe, "observe");
+  assert.match(result.firstSale, /首次减仓.*1,000/);
+  assert.doesNotMatch(result.laterSale, /首次减仓/);
 });
 
 test("opportunity radar filters the 600-plus pool, explains its score, and keeps watch items reversible", async () => {

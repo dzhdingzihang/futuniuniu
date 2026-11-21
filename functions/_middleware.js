@@ -225,7 +225,9 @@ function loginPage(user, next) {
         const response=await fetch(form.action,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({password:password.value})});
         const result=await response.json();
         if(!response.ok)throw new Error(result.error||"登录失败，请重试");
-        window.location.assign(typeof result.redirect==="string"?result.redirect:"/");
+        const destination=new URL(typeof result.redirect==="string"?result.redirect:"/",window.location.origin);
+        if(destination.pathname==="/"&&!destination.hash) destination.hash=window.location.hash;
+        window.location.assign(destination.href);
       }catch(error){
         status.textContent=error.message||"登录失败，请重试";
         button.disabled=false;

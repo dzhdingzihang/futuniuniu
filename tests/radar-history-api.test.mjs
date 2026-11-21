@@ -82,7 +82,24 @@ test("no invented ranges, duplicates, future bars or joins across malformed bars
   assert.deepEqual(histories.sh600001.map(bar => bar.date), dates.slice(82));
   const closeOnly = input => new URL(input).hostname.includes("yahoo") ? yahoo(dates, { realOhlc: false }) : Response.json({});
   assert.deepEqual((await query("gb_example", closeOnly)).histories, {});
-  assert.equal((await query("gb_example", closeOnly, false)).histories.gb_example.length, 85);
+  const fallback = (await query("gb_example", closeOnly, false)).histories.gb_example;
+  assert.equal(fallback.length, 85);
+  assert.equal(fallback.at(-1).estimatedRange, true);
+});
+
+test("ordinary holding histories time out a stalled source and favor current, genuine ranges", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: saturday });
+  let aborted = false;
+  const fresh = sessions(65), old = sessions(90, "2026-09-30");
+  const response = query("gb_example", (input, { signal }) => {
+    const url = new URL(input);
+    if (url.hostname.includes("yahoo")) return new Promise((_, reject) =>
+      signal.addEventListener("abort", () => { aborted = true; reject(Error("timed out")); }));
+    return eastmoney(url.searchParams.get("secid") === "105.EXAMPLE" ? old : fresh);
+  }, false);
+  t.mock.timers.tick(2500);
+  assert.deepEqual((await response).histories.gb_example.map(bar => bar.date), fresh);
+  assert.equal(aborted, true);
 });
 
 test("a stalled first provider is aborted and a second provider supplies completed sessions", async t => {

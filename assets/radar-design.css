@@ -247,3 +247,69 @@
 .radar-page meter::-webkit-meter-even-less-good-value { background: var(--blue); border-radius: 2px; }
 .radar-page progress::-moz-progress-bar { background: var(--blue); }
 .radar-page meter::-moz-meter-bar { background: var(--blue); }
+
+/* Evidence, follow-up and the time of the signal stay next to each market. */
+.radar-page .radar-research-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 100%;
+  min-height: 40px;
+  margin-top: 12px;
+  padding: 6px 13px;
+  border: 1px solid #39576b;
+  border-radius: 6px;
+  color: var(--blue);
+  background: var(--radar-depth);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.radar-research-link span { font-size: 17px; line-height: 1; }
+.radar-page .radar-research-link:hover { background: var(--radar-tint); }
+.radar-page .radar-position-note {
+  display: inline-block;
+  align-self: center;
+  flex-shrink: 0;
+  width: fit-content;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.preopen-page .radar-pick-reasons {
+  display: grid; gap: 8px; padding: 0; margin: 10px 0; list-style: none;
+  color: var(--ink); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere;
+}
+.radar-pick-reasons b { display: block; font-size: 12px; font-weight: 650; color: var(--blue); }
+.radar-market-next p, .radar-page .radar-decision-rule {
+  margin: 12px 0 0; color: var(--muted); font-size: 13px; line-height: 1.65;
+}
+.radar-market-next p + button { margin-top: 6px; }
+.radar-page .radar-signal-state { margin: 14px 0 4px; font-size: 13px; font-weight: 650; color: var(--blue); }
+.radar-page .intraday-signals header .radar-position-note { margin-left: auto; }
+.radar-page [data-research-board], .radar-page .intraday-board { scroll-margin-top: 90px; }
+.radar-page [data-research-board]:focus-visible, .radar-page .intraday-board:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.radar-page .radar-top3-market > .preopen-details { border-top: 1px solid var(--line); margin-top: 12px; }
+.radar-page .radar-top3-market > .preopen-details > summary { color: var(--blue); padding-block: 12px; cursor: pointer; }
+@media (max-width: 660px) {
+  .radar-page .radar-research-link { min-height: 44px; }
+}
+@media (min-width: 1050px) {
+  .preopen-page .preopen-pick:only-child {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 4px 24px;
+    align-content: start;
+  }
+  .preopen-page .preopen-pick:only-child > h4 { grid-column: 1; grid-row: 1; }
+  .preopen-page .preopen-pick:only-child > .radar-position-note { grid-column: 2; grid-row: 1; justify-self: end; }
+  .preopen-page .preopen-pick:only-child > .radar-pick-reasons {
+    grid-column: 1; grid-row: 2 / span 3; margin: 6px 0; padding-right: 18px; border-right: 1px solid var(--line);
+  }
+  .preopen-page .preopen-pick:only-child > :is(.preopen-price-pair,.preopen-target-price,.preopen-risk) {
+    grid-column: 2; margin-block: 4px;
+  }
+  .preopen-page .preopen-pick:only-child > .preopen-details { grid-column: 1 / -1; }
+}
