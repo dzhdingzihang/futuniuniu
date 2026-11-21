@@ -172,14 +172,20 @@ export async function readPreopenMarket(kv,market,clock,calendar) {
   const now=clock(), current=intradaySession(market,now,calendar);
   const target=current.closeAt ? current : nextSession(market,current.tradeDate,calendar,1);
   const date=target?.tradeDate,cutoff=date && atMinute(date,market,565,calendar);
+  const lastClosed = current.calendarKnown && (current.phase === "closed" ? current : nextSession(market,current.tradeDate,calendar,-1));
+  const lastClosedDate = lastClosed?.tradeDate || null;
   const [today,prior,results]=await Promise.all([date ? get(kv,market,"frozen:"+date) : null,get(kv,market,"latest"),get(kv,market,"history")]);
   const latest=publicSnapshot(today || prior);
+  const needsArchive = lastClosedDate && lastClosedDate !== date && lastClosedDate !== latest?.tradeDate && !today;
+  const lastRecord = needsArchive ? await get(kv,market,"frozen:"+lastClosedDate) : null;
   let phase="waiting",reason="等待交易日盘前冻结名单。";
   if(!cutoff){phase="unavailable";reason="交易日历待更新。";}
   else if(today){phase=today.status;reason=today.reason;}
   else if(+now>=+cutoff+5*minute){phase="missed";reason="本交易日没有在开盘前冻结的记录，不事后补选。";}
   const next=cutoff && (+now<+cutoff ? target : nextSession(market,date,calendar,1));
   return {market,label:GROWTH_SEGMENTS[market].label,scope:GROWTH_SEGMENTS[market].scope,
+    localDate:current.tradeDate,marketPhase:current.calendarKnown ? current.phase : "unknown",closeAt:current.closeAt,
+    lastClosedDate,lastClosedRecord:lastClosedDate !== latest?.tradeDate ? publicSnapshot(lastRecord) : null,
     sessionDate:date || null,cutoffAt:cutoff?.toISOString() || null,
     nextCutoffAt:next ? atMinute(next.tradeDate,market,565,calendar).toISOString() : null,
     phase,reason,total:latest?.total ?? null,latest,results:results || [],evaluation:summarizePreopenHistory(results || [])};

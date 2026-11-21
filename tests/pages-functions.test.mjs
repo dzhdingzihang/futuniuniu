@@ -455,6 +455,28 @@ test("holdings movers use the latest quoted day per market and preserve signed m
   assert.equal(render([]), "");
 });
 
+test("the header distinguishes quote reads, session reads and research publication", async () => {
+  const app = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
+  const context = vm.createContext({ location: { hash: "" }, localStorage: { getItem: () => null } });
+  vm.runInContext(app.slice(0, app.lastIndexOf("\nstart().catch")), context);
+  const statuses = vm.runInContext(`(() => {
+    state.holdingsDocument = {version: 2, lots: []};
+    state.updatedAt = '2026年11月21日 10:12';
+    const account = headerTools();
+    state.tab = 'radar'; state.radarScope = 'preopen';
+    state.preopenData = {asOf: '2026-11-20T03:05:00Z'};
+    const preopen = headerTools();
+    state.radarScope = 'growth';
+    const unpublished = headerTools();
+    state.radarPublishedAt = '2026-11-19T00:05:00Z';
+    return [account, preopen, unpublished, headerTools()];
+  })()`, context);
+  assert.match(statuses[0], /行情读取于 2026年11月21日 10:12/);
+  assert.match(statuses[1], /雷达读取于 2026年11月20日 11:05 北京时间/);
+  assert.match(statuses[2], /研究榜发布时间待核/);
+  assert.match(statuses[3], /研究榜发布于 2026年11月19日 08:05 北京时间/);
+});
+
 test("client v2 preserves stock cost adjustments and audit notes without double counting", async () => {
   const source = await readFile(new URL("../assets/app.js", import.meta.url), "utf8");
   const runnable = source.replace(/\nstart\(\)\.catch\(function \(error\) \{[\s\S]*?\n\}\);\s*$/, "\n");

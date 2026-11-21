@@ -1798,8 +1798,8 @@ details.radar-detail { padding-top: 0; }
   }
   @keyframes period-updated { from { opacity: .55; } to { opacity: 1; } }
 }
-#main-content { scroll-margin-top: 84px; }
-@media (max-width: 760px) { #main-content { scroll-margin-top: 8px; } }
+html { scroll-padding-top: var(--dashboard-header-height, 72px); }
+#main-content { scroll-margin-top: 8px; }
 .site-header { background: #0e1722; border-bottom: 1px solid var(--line); }
 .site-header .brand {
   display: inline-flex;
@@ -1977,7 +1977,12 @@ input, textarea { caret-color: var(--blue); }
 .holding-route-note { padding: 10px 14px; color: var(--ink); border-left: 2px solid var(--muted); }
 .sold-scope { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 16px; color: var(--ink); }
 .sold-scope a { color: #9acaff; text-underline-offset: .22em; }
-.holding-main-row, .holding-mobile-card { scroll-margin-top: 80px; }
+.holding-main-row, .holding-mobile-card { scroll-margin-top: 8px; }
+@media (max-width: 1050px) {
+  html { scroll-padding-top: calc(var(--dashboard-header-height, 122px) - var(--dashboard-nav-offset, 72px)); }
+  .site-header { position: sticky; top: calc(0px - var(--dashboard-nav-offset, 72px)); }
+  .site-header:has(.header-action-button:focus-visible, .brand:focus-visible) { top: 0; }
+}
 .quote-strip-meta, .quote-strip-data { min-width: 0; display: flex; align-items: baseline; gap: 10px; justify-content: space-between; }
 .quote-strip-meta { font-size: 11px; }
 .quote-strip-data, .quote-strip-meta time { font-family: var(--terminal-mono); font-variant-numeric: tabular-nums; }

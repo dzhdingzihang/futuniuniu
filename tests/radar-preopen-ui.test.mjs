@@ -41,7 +41,7 @@ test("upcoming sessions keep last published date separate and distinguish a froz
   const board={market:"美股",label:"纳斯达克",sessionDate:"2026-11-16",scope:"测试范围",total:220,
     cutoffAt:"2026-11-16T14:25:00Z",phase:"waiting",reason:"等待盘前窗口",latest:snapshot};
   const draw=data=>run('(state.preopenData={markets:{"美股":data}},preopenMarketCard("美股"))',data);
-  assert.match(draw(board),/上一次记录 · 2026-11-13/);
+  assert.match(draw(board),/最近收盘日 <time>2026-11-13<\/time>/);
   assert.match(draw({...board,latest:null}),/尚无历史冻结记录/);
   const empty={...snapshot,tradeDate:board.sessionDate,cutoffAt:board.cutoffAt,candidates:[],jumped:[],reason:"证据不足"};
   assert.match(draw({...board,phase:"frozen",latest:empty}),/本次冻结为空榜/);
@@ -65,7 +65,7 @@ test("a prior session or failed refresh never presents archived names as current
   const draw=()=>run('(state.preopenData={markets:{"美股":data}}, [preopenHeadline(), preopenMarketCard("美股")])', board);
   const [headline, card]=draw();
   assert.doesNotMatch(headline,/股票入选/);
-  assert.match(card,/上一次记录 · 2026-11-13/);
+  assert.match(card,/最近收盘日 <time>2026-11-13<\/time>/);
   assert.doesNotMatch(card,/核对盘中信号/);
   run('Date.now = () => Date.parse("2026-11-13T15:00:00Z"); state.preopenError="读取失败"');
   assert.doesNotMatch(draw()[1],/核对盘中信号/);
@@ -99,4 +99,63 @@ test("intraday state excludes an earlier trigger from a fresh scan and earlier-s
   assert.doesNotMatch(run('intradayPage()'),/STALE/);
   run('state.intradayError="读取失败"');
   assert.doesNotMatch(run('intradayPage()'),/本轮已触发|本轮有 1 只股票触发/);
+});
+
+const saturday = "2026-11-14T08:00:00Z";
+const monday = "2026-11-16";
+const friday = "2026-11-13";
+function restingBoard(market, latest) {
+  return {market,total:230,localDate:"2026-11-14", marketPhase:"holiday", sessionDate:monday, lastClosedDate:friday,
+    cutoffAt:monday + (market === "美股" ? "T14:25:00Z" : "T01:25:00Z"), phase:"waiting", latest,results:[]};
+}
+
+test("weekend lead distinguishes exact-date unverified names, confirmed non-hits, published empty lists and lost issues", () => {
+  const run=ui();
+  run('Date.now=(time=>()=>time)(Date.parse(data))',saturday);
+  const us=restingBoard("美股",snapshot);
+  const cn=restingBoard("A股",{...snapshot,candidates:[]});
+  const hk=restingBoard("港股",{...snapshot,tradeDate:"2026-11-12"});
+  us.results=[{tradeDate:"2026-11-12",rows:[{code:"DEMO",name:"错日记录",groups:["picks"],status:"verified",hit:true}]}];
+  const draw=()=>run('(state.preopenData=data,preopenPage())',{asOf:saturday,markets:{"A股":cn,"港股":hk,"美股":us}});
+  let page=draw(), summary=page.slice(page.indexOf("radar-session-heading"),page.indexOf("radar-market-picker"));
+  assert.match(summary,/休市 · 最近一期盘前名单/);
+  assert.match(summary,/已验证 0 只/);
+  assert.match(page,/盘前记录缺档/); assert.match(page,/已发布空榜/);
+  assert.match(page,/2026-11-16 09:25 美东时间/); assert.match(page,/2026-11-16 22:25 北京时间/);
+  assert.doesNotMatch(page.slice(page.indexOf("radar-board-美股"),page.indexOf("card preopen-review")),/错日记录|未触及/);
+  assert.ok(page.indexOf('class="card preopen-review"') < page.indexOf("虚构股票 · 独立演示"));
+  assert.ok(page.indexOf("card preopen-review") < page.indexOf("preopen-universe"));
+  us.results.push({tradeDate:friday,rows:[{code:"DEMO",groups:["picks"],status:"verified",hit:false,held:false}]});
+  page=draw(); assert.match(page,/已验证 1 只，其中 0 只盘中触及/); assert.match(page,/未触及/);
+});
+
+test("mixed sessions keep the NY board live and Asian archives historical; early closes suppress follow-up trading prompts",()=>{
+  const run=ui();
+  const now="2026-11-13T16:00:00Z";
+  run('Date.now=(time=>()=>time)(Date.parse(data))',now);
+  const asia={...restingBoard("A股",snapshot),localDate:"2026-11-14"};
+  const us={market:"美股",localDate:friday,marketPhase:"trading",closeAt:friday+"T18:00:00Z",
+    lastClosedDate:"2026-11-12",sessionDate:friday,phase:"frozen",latest:snapshot,nextCutoffAt:monday+"T14:25:00Z"};
+  const views=()=>run('(state.preopenData=data,[preopenPage(),preopenMarketCard("美股"),preopenMarketCard("港股")])',
+    {markets:{"A股":asia,"港股":asia,"美股":us}});
+  let [page, card, hk]=views();
+  assert.match(page,/交易中 · 盘前候选与盘中确认/);
+  assert.match(card,/调高预期/);assert.match(card,/报价过期或量价转弱/);assert.match(card,/核对盘中信号/);
+  assert.doesNotMatch(hk,/核对盘中信号/);
+  run('Date.now=()=>Date.parse("2026-11-13T18:01:00Z")');
+  us.lastClosedDate=friday;
+  [page,card]=views();
+  assert.match(card,/已收盘/);assert.match(card,/可验证 0 \/ 1/);assert.doesNotMatch(card,/核对盘中信号/);
+});
+
+test("the latest pointer cannot replace a missing previous trading date; an exact-date backup can restore it",()=>{
+  const run=ui();
+  run('Date.now=(time=>()=>time)(Date.parse(data))',saturday);
+  const snap=restingBoard("美股",{...snapshot,tradeDate:"2026-11-10"});
+  const closed=()=>run('preopenArchive(preopenClosedIssue(data,"美股"))',snap);
+  assert.match(closed(),/盘前记录缺档/);
+  snap.lastClosedRecord={...snapshot,tradeDate:"2026-11-12"};
+  assert.doesNotMatch(closed(),/测试样本/);
+  snap.lastClosedRecord=snapshot;
+  assert.match(closed(),/测试样本/);
 });

@@ -113,6 +113,10 @@ test("Saturday never publishes a ranking, and the next cutoff matches each excha
   assert.equal(kv.data.size,0);
   for(const [venue,expected] of [["A股","01:25"],["港股","01:25"],["美股","14:25"]]){
     const page=await readPreopenMarket(kv,venue,()=>new Date("2026-11-14T12:00:00Z"),calendar);
+    assert.equal(page.marketPhase,"holiday");
+    assert.equal(page.localDate,"2026-11-14");
+    assert.equal(page.lastClosedDate,"2026-11-13");
+    assert.equal(page.closeAt,null);
     assert.equal(page.nextCutoffAt,date+"T"+expected+":00.000Z");
     assert.equal(page.sessionDate,date);
     assert.equal(page.latest,null);
@@ -194,4 +198,18 @@ test("a later retry with weaker minute coverage cannot erase a previously verifi
   await settle("07:55:00",[]);
   const later = (await read(kv,"08:00:00")).results[0].rows[0];
   assert.deepEqual(later.firstTouch,early.firstTouch);
+});
+
+test("public radar exposes the actual closing session and restores its archive when the latest pointer belongs to an older date",async()=>{
+  const kv=new KV();
+  kv.data.set("preopen-v1:美股:latest",{tradeDate:"2026-11-24",status:"frozen",candidates:[]});
+  kv.data.set("preopen-v1:美股:frozen:2026-11-27",{tradeDate:"2026-11-27",status:"unavailable",universe:[{code:"PRIVATE"}]});
+  const halfDay=await readPreopenMarket(kv,"美股",()=>new Date("2026-11-27T18:01:00Z"));
+  assert.equal(halfDay.marketPhase,"closed");
+  assert.equal(halfDay.closeAt,"2026-11-27T18:00:00.000Z");
+  assert.equal(halfDay.lastClosedDate,"2026-11-27");
+  const weekend=await readPreopenMarket(kv,"美股",()=>new Date("2026-11-28T15:00:00Z"));
+  assert.equal(weekend.lastClosedDate,"2026-11-27");
+  assert.equal(weekend.lastClosedRecord.status,"unavailable");
+  assert.equal(weekend.lastClosedRecord.universe,undefined);
 });

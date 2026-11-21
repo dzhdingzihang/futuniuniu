@@ -303,3 +303,52 @@
   .chart-range-summary > div:first-child { grid-column: 1 / -1; }
   .chart-range-summary dd { font-size: 17px; }
 }
+
+/* Lead with the dated portfolio move; the ledger beside it spans the full investment history. */
+.overview-page .account-metric-grid { align-items: stretch; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.overview-page .session-statement {
+  display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 0;
+  margin: 0; min-width: 0; padding: 20px 24px;
+  background: linear-gradient(125deg, #182b3a, #101d2a 75%); border: 1px solid #3b566a; border-radius: 12px;
+}
+.session-statement header { display: flex; justify-content: space-between; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+.session-statement header > div { display: flex; align-items: baseline; gap: 8px 12px; flex-wrap: wrap; }
+.session-statement header h2 { font-size: 16px; font-weight: 650; }
+.session-statement time, .session-statement header > p { margin: 0; color: #b2c4d3; font-size: 12px; font-variant-numeric: tabular-nums; }
+.session-statement time, .session-value { font-family: var(--overview-numbers); }
+.session-value { display: flex; gap: 2px 14px; align-items: baseline; flex-wrap: wrap; margin-top: 12px; }
+.session-value > strong { min-width: 0; overflow-wrap: anywhere; font-size: clamp(36px,3.65vw,60px); font-weight: 550; line-height: 1.12; letter-spacing: -.045em; }
+.session-basis { font: 550 13px/1.5 system-ui, sans-serif; color: #cfdeea; }
+.session-statement .session-method { margin: 6px 0 15px; font-size: 12px; line-height: 1.55; }
+.session-statement .session-missing { margin: 18px 0 3px; color: var(--overview-text); font: 600 24px/1.4 system-ui,sans-serif; }
+.session-statement dl { grid-template-columns: repeat(auto-fit,minmax(min(100%,170px),1fr)); gap: 10px 14px; margin: auto 0 0; padding-top: 11px; border-top: 1px solid #34475a; }
+.session-statement .contribution-item { padding: 0; border: 0; }
+.session-statement .contribution-item dt { margin: 0; }
+.session-statement .contribution-item dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.session-statement .contribution-item dd a { font-size: 14px; }
+.session-statement .contribution-item dd b { font-size: 16px; white-space: nowrap; }
+.overview-page .pnl-statement { background: var(--overview-panel); border-color: var(--overview-rule); padding: 20px 24px; }
+.overview-page .pnl-statement .metric-value { font-size: clamp(32px,3vw,48px); }
+.overview-page .account-secondary {
+  margin-top: 12px; grid-template-columns: repeat(2,minmax(0,1fr)); grid-template-rows: auto; padding: 0 20px; gap: 20px;
+}
+.overview-page .account-secondary .account-metric-card + .account-metric-card { border-top: 0; border-inline-start: 1px solid var(--overview-rule); padding-inline-start: 20px; }
+.account-overview-section > .fx-status-line { margin: 8px 0 0; width: fit-content; }
+.overview-page .statement-spark { width: 120px; }
+.statement-spark figcaption { white-space: normal; line-height: 1.4; font-size: 12px; }
+.overview-page .ranking-security .market-badge { font-size: 12px; }
+.market-session-date { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--overview-muted); white-space: normal; }
+@media (max-width: 980px) {
+  .overview-page .statement-spark { width: 95px; }
+  .overview-page .session-statement, .overview-page .pnl-statement { padding: 17px; }
+}
+@media (max-width: 740px) {
+  .overview-page .account-metric-grid { grid-template-columns: minmax(0, 1fr); }
+  .overview-page .session-statement dl { grid-template-columns: repeat(auto-fit,minmax(min(100%,135px),1fr)); }
+  .session-value > strong { font-size: clamp(30px,8.3vw,43px); }
+  .overview-page .account-secondary { padding: 0 14px; gap: 0; grid-template-columns: minmax(0,1fr); }
+  .overview-page .account-secondary .account-metric-card + .account-metric-card { border-inline-start: 0; border-top: 1px solid var(--overview-rule); padding-inline-start: 0; }
+  .overview-page .statement-note { margin-bottom: 12px; }
+  .overview-page .account-secondary .account-metric-card { min-height: 60px; }
+  .overview-page .session-statement header { align-items: baseline; }
+}
