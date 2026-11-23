@@ -170,6 +170,33 @@ function closingBars(rows,market,session,observedAt) {
     close:r.metrics.price,high:r.metrics.high,low:r.metrics.low}));
 }
 
+async function incompleteFromClosingReference({kv,market,session,frozen,ref,now,calendar}) {
+  const date=session.tradeDate;
+  if(frozen?.status!=="unavailable" || frozen.market!==market || frozen.tradeDate!==date || !canEvaluatePreopenArchive(frozen,calendar)) return null;
+  ref ??= await get(kv,market,"ref:"+date);
+  const observedAt=Date.parse(ref?.observedAt);
+  if(ref?.referenceDate!==date || ref.closeAt!==session.closeAt || !Number.isFinite(observedAt)
+    || observedAt<Date.parse(session.closeAt)+15*minute || observedAt>+now || !Array.isArray(ref.rows)) return null;
+  return evaluatePreopenDay({frozen,bars:closingBars(ref.rows,market,session,observedAt),closedAt:session.closeAt,asOf:ref.observedAt,calendar});
+}
+
+function withLatestSettlement(history,result) {
+  return [...history.filter(r=>r.tradeDate!==result.tradeDate),result].sort((a,b)=>b.tradeDate.localeCompare(a.tradeDate)).slice(0,20);
+}
+
+async function recoverIncompleteSettlement({kv,market,clock,calendar},session,ref) {
+  if(!ref) return;
+  const date=session.tradeDate;
+  const history=await get(kv,market,"history") || [];
+  if(history.some(row=>row.tradeDate===date)) return;
+  const frozen=await get(kv,market,"frozen:"+date);
+  const result=await incompleteFromClosingReference({kv,market,session,frozen,ref,now:clock(),calendar});
+  if(!result) return;
+  // Normal settlement owns any existing result. Preserve other dates and merge onto the latest history.
+  const latest=await get(kv,market,"history") || [];
+  if(!latest.some(row=>row.tradeDate===date)) await put(kv,market,"history",withLatestSettlement(latest,result),180);
+}
+
 export async function settlePreopen({market,kv,session,calendar,clock,fetcher,getRows=loadRows,getMinutes=fetchPreopenTouchBars}) {
   const frozen=await get(kv,market,"frozen:"+session.tradeDate);
   if(+clock()<Date.parse(session.closeAt)+20*minute || frozen?.market!==market || frozen.tradeDate!==session.tradeDate
@@ -201,8 +228,7 @@ export async function settlePreopen({market,kv,session,calendar,clock,fetcher,ge
     if(groups.every(k=>prior.groups[k].verified===result.groups[k].verified)
       && JSON.stringify(result.rows)===JSON.stringify(prior.rows) && JSON.stringify(result.groups)===JSON.stringify(prior.groups)) return;
   }
-  const history=[...old.filter(r=>r.tradeDate!==session.tradeDate),result].sort((a,b)=>b.tradeDate.localeCompare(a.tradeDate)).slice(0,20);
-  await put(kv,market,"history",history,180);
+  await put(kv,market,"history",withLatestSettlement(old,result),180);
 }
 
 export async function readPreopenMarket(kv,market,clock,calendar) {
@@ -213,21 +239,17 @@ export async function readPreopenMarket(kv,market,clock,calendar) {
   const lastClosedDate = lastClosed?.tradeDate || null;
   const [today,prior,history]=await Promise.all([date ? get(kv,market,"frozen:"+date) : null,get(kv,market,"latest"),get(kv,market,"history")]);
   let results=history || [];
-  if(current.phase==="closed" && today?.status==="unavailable" && today.market===market && today.tradeDate===date
-    && !results.some(entry=>entry.tradeDate===date) && canEvaluatePreopenArchive(today,calendar)) {
-    // A dated closing reference can reconcile a skipped settlement using the exact sealed membership.
-    const ref=await get(kv,market,"ref:"+date);
-    const observedAt=Date.parse(ref?.observedAt);
-    if(ref?.referenceDate===date && ref.closeAt===current.closeAt && observedAt>=Date.parse(current.closeAt)+15*minute
-      && observedAt<=+now && Array.isArray(ref.rows)) {
-      const bars=closingBars(ref.rows,market,current,observedAt);
-      const verified=evaluatePreopenDay({frozen:today,bars,closedAt:current.closeAt,asOf:ref.observedAt,calendar});
-      if(verified) results=[verified,...results].sort((a,b)=>b.tradeDate.localeCompare(a.tradeDate)).slice(0,20);
-    }
-  }
   const latest=publicSnapshot(today || prior);
   const needsArchive = lastClosedDate && lastClosedDate !== date && lastClosedDate !== latest?.tradeDate && !today;
-  const lastRecord = needsArchive ? await get(kv,market,"frozen:"+lastClosedDate) : null;
+  const missingSettlement=lastClosedDate && !results.some(entry=>entry.tradeDate===lastClosedDate);
+  // Between midnight and the recovery tick the latest pointer has no private membership.
+  const needsFullRecord=missingSettlement && latest?.tradeDate===lastClosedDate && latest.status==="unavailable" && !today;
+  const lastRecord = needsArchive || needsFullRecord ? await get(kv,market,"frozen:"+lastClosedDate) : null;
+  if(missingSettlement) {
+    const frozen=lastClosedDate===date ? today : lastRecord;
+    const verified=await incompleteFromClosingReference({kv,market,session:lastClosed,frozen,now,calendar});
+    if(verified) results=withLatestSettlement(results,verified);
+  }
   let phase="waiting",reason="等待交易日盘前冻结名单。";
   if(!cutoff){phase="unavailable";reason="交易日历待更新。";}
   else if(today){phase=today.status;reason=today.reason;}
@@ -247,10 +269,11 @@ export async function runPreopenCycle({env,scheduledAt,clock=()=>new Date(),fetc
   let directory;
   const failures=[];
   async function tryReference(opts,referenceDate) {
-    if(await get(kv,opts.market,"ref:"+referenceDate)) return;
+    const existing=await get(kv,opts.market,"ref:"+referenceDate);
+    if(existing) return existing;
     try {
       directory ??=loadGrowthDirectory(fetcher,12000).catch(error=>{throw new Error("候选名册读取失败：" + error.message);});
-      await capturePreopenReference({...opts,referenceDate,directory:await directory});
+      return await capturePreopenReference({...opts,referenceDate,directory:await directory});
     } catch(error) {
       await put(kv,opts.market,"reference-attempt:"+referenceDate,{
         stage:"reference",at:clock().toISOString(),referenceDate,reason:error.message.slice(0,180),counts:error.counts
@@ -276,7 +299,10 @@ export async function runPreopenCycle({env,scheduledAt,clock=()=>new Date(),fetc
       }
       if(slot===550) {
         const previous=adjacentPreopenSession(market,session.tradeDate,calendar,-1);
-        if(previous) await tryReference(opts,previous.tradeDate);
+        if(previous) {
+          const ref=await tryReference(opts,previous.tradeDate);
+          await recoverIncompleteSettlement(opts,previous,ref);
+        }
       } else if(preopenSampleMinutes.includes(slot)){
         await preparePreopen({...opts,slot});
       } else if(slot===565 || slot===568) {
@@ -287,10 +313,12 @@ export async function runPreopenCycle({env,scheduledAt,clock=()=>new Date(),fetc
           await tryReference(opts,session.tradeDate);
           await settlePreopen(opts);
         } else if(market==="港股" && [95,335,355].includes(afterClose)) {
-          await tryReference(opts,session.tradeDate);
+          const ref=await tryReference(opts,session.tradeDate);
+          await recoverIncompleteSettlement(opts,session,ref);
         } else if(market==="A股" && [105,155].includes(afterClose)) {
           // The mainland provider can stamp a whole closing batch after 16:00 local time.
-          await tryReference(opts,session.tradeDate);
+          const ref=await tryReference(opts,session.tradeDate);
+          await recoverIncompleteSettlement(opts,session,ref);
         }
       }
     } catch(error){failures.push(market+" "+error.message);}

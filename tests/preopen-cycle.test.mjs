@@ -261,6 +261,40 @@ test("incomplete sealed days use the same close for controls and never backfill 
   missing.data.set(refKey,ref);
   await settlePreopen({...base(missing),clock:now,getRows:()=>assert.fail("no sealed snapshot")});
   assert.equal((await read(missing,"07:58:00")).evaluation.days,0);
+
+  const calendar=JSON.parse(await readFile(new URL("../assets/radar-calendar.json",import.meta.url),"utf8"));
+  const expected=publicPage.results[0], older={...expected,tradeDate:previous};
+  const overnight=new KV();
+  overnight.data=structuredClone(kv.data);
+  overnight.data.delete(historyKey);
+  const beforeRecovery=await readPreopenMarket(overnight,market,()=>new Date("2026-11-17T00:55:00Z"),calendar);
+  assert.deepEqual(beforeRecovery.results,[expected]);
+  assert.equal(overnight.data.has(historyKey),false);
+  for(const tick of [at("08:45:58"),new Date("2026-11-17T01:10:58Z")]) {
+    const recovery=new KV();
+    recovery.data=structuredClone(kv.data);
+    recovery.data.set(historyKey,[older]);
+    recovery.data.set("preopen-v1:港股:ref:"+date,{referenceDate:date});
+    const beforeFreeze=await recovery.get("preopen-v1:"+market+":frozen:"+date);
+    const writes=[];
+    recovery.put=async(k,v)=>{writes.push(k);recovery.data.set(k,JSON.parse(v));};
+    const run=()=>runPreopenCycle({env:{RADAR_SNAPSHOTS:recovery},scheduledAt:tick,clock:()=>tick,calendar,
+      fetcher:()=>assert.fail("use the dated closing reference only")});
+    await run();
+    assert.deepEqual(writes,[historyKey]);
+    assert.deepEqual(await recovery.get(historyKey),[expected,older]);
+    assert.deepEqual(await recovery.get("preopen-v1:"+market+":frozen:"+date),beforeFreeze);
+    // Even an otherwise eligible reference cannot revise a settled date.
+    recovery.data.set(historyKey,[{...expected,asOf:date+"T07:50:00.000Z"},older]);
+    const unchanged=await recovery.get(historyKey);
+    await run();
+    assert.deepEqual(writes,[historyKey]);
+    assert.deepEqual(await recovery.get(historyKey),unchanged);
+    recovery.data.delete("preopen-v1:"+market+":frozen:"+date);
+    recovery.data.set(historyKey,[older]);
+    await run();
+    assert.deepEqual(writes,[historyKey]);
+  }
 });
 
 test("a delayed close cron captures the reference; an afternoon retry accepts delayed final timestamps",async()=>{

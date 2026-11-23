@@ -181,3 +181,21 @@ test("archived capture detail distinguishes missing close references from retain
   assert.match(run("preopenCaptureSummary(data)",{market:"A股",referenceDate:"2026-11-19",reference:null,stages:[]}),/11-19 的昨收参考目前查不到。.*查不到截止前完成的采样档/);
   assert.match(run("preopenCaptureSummary(data)",{market:"港股",referenceDate:"2026-11-19",reference:{observedAt:"2026-11-20T01:11:00Z",validCount:268},stages:[{slot:555},{slot:560}]}),/09:11 入库，共 268 只。.*09:15、09:20/);
 });
+
+test("only a complete pre-match legacy ChiNext record gets a retrospective peer breakdown",()=>{
+  const run=ui();
+  const legacy={market:"A股",modelVersion:"preopen-v1",status:"unavailable",selectionStatus:"incomplete",
+    tradeDate:"2026-11-23",sampleMinute:562,total:1411,observedAt:"2026-11-23T01:22:41Z",frozenAt:"2026-11-23T01:22:45Z",
+    cutoffAt:"2026-11-23T01:25:00Z",publishedAt:"2026-11-23T01:28:41Z",candidates:[],jumped:[],
+    coverage:{eligibleCount:1362,referenceCount:1372,missingReferenceCount:39,unresolvedCount:1362,contextTestableCount:1263,
+      auctionAttempted:1362,confirmedMissCount:0,qualifyingCount:0,jumpedCount:0,comparablePriceRejected:0,contextCount:0,
+      eventCount:0,eventTestableCount:0,auctionCount:0,auctionTestableCount:0,abnormalVolumeCount:0,twoClassTestableCount:0}};
+  const draw=(row,market="A股")=>run('preopenFrozen(data.row,data.market)',{row,market});
+  assert.match(draw(legacy),/按撮合时点复核[^。]*1,263 只已核实缺少同行支持，可排除，99 只仍待核实/);
+  assert.doesNotMatch(draw({...legacy,coverage:{...legacy.coverage,auctionApplicable:false}}),/按撮合时点复核/);
+  for(const [row,market] of [
+    [legacy,"港股"],[{...legacy,frozenAt:legacy.cutoffAt}],
+    [{...legacy,coverage:{...legacy.coverage,contextTestableCount:undefined}}],
+    [{...legacy,coverage:{...legacy.coverage,eventTestableCount:1}}],
+  ]) assert.doesNotMatch(draw(row,market),/按撮合时点复核/);
+});

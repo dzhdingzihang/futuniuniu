@@ -3842,10 +3842,37 @@ function preopenCoverageLine(c) {
   return parts.join("；") + "。";
 }
 
-function preopenNoPickText(snapshot) {
+function preopenLegacyAuctionNote(snapshot, market) {
+  const c = snapshot.coverage;
+  if (market !== "A股" || snapshot.market !== market || snapshot.modelVersion !== "preopen-v1" ||
+      snapshot.selectionStatus !== "incomplete" || !c || Object.hasOwn(c, "auctionApplicable") ||
+      !Array.isArray(snapshot.candidates) || snapshot.candidates.length || !Array.isArray(snapshot.jumped) || snapshot.jumped.length) return "";
+
+  const cutoff = Date.parse(snapshot.tradeDate + "T09:25:00+08:00");
+  const slot = snapshot.sampleMinute;
+  const observed = Date.parse(snapshot.observedAt), frozen = Date.parse(snapshot.frozenAt), published = Date.parse(snapshot.publishedAt);
+  const start = cutoff - (565 - slot) * 60000;
+  if (![555,560,562,563,564].includes(slot) || Date.parse(snapshot.cutoffAt) !== cutoff ||
+      !(start <= observed && observed < start + 60000 && observed <= frozen && frozen < cutoff &&
+        cutoff <= published && published < cutoff + 5 * 60000)) return "";
+
+  // Before the opening match, only issuer and peer evidence can qualify a stock.
+  // With peer tests the sole determinate class, these counts partition eligible stocks exactly.
+  const eligible = c.eligibleCount, tested = c.contextTestableCount;
+  if (![eligible,tested,c.referenceCount,c.missingReferenceCount,snapshot.total].every(n => Number.isSafeInteger(n) && n >= 0) ||
+      tested === 0 || tested > eligible || eligible > c.referenceCount || c.referenceCount + c.missingReferenceCount !== snapshot.total ||
+      c.unresolvedCount !== eligible || c.auctionAttempted !== eligible ||
+      ![c.confirmedMissCount,c.qualifyingCount,c.jumpedCount,c.comparablePriceRejected,c.contextCount,c.eventCount,
+        c.eventTestableCount,c.auctionCount,c.auctionTestableCount,c.abnormalVolumeCount,c.twoClassTestableCount].every(n => n === 0)) return "";
+
+  return " 按撮合时点复核，通过基础门槛的股票中，" + intradayNumber(tested) + " 只已核实缺少同行支持，可排除，" +
+    intradayNumber(eligible - tested) + " 只仍待核实。";
+}
+
+function preopenNoPickText(snapshot, market) {
   if (preopenNoPickStatus(snapshot) === "confirmed_empty") return "已核对候选范围内的股票，本期没有符合双证据要求且尚未跳涨的股票。";
   const coverageLine = preopenCoverageLine(snapshot.coverage);
-  return (coverageLine ? coverageLine + " " : "") + "没有确认入选的股票，现有数据不足以判断其余股票是否符合。";
+  return (coverageLine ? coverageLine + " " : "") + "没有确认入选的股票，现有数据不足以判断其余股票是否符合。" + preopenLegacyAuctionNote(snapshot, market);
 }
 
 const preopenCaptureCache = new Map();
@@ -3907,7 +3934,7 @@ function preopenFrozen(snapshot, market, current = false, closed = false) {
     html += picks.length ? '<ol class="preopen-picks">' + picks.map(item => preopenPick(item, market, snapshot.cutoffAt, current)).join("") + '</ol>'
       : snapshot.candidates.length ? '<p class="preopen-notice"><strong>候选证据待核实</strong>冻结前的两类独立依据暂时无法核对。</p>'
       : '<p class="preopen-notice"><strong>' + (preopenNoPickStatus(snapshot) === "confirmed_empty" ? '本次冻结为空榜' : '证据覆盖不足') +
-        '</strong>' + escapeHtml(preopenNoPickText(snapshot)) + '</p>';
+        '</strong>' + escapeHtml(preopenNoPickText(snapshot, market)) + '</p>';
   } else {
     html += '<p class="preopen-notice"><strong>本次预测缺少可核实数据</strong>' + escapeHtml(snapshot.reason || "本次未生成可用名单。") + '</p>';
   }
@@ -4012,7 +4039,7 @@ function preopenArchive({ market, date, record, picks, matched, verified, hits }
     return dateLabel + '<strong class="radar-record-title">' +
       (record.candidates.length ? '入选依据待核实' : preopenNoPickStatus(record) === "confirmed_empty" ? '已发布空榜' : '证据覆盖不足') + '</strong><p class="radar-record-note">' +
       (record.candidates.length ? '冻结时的证据不足以复原名单，本期结果待核。' :
-        escapeHtml(preopenNoPickText(record))) + '</p>';
+        escapeHtml(preopenNoPickText(record, market))) + '</p>';
   }
   return dateLabel + '<strong class="radar-record-title">上期入选 ' + picks.length + ' 只</strong><ul class="radar-record-picks">' +
     picks.map((pick, index) => {
