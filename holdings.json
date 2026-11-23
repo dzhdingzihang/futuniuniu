@@ -7,14 +7,14 @@
   "guide": "统一调整人民币买卖成本只改 costPolicy 的 buyCny、sellCny，每只股票分别计一次。lots 保存调整前的成交数据；日常买卖请使用网页上的「记录交易」。",
   "source": {
     "type": "excel",
-    "file": "20261120股票记录.xlsx",
-    "asOf": "2026-11-20",
-    "valuationAsOf": "2026-11-20",
+    "file": "20261123股票记录.xlsx",
+    "asOf": "2026-11-23",
+    "valuationAsOf": "2026-11-23",
     "fx": {
       "CNY": 1,
-      "HKD": 0.8514,
-      "USD": 6.6751,
-      "asOf": "2026-11-20 21:40 Asia/Shanghai"
+      "HKD": 0.8503,
+      "USD": 6.6683,
+      "asOf": "2026-11-23 21:36 Asia/Shanghai"
     },
     "sheets": [
       "全市场股票明细",
@@ -32,12 +32,12 @@
       "openSecurityCount": 30,
       "closedSecurityCount": 50,
       "soldSecurityCount": 65,
-      "sourcePnlCny": -273530.62
+      "sourcePnlCny": -287757.65
     },
     "valuationAsOfByMarket": {
       "A": "2026-11-06",
-      "HK": "2026-11-20",
-      "US": "2026-11-19"
+      "HK": "2026-11-23",
+      "US": "2026-11-20"
     },
     "orderFeeScenario": {
       "marketScope": [
@@ -45,10 +45,10 @@
         "US"
       ],
       "feeUsdPerOrder": 2,
-      "buyOrderCount": 165,
+      "buyOrderCount": 166,
       "sellOrderCount": 94,
-      "recordedOrderFeesCny": 6696.70655921,
-      "scenarioOrderFeesCny": 3537.23107861
+      "recordedOrderFeesCny": 6748.05812609,
+      "scenarioOrderFeesCny": 3550.58649263
     }
   },
   "newTradeFeeUsd": {
@@ -1389,9 +1389,9 @@
       "quality": "ledger-reconciled",
       "note": "买卖数量及均价已按拆合股统一",
       "buy": {
-        "price": 24.338,
-        "qty": 40,
-        "purchaseCostCny": 6611,
+        "price": 4.118,
+        "qty": 540,
+        "purchaseCostCny": 15009.49,
         "date": "2026-05-22"
       },
       "fees": {
