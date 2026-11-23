@@ -90,6 +90,44 @@ test("CN indications before 09:25 and HK observations before random matching can
   }
 });
 
+test("before the Shenzhen uncross only issuer and peer evidence are possible; a missing event does not resurrect a failed peer test",async()=>{
+  const market="A股", previousCloseAt="2026-11-13T07:00:00Z";
+  const data=rows.map(r=>({...r,market,quoteUpdatedAt:previousCloseAt,metrics:{...r.metrics,amount:4e7,changePct:-1}}));
+  const groups=new Map(data.slice(0,7).map(r=>[r.code,"软件"]));
+  const opts={market,data,groups,total:10,previousCloseAt,asOf:"2026-11-16T01:22:41Z",cutoffAt:"2026-11-16T01:25:00Z"};
+  const r=await build(opts);
+  assert.equal(r.coverage.auctionApplicable,false);
+  assert.equal(r.coverage.auctionAttempted,0);
+  assert.equal(r.coverage.auctionTestableCount,0);
+  assert.equal(r.coverage.twoClassTestableCount,0);
+  assert.deepEqual([r.coverage.confirmedMissCount,r.coverage.unresolvedCount,r.coverage.missingReferenceCount],[7,2,1]);
+  assert.equal(r.sources.find(s=>s.kind==="auction").status,"not_applicable");
+  assert.equal(r.evidenceAvailable,false);
+  const positive=await build({...opts,data:data.map(r=>({...r,metrics:{...r.metrics,changePct:2}})),news:[{...announcement,at:Date.parse("2026-11-16T00:30:00Z")}]});
+  assert.deepEqual(positive.candidates.map(r=>r.code),[code]);
+  const boundary=await build({...opts,asOf:opts.cutoffAt});
+  assert.equal(boundary.coverage.auctionApplicable,true);
+  assert.equal(boundary.coverage.unresolvedCount,data.length);
+});
+
+test("ChiNext disclosures include a later weekend page, deduplicate and preserve unknown coverage on a failed page",async()=>{
+  const disclosure={art_code:"AN202611201111",display_time:"2026-11-20 17:50:00:120",eiTime:"2026-11-20 17:50:01:000",
+    codes:[{stock_code:"300750"}],title:"关于签署重大合同的公告"};
+  const readPages=[];
+  const source=await readNews("A股",async url=>{
+    const n=Number(url.searchParams.get("page_index"));readPages.push(n);
+    assert.equal(url.searchParams.get("begin_time"),"2026-11-19");
+    if(n===1) throw Error("failed page");
+    const list=n>=3 ? [disclosure] : [];
+    return Response.json({success:1,data:{list,total_hits:990}});
+  },{previousClose:Date.parse("2026-11-20T07:00:00Z"),asOf:Date.parse("2026-11-23T01:22:41Z")});
+  assert.deepEqual(readPages.sort((a,b)=>a-b),[1,2,3,4,5,6,7,8]);
+  assert.equal(source.rows.length,1);
+  assert.equal(source.rows[0].at,Date.parse("2026-11-20T09:50:01Z"));
+  assert.match(source.detail,/7\/8 页/);
+  assert.notEqual(source.windowComplete,true);
+});
+
 test("industry mapping cannot be used if it is future, stale or outside the reference pool",()=>{
   const snap={observedAt:"2026-11-15T00:00:00Z",markets:{"美股":{groups:{Pharma:["ABCD",code]}}}};
   assert.deepEqual([...datedIndustries(snap,"美股",[code],now)],[[code,"Pharma"]]);
@@ -101,7 +139,7 @@ test("exchange disclosures require exact times and positive titles; US releases 
   const row={art_code:"AN2026111300101",display_time:"2026-11-13 18:00:00:123",eiTime:"2026-11-13 18:20:00:456",
     notice_date:"2026-11-14 00:00:00",title:"关于签署重大合同的公告",codes:[{stock_code:"300750"}]};
   const cn=await readNews("A股",async()=>Response.json({success:1,data:{list:[row,{...row,title:"关于终止重大合同的公告"}]}}));
-  assert.equal(cn.rows.length,2);assert.equal(cn.rows[0].at,Date.parse("2026-11-13T10:20:00.456Z"));
+  assert.equal(cn.rows.length,1);assert.equal(cn.rows[0].at,Date.parse("2026-11-13T10:20:00.456Z"));
   const hk=await readNews("港股",async()=>Response.json({newsInfoLst:[{title:"正面盈利預告",relTime:"13/11/2026 22:55",
     stock:[{sc:"02683"}],webPath:"/listedco/listconews/sehk/2026/1113/123_c.pdf"}]}));
   assert.equal(hk.rows[0].code,"02683");assert.equal(hk.rows[0].at,Date.parse("2026-11-13T14:55:00Z"));

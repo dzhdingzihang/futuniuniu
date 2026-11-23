@@ -1,6 +1,6 @@
 // Read-only provenance for closed sessions. Never expose unfinished pre-open stages.
 import { intradaySession, loadSessionCalendar } from "../lib/intraday-session.js";
-import { PREOPEN_VERSION, adjacentPreopenSession, preopenSampleMinutes } from "../lib/preopen-cycle.js";
+import { PREOPEN_VERSION, adjacentPreopenSession, preopenSampleMinutesFor } from "../lib/preopen-cycle.js";
 
 const headers = {"Cache-Control":"private, no-store"};
 function referenceSummary(reference, date) {
@@ -27,7 +27,7 @@ export async function onRequestGet({request, env, now=()=>new Date(), fetcher=fe
     const closingReference = await get("ref:" + date);
     const closingAttempt = closingReference ? null : await get("reference-attempt:" + date);
     const stages = [];
-    for (const slot of preopenSampleMinutes) {
+    for (const slot of preopenSampleMinutesFor(market)) {
       const row = await get("stage:" + date + ":" + slot);
       if (row?.tradeDate === date) stages.push({slot,observedAt:row.observedAt || null,frozenAt:row.frozenAt || null,
         referenceDate:row.referenceDate || null,eligibleCount:row.coverage?.eligibleCount ?? null});

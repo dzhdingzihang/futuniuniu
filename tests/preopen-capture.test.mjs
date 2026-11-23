@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { onRequestGet } from "../functions/api/preopen-capture.js";
 
-const read = (date, data, reads=[]) => onRequestGet({
-  request:new Request("https://test.invalid/api/preopen-capture?market=" + encodeURIComponent("A股") + "&date=" + date),
+const read = (date, data, reads=[], market="A股") => onRequestGet({
+  request:new Request("https://test.invalid/api/preopen-capture?market=" + encodeURIComponent(market) + "&date=" + date),
   env:{RADAR_SNAPSHOTS:{get:async key=>{reads.push(key);return data[key.split(":").slice(2).join(":")];}}},
   now:()=>new Date("2026-11-21T05:00:00Z"),fetcher:async()=>{throw Error("offline");}
 });
@@ -29,4 +29,15 @@ test("a missing next-session reference retains its dated acquisition failure sep
   const body=await (await read("2026-11-20",{[key]:{referenceDate:"2026-11-20",stage:"reference",at,reason:"收盘参考覆盖不足",counts:{usable:12}}})).json();
   assert.equal(body.archiveStatus,null);
   assert.deepEqual(body.closingReferenceFailure,{at,reason:"收盘参考覆盖不足",counts:{usable:12}});
+});
+
+
+test("the closed-session audit enumerates the additional 09:23 sample only for the two Asian markets",async()=>{
+  const date="2026-11-20", rows={["stage:"+date+":563"]:{tradeDate:date,eligibleCount:100}};
+  for (const market of ["A股","港股","美股"]) {
+    const reads=[];
+    const body=await (await read(date,rows,reads,market)).json();
+    assert.deepEqual(body.stages.map(s=>s.slot),market==="美股" ? [] : [563]);
+    assert.equal(reads.some(key=>key.endsWith(":563")),market!=="美股");
+  }
 });

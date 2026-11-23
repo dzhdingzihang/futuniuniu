@@ -135,13 +135,14 @@ test("shared cron dispatches only jobs due at this UTC tick",async()=>{
   const calls=[];
   const scheduler=createRadarScheduler(...["daily","intraday","preopen"].map(id=>async opts=>calls.push([id,opts])));
   const {triggers}=JSON.parse(await readFile(new URL("../workers/radar-scheduler/wrangler.jsonc",import.meta.url),"utf8"));
+  const extraCronByMinute={22:2,23:3,28:2};
   for(const [time,expected] of [["00:10:00",["daily"]],["00:40:00",["daily"]],
-    ["01:22:58",["preopen"]],["01:24:00",["preopen"]],["01:28:58",["preopen"]],["01:25:00",["intraday","preopen"]],["01:30:00",["intraday"]],
+    ["01:22:58",["preopen"]],["01:23:58",["preopen"]],["13:23:58",[]],["14:23:58",[]],["01:24:00",["preopen"]],["01:28:58",["preopen"]],["01:25:00",["intraday","preopen"]],["01:30:00",["intraday"]],
     ["07:35:00",["intraday","preopen"]],["01:45:00",["intraday"]]]) {
     calls.length=0;
     let done;
     const scheduled=at(time);
-    const cronIndex=scheduled.getUTCHours()===0 ? 0 : [22,28].includes(scheduled.getUTCMinutes()) ? 2 : 1;
+    const cronIndex=scheduled.getUTCHours()===0 ? 0 : extraCronByMinute[scheduled.getUTCMinutes()] ?? 1;
     scheduler.scheduled({cron:triggers.crons[cronIndex],scheduledTime:+scheduled},
       {RADAR_SNAPSHOTS:{}},{waitUntil:p=>{done=p;}});
     await done;
@@ -269,6 +270,40 @@ test("missing previous close is reported for each sample and survives publicatio
   assert.match(snapshot.reason,/前一交易日的有效收盘参考/);
 });
 
+test("only Shanghai and Hong Kong act on the extra 09:23 sampling minute",async()=>{
+  const kv=new KV();
+  const calendar=JSON.parse(await readFile(new URL("../assets/radar-calendar.json",import.meta.url),"utf8"));
+  for (const time of ["01:23:58","14:23:58"]) {
+    const tick=at(time);
+    await runPreopenCycle({env:{RADAR_SNAPSHOTS:kv},scheduledAt:tick,clock:()=>tick,calendar});
+  }
+  assert.deepEqual([...kv.data.keys()].sort(),["A股","港股"].map(m=>"preopen-v1:"+m+":attempt:"+date+":563").sort());
+});
+
+test("the Asian 09:23:58 sample has its own baseline and supersedes 09:22 when 09:24 finishes late",async()=>{
+  const kv=new KV();
+  await reference(kv);
+  const code=members[0].code;
+  const historyKey="preopen-v1:A股:amounts:";
+  await kv.put(historyKey+"562",JSON.stringify([{date:previous,amounts:{[code]:500}}]));
+  await prepare(kv,562,"01:22:40",[members[0]]);
+  const times=[at("01:23:58"),at("01:24:09")];
+  await prepare(kv,563,"01:23:58",[],{clock:()=>times.shift(),build:async ({historyAmounts,asOf})=>{
+    assert.equal(historyAmounts[code],undefined);
+    return {...fixtureReport([members[1]]),observations:{[code]:{amount:700,at:asOf}}};
+  }});
+  assert.deepEqual((await kv.get(historyKey+"563"))[0].amounts,{[code]:700});
+  assert.deepEqual((await kv.get(historyKey+"562"))[0].amounts,{[code]:500});
+  const late=[at("01:24:58"),at("01:25:08")];
+  await prepare(kv,564,"01:24:58",[members[2]],{clock:()=>late.shift()});
+  await publish(kv,"01:28:40");
+  const saved=(await read(kv,"01:29:00")).latest;
+  assert.equal(saved.sampleMinute,563);
+  assert.equal(saved.frozenAt,date+"T01:24:09.000Z");
+  assert.deepEqual(saved.candidates.map(r=>r.code),[members[1].code]);
+  assert.deepEqual(saved.captureDiagnostics.map(a=>a.slot),[564]);
+});
+
 test("09:28 publication can recover a pre-cutoff stage that only becomes visible after 09:25",async()=>{
   const kv=new KV();
   await reference(kv);
@@ -311,4 +346,31 @@ test("same-slot volume history preserves each provider basis and reads legacy nu
     return {...fixtureReport([]),observations:{[code]:{amount:1200,at:asOf,basis:"new-feed"}}};
   }});
   assert.deepEqual((await kv.get(key)).at(-1).amounts[code],{amount:1200,basis:"new-feed"});
+});
+
+test("a late Hong Kong reference retry splits slow lists, records acquisition errors and only saves a dated close once",async()=>{
+  const kv=new KV(), market="港股", codes=Array.from({length:201},(_,i)=>String(i+1000).padStart(5,"0"));
+  const requests=[];
+  let responding=false;
+  const fetcher=async url=>{
+    if(String(url).includes("radar-universe.json")) return Response.json({[market]:{codes}});
+    const symbols=new URL(url).pathname.split("q=")[1].split(",");
+    requests.push(symbols.length);
+    if(!responding) throw Error("The operation was aborted");
+    return new Response(symbols.map(symbol=>{
+      const fields=Array(72).fill("");
+      Object.assign(fields,{1:"公司",2:symbol.slice(2),3:"10",4:"9",5:"9.5",30:date+" 16:08:25",32:"11.11",33:"10",34:"9",37:"1000000",45:"2"});
+      return 'v_'+symbol+'="'+fields.join("~")+'";';
+    }).join("\n"));
+  };
+  const calendar=JSON.parse(await readFile(new URL("../assets/radar-calendar.json",import.meta.url),"utf8"));
+  const run=(time)=>runPreopenCycle({env:{RADAR_SNAPSHOTS:kv},scheduledAt:at(time),clock:clock(time),calendar,fetcher});
+  await assert.rejects(run("09:35:58"),/收盘行情读取失败/);
+  assert.match((await kv.get("preopen-v1:港股:reference-attempt:"+date)).reason,/aborted/);
+  responding=true; requests.length=0;
+  await run("13:35:58");
+  assert.deepEqual(requests.sort((a,b)=>a-b),[1,100,100]);
+  assert.equal((await kv.get("preopen-v1:港股:ref:"+date)).rows.length,codes.length);
+  await run("13:55:58");
+  assert.equal(requests.length,3);
 });

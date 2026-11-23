@@ -26,18 +26,18 @@ export async function loadGrowthDirectory(fetcher, timeoutMs) {
   }
 }
 
-export async function fetchSegmentMembers({ market, codes, fetcher, timeoutMs, normalize, batchQuotes = fetchTencentGrowthQuotes }) {
+export async function fetchSegmentMembers({ market, codes, fetcher, timeoutMs, normalize, batchQuotes = fetchTencentGrowthQuotes, batchSize = BATCH_SIZE }) {
   const list = [...codes];
   const rows = new Map();
-  const batchCount = Math.ceil(list.length / BATCH_SIZE);
+  const batchCount = Math.ceil(list.length / batchSize);
   let nextBatch = 0;
   // Bound concurrent response bodies within a Workers invocation.
   let failure;
   async function readNext() {
     while (!failure && nextBatch < batchCount) {
-      const start = nextBatch++ * BATCH_SIZE;
+      const start = nextBatch++ * batchSize;
       try {
-        const diff = await batchQuotes({ market, codes: list.slice(start, start + BATCH_SIZE), fetcher, timeoutMs });
+        const diff = await batchQuotes({ market, codes: list.slice(start, start + batchSize), fetcher, timeoutMs });
         for (const raw of diff) {
           const row = normalize(raw, market);
           if (row && codes.has(row.code) && row.providerMarket === GROWTH_SEGMENTS[market].exchange) rows.set(row.code, row);

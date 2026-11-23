@@ -41,9 +41,10 @@ function mainlandTime(time) {
   return date ? Date.parse(date[1]+"T"+date[2]+"."+(date[3]||"000")+"+08:00") : NaN;
 }
 
-async function cnNews(page,fetcher) {
+async function cnNewsPage(page,fetcher,beginDate) {
   const url = new URL(FEEDS.cn);
   url.search = new URLSearchParams({ann_type:"CYB",client_source:"web",sr:"-1",page_size:"100",page_index:String(page)});
+  if (beginDate) url.searchParams.set("begin_time",beginDate);
   const json = await (await request(fetcher,url)).json();
   if (json.success !== 1 || !Array.isArray(json.data?.list)) throw Error("公告列表缺失");
   const rows=[];
@@ -53,7 +54,29 @@ async function cnNews(page,fetcher) {
     for (const security of r.codes || []) rows.push({code:security.stock_code,title,at,source:"东方财富披露公告",
       url:"https://data.eastmoney.com/notices/detail/"+security.stock_code+"/"+r.art_code+".html"});
   }
-  return rows;
+  return {rows,documents:json.data.list.length,total:Number.isInteger(json.data.total_hits) ? json.data.total_hits : null};
+}
+
+async function cnNews(fetcher,{previousClose}) {
+  // Notice dates and display times are not ordered alike. Query a date range
+  // with room for backdated titles, then filter exact disclosure/ingestion times.
+  const beginDate=Number.isFinite(previousClose) ? new Date(previousClose+8*3600000-86400000).toISOString().slice(0,10) : null;
+  const readPage=n=>cnNewsPage(n,fetcher,beginDate);
+  const head=await Promise.allSettled([readPage(1),readPage(2)]);
+  const observed=head.filter(r=>r.status==="fulfilled").map(r=>r.value);
+  if (!observed.length) throw Error("创业板公告来源请求失败。");
+  const reportedTotal=observed.find(p=>p.total!==null)?.total;
+  const limit=8;
+  const requested=reportedTotal!==undefined ? Math.max(1,Math.ceil(reportedTotal/100)) : observed.some(p=>p.documents===100) ? limit : 2;
+  const pages=Math.min(limit,requested);
+  const rest=await settleLimited(Array.from({length:Math.max(0,pages-2)},(_,i)=>()=>readPage(i+3)),3);
+  const chunks=[...head.slice(0,pages),...rest].filter(r=>r.status==="fulfilled").map(r=>r.value);
+  if (!chunks.length) throw Error("查询范围内的创业板公告页均未取得。");
+  const unique=new Map();
+  for (const page of chunks) for (const row of page.rows) unique.set(row.code+"|"+row.url,row);
+  return {rows:[...unique.values()],available:true,label:"创业板公司公告",url:"https://data.eastmoney.com/notices/",
+    detail:"读取东方财富创业板公告 "+chunks.length+"/"+pages+" 页、"+chunks.reduce((n,c)=>n+c.documents,0)+
+      " 条，每轮最多 8 页。逐条按展示和入库时间核验；未检索到的事件保留为未知。"};
 }
 
 async function hkPage(board,page,fetcher) {
@@ -122,15 +145,14 @@ export async function readNews(market,fetcher,window={}) {
       label:"港交所披露易",url:"https://www.hkexnews.hk/",
       detail:"沿主板及 GEM 最新披露目录向前核查，共读取 "+read.reduce((n,b)=>n+b.pages,0)+" 页。"};
   }
-  const jobs=market==="美股"
-    ? ["financial-services-latest-news/earnings-list.rss","health-latest-news/pharmaceuticals-list.rss","news-releases-list.rss"].map(path=>usNews(path,fetcher))
-    : [1,2].map(n=>cnNews(n,fetcher));
+  if (market==="A股") return cnNews(fetcher,window);
+  const jobs=["financial-services-latest-news/earnings-list.rss","health-latest-news/pharmaceuticals-list.rss","news-releases-list.rss"].map(path=>usNews(path,fetcher));
   const output=await Promise.allSettled(jobs);
   const rows=output.filter(r=>r.status==="fulfilled").flatMap(r=>r.value);
   return {rows, available:output.some(r=>r.status==="fulfilled"),
-    label:market==="A股"?"创业板公司公告":"发行人限量新闻稿",
-    url:market==="A股"?"https://data.eastmoney.com/notices/":"https://www.prnewswire.com/news-releases/",
-    detail:market==="A股"?"扫描最近两页创业板公告，核对展示、入库时间。":"扫描三个公开新闻稿频道；仅采用发行人标识与代码均可核对的正面标题。"};
+    label:"发行人限量新闻稿",
+    url:"https://www.prnewswire.com/news-releases/",
+    detail:"扫描三个公开新闻稿频道；仅采用发行人标识与代码均可核对的正面标题。"};
 }
 
 export function datedIndustries(snapshot,market,codes,asOf) {
@@ -319,7 +341,48 @@ function mergeTrades(a,b,reference,start,asOf) {
   return merged;
 }
 
-export async function readAuction(market,codes,tradeDate,cutoffAt,fetcher,{asOf=Date.parse(cutoffAt),eventCodes=new Set(),contextCodes=new Set(),references=new Map()}={}) {
+async function readHongKongBatches(batches, cutoffAt, clock) {
+  const providers = Object.fromEntries(["tencent","eastmoney"].map(name=>[name,{
+    batches:0,firstFailed:0,retried:0,recovered:0,unavailable:0,errors:{}
+  }]));
+  const results = await Promise.allSettled(batches.map(batch=>batch.read()));
+  const failed = [];
+  function recordFailure(stats,error) {
+    const status = /HTTP (\d{3})/.exec(error?.message || "")?.[1];
+    const kind = status ? "http_" + status : ["TimeoutError","AbortError"].includes(error?.name) ? "timeout" :
+      error instanceof SyntaxError || error?.message?.includes("缺失") ? "invalid_response" : "transport";
+    stats.errors[kind] = (stats.errors[kind] || 0) + 1;
+  }
+  for (const [i, result] of results.entries()) {
+    const stats = providers[batches[i].provider];
+    stats.batches++;
+    if (result.status === "rejected") {
+      stats.firstFailed++;
+      stats.unavailable++;
+      recordFailure(stats,result.reason);
+      failed.push(i);
+    }
+  }
+  // Both sources time out at 6.5s. Leave another 1.5s to parse and seal the completed stage.
+  // Retry the broadest failed requests first, at most three subrequests in this sampling round.
+  if (failed.length && Date.parse(cutoffAt) - clock() >= 8000) {
+    const retries = failed.sort((a,b)=>batches[b].size-batches[a].size).slice(0,3);
+    const attempts = await Promise.allSettled(retries.map(i=>batches[i].read()));
+    for (const [r, i] of retries.entries()) {
+      const stats = providers[batches[i].provider];
+      stats.retried++;
+      if (attempts[r].status === "fulfilled") {
+        stats.recovered++;
+        stats.unavailable--;
+        results[i] = attempts[r];
+      } else recordFailure(stats,attempts[r].reason);
+    }
+  }
+  const failedCount = Object.values(providers).reduce((n, s)=>n+s.firstFailed+s.retried-s.recovered,0);
+  return {results,providers,failedCount};
+}
+
+export async function readAuction(market,codes,tradeDate,cutoffAt,fetcher,{asOf=Date.parse(cutoffAt),eventCodes=new Set(),contextCodes=new Set(),references=new Map(),clock=Date.now}={}) {
   if (market==="美股") {
     const [cnbc,scan]=await Promise.all([
       cnbcPremarket(codes,tradeDate,cutoffAt,asOf,fetcher),
@@ -353,22 +416,26 @@ export async function readAuction(market,codes,tradeDate,cutoffAt,fetcher,{asOf=
       failedCount:cnbc.failedCount+out.filter(r=>r.status==="rejected").length,discoveryCount:observations.length,
       available:cnbc.rows.size>0 || out.some(r=>r.status==="fulfilled"&&r.value)};
   }
-  const jobs=[];
-  // An independent public quote can arrive first after HKEX's random match. Both
-  // providers must show a dated execution, positive turnover and the auction price.
+  const batches=[];
+  // Both providers must show a dated execution, positive turnover and the auction price.
   if (market==="港股") {
     for(let i=0;i<codes.length;i+=100) {
       const members=codes.slice(i,i+100);
       const url=new URL("https://push2.eastmoney.com/api/qt/ulist.np/get");
       url.search=new URLSearchParams({fltt:"2",secids:members.map(code=>"116."+code).join(","),fields:"f12,f13,f2,f17,f18,f6,f15,f16,f124"});
-      jobs.push(request(fetcher,url).then(r=>r.json()).then(j=>{
+      batches.push({provider:"eastmoney",size:members.length,read:async()=>{
+        const j=await (await request(fetcher,url)).json();
         if(j.rc!==0 || !Array.isArray(j.data?.diff))throw Error("东方财富竞价报价缺失");
         return j.data.diff.filter(r=>r.f13===116 && members.includes(r.f12)).map(r=>({...r,basis:"eastmoney-hk-turnover"}));
-      }));
+      }});
     }
   }
-  for(let i=0;i<codes.length;i+=380) jobs.push(fetchTencentGrowthQuotes({market,codes:codes.slice(i,i+380),fetcher,timeoutMs:6500}));
-  const out=await Promise.allSettled(jobs);
+  for(let i=0;i<codes.length;i+=380) {
+    const members=codes.slice(i,i+380);
+    batches.push({provider:"tencent",size:members.length,read:()=>fetchTencentGrowthQuotes({market,codes:members,fetcher,timeoutMs:6500})});
+  }
+  const hk = market==="港股" ? await readHongKongBatches(batches,cutoffAt,clock) : null;
+  const out = hk?.results || await Promise.allSettled(batches.map(batch=>batch.read()));
   const byCode=new Map(), sourceSymbols=new Set();
   for(const result of out) {
     if(result.status!=="fulfilled")continue;
@@ -388,5 +455,6 @@ export async function readAuction(market,codes,tradeDate,cutoffAt,fetcher,{asOf=
     }
   }
   return {rows:[...byCode.values()],attempted:codes.length,providerQuotedCount:sourceSymbols.size,
-    failedCount:out.filter(r=>r.status==="rejected").length,available:out.some(r=>r.status==="fulfilled")};
+    ...(hk ? {providers:hk.providers} : {}),
+    failedCount:hk?.failedCount ?? out.filter(r=>r.status==="rejected").length,available:out.some(r=>r.status==="fulfilled")};
 }

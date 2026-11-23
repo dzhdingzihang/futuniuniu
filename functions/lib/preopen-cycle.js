@@ -13,7 +13,12 @@ const exchangeDates = Object.fromEntries(markets.map(m => [m, new Intl.DateTimeF
   timeZone: m === "美股" ? "America/New_York" : m === "港股" ? "Asia/Hong_Kong" : "Asia/Shanghai"
 })]));
 const key = (market, suffix) => PREOPEN_VERSION + ":" + market + ":" + suffix;
-export const preopenSampleMinutes = [555, 560, 562, 564]; // Exchange-local minutes; volume history is separate for every slot.
+// Exchange-local minutes. Each market and sampling minute has its own volume history.
+const asiaSampleMinutes = [555, 560, 562, 563, 564];
+const usSampleMinutes = [555, 560, 562, 564];
+export function preopenSampleMinutesFor(market) {
+  return market === "美股" ? usSampleMinutes : asiaSampleMinutes;
+}
 const expiry = days => ({expirationTtl: days * 86400});
 
 function atMinute(date, market, localMinute, calendar) {
@@ -48,8 +53,8 @@ function publicSnapshot(frozen) {
   return {...published,selectionStatus:classifyPreopenSelection(frozen)};
 }
 
-async function loadRows(market,codes,fetcher) {
-  return fetchSegmentMembers({market,codes:new Set(codes),fetcher,timeoutMs:7000,normalize:normalizeRadarRow});
+async function loadRows(market,codes,fetcher,options={}) {
+  return fetchSegmentMembers({market,codes:new Set(codes),fetcher,timeoutMs:7000,normalize:normalizeRadarRow,...options});
 }
 
 function isClosingQuote(row, market, session, observedAt) {
@@ -64,7 +69,11 @@ export async function capturePreopenReference({market,referenceDate,calendar,dir
   if (!session.closeAt || +clock()<Date.parse(session.closeAt)+15*minute) return null;
   const codes = directory?.[market]?.codes;
   if (!Array.isArray(codes) || codes.length<200) throw Error("缺少官方候选名册");
-  const rows = await getRows(market,codes,fetcher);
+  // A slow batch after the Hong Kong close can be retried well before the next trading session.
+  const options = market === "港股" ? {timeoutMs:15000,batchSize:100} : undefined;
+  let rows;
+  try { rows = await getRows(market,codes,fetcher,options); }
+  catch(error) { throw new Error("收盘行情读取失败：" + error.message); }
   const observedAt = clock();
   const closing = rows.filter(row => isClosingQuote(row,market,session,+observedAt));
   const usable = closing.filter(({metrics:m})=>m.price>0 && m.marketCap>0 && m.amount>0 && Number.isFinite(m.changePct));
@@ -143,11 +152,12 @@ export async function publishPreopen({market,kv,session,calendar,clock}) {
     return;
   }
   const previous=adjacentPreopenSession(market,date,calendar,-1);
-  const stageKeys=preopenSampleMinutes.map(slot=>key(market,"stage:"+date+":"+slot));
-  const diagnosticKeys=preopenSampleMinutes.map(slot=>key(market,"attempt:"+date+":"+slot));
+  const sampleMinutes=preopenSampleMinutesFor(market);
+  const stageKeys=sampleMinutes.map(slot=>key(market,"stage:"+date+":"+slot));
+  const diagnosticKeys=sampleMinutes.map(slot=>key(market,"attempt:"+date+":"+slot));
   if(previous) diagnosticKeys.unshift(key(market,"reference-attempt:"+previous.tradeDate));
   const values=await kv.get([...stageKeys,...diagnosticKeys],"json");
-  const prepared=stageKeys.map((k,i)=>({slot:preopenSampleMinutes[i],value:values.get(k)}))
+  const prepared=stageKeys.map((k,i)=>({slot:sampleMinutes[i],value:values.get(k)}))
     .filter(({value:v})=>v?.tradeDate===date && v.cutoffAt===cutoff.toISOString() && Date.parse(v.frozenAt)<=+cutoff)
     .sort((a,b)=>b.value.frozenAt.localeCompare(a.value.frozenAt));
   // A just-written KV stage (and cached "missing" reads) can take time to propagate.
@@ -234,7 +244,7 @@ export async function runPreopenCycle({env,scheduledAt,clock=()=>new Date(),fetc
   async function tryReference(opts,referenceDate) {
     if(await get(kv,opts.market,"ref:"+referenceDate)) return;
     try {
-      directory ??=loadGrowthDirectory(fetcher,7000);
+      directory ??=loadGrowthDirectory(fetcher,12000).catch(error=>{throw new Error("候选名册读取失败：" + error.message);});
       await capturePreopenReference({...opts,referenceDate,directory:await directory});
     } catch(error) {
       await put(kv,opts.market,"reference-attempt:"+referenceDate,{
@@ -262,7 +272,7 @@ export async function runPreopenCycle({env,scheduledAt,clock=()=>new Date(),fetc
       if(slot===550) {
         const previous=adjacentPreopenSession(market,session.tradeDate,calendar,-1);
         if(previous) await tryReference(opts,previous.tradeDate);
-      } else if(preopenSampleMinutes.includes(slot)){
+      } else if(preopenSampleMinutesFor(market).includes(slot)){
         await preparePreopen({...opts,slot});
       } else if(slot===565 || slot===568) {
         await publishPreopen(opts);
@@ -271,6 +281,8 @@ export async function runPreopenCycle({env,scheduledAt,clock=()=>new Date(),fetc
         if(afterClose===35 || afterClose===55){
           await tryReference(opts,session.tradeDate);
           await settlePreopen(opts);
+        } else if(market==="港股" && [95,335,355].includes(afterClose)) {
+          await tryReference(opts,session.tradeDate);
         } else if(market==="A股" && [105,155].includes(afterClose)) {
           // The mainland provider can stamp a whole closing batch after 16:00 local time.
           await tryReference(opts,session.tradeDate);

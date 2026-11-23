@@ -129,9 +129,15 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
     (contexts.get(b.code)?.strength||0)-(contexts.get(a.code)?.strength||0) ||
     b.metrics.amount-a.metrics.amount || a.code.localeCompare(b.code));
   const codes = ordered.map(row=>row.code);
-  let auction;
-  try {auction=await providers.readAuction(market,codes,tradeDate,cutoffAt,fetcher,{asOf:now,eventCodes:events,contextCodes:contexts,references:new Map(eligible.map(row=>[row.code,row.metrics.price]))});}
-  catch {auction={rows:[],attempted:0,available:false};}
+  // SZSE executes the opening auction at 09:25. Before then only two of our
+  // evidence classes (issuer disclosure and previous-close peers) can qualify.
+  const auctionApplicable = market !== "A股" || now >= cutoff;
+  coverage.auctionApplicable = auctionApplicable;
+  let auction = {rows:[],attempted:0,available:false};
+  if (auctionApplicable) {
+    try {auction=await providers.readAuction(market,codes,tradeDate,cutoffAt,fetcher,{asOf:now,eventCodes:events,contextCodes:contexts,references:new Map(eligible.map(row=>[row.code,row.metrics.price]))});}
+    catch { /* No evidence can be inferred from a failed source. */ }
+  }
   coverage.auctionAttempted=auction.attempted;
   coverage.tapeAttempted=auction.tapeAttempted || 0;
   coverage.discoveryCount=auction.discoveryCount || 0;
@@ -142,6 +148,7 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
     coverage.cnbcFreshCount=auction.cnbcFreshCount || 0;
     coverage.tapeReturnedCount=auction.tapeReturnedCount || 0;
   } else coverage.providerQuotedCount=auction.providerQuotedCount || 0;
+  if (market==="港股" && auction.providers) coverage.auctionProviders=auction.providers;
   coverage.auctionReturnedCount=auction.rows.length;
   coverage.auctionFailedCount=auction.failedCount || 0;
   coverage.auctionStaleCount=0;
@@ -174,7 +181,8 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
         result.observations[code]={amount:quote.amount,at:iso(quote.amountAt),price:quote.price,basis:quote.basis};
         ratio=readVolumeRatio(historyAmounts[code],tradeDate,quote.amount,quote.basis);
       }
-    } else risks.push(alreadyJumped ? "当前价待核对；已取得较早的盘前触及记录。" : "盘前价未核实，无法排除已跳涨。");
+    } else if(!auctionApplicable) risks.push("开盘集合竞价尚未撮合，09:25 后才能核对成交价。");
+    else risks.push(alreadyJumped ? "当前价待核对；已取得较早的盘前触及记录。" : "盘前价未核实，无法排除已跳涨。");
     const event=events.get(code);
     if (event) items.push(eventItem(event));
     if (quote && ratio?.ratio>=1.8 && quote.liquid && quote.multiple && change>=0.5 && change<5) {
@@ -195,7 +203,7 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
     const knownCount=Number(eventKnown)+Number(tested.has(code))+Number(auctionKnown);
     if(knownCount>=2) coverage.twoClassTestableCount++;
     if(!alreadyJumped && items.length<2) {
-      if(items.length+3-knownCount<2) coverage.confirmedMissCount++;
+      if(items.length+(auctionApplicable ? 3 : 2)-knownCount<2) coverage.confirmedMissCount++;
       else coverage.unresolvedCount++;
       continue;
     }
@@ -220,15 +228,18 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
   result.candidates=result.candidates.slice(0,3).map((r,i)=>({...r,rank:i+1}));
   result.jumped.sort((a,b)=>b.jumpPrice/b.prevClose-a.jumpPrice/a.prevClose || a.code.localeCompare(b.code));
   const auctionLabel=market==="美股"?"CNBC 盘前报价与 Nasdaq 成交":"开盘集合竞价成交";
+  const batchSummary=Object.entries(coverage.auctionProviders || {}).map(([source,stats])=>
+    (source==="tencent" ? "腾讯" : "东方财富")+"共 "+stats.batches+" 批，首轮失败 "+stats.firstFailed+" 批，重试恢复 "+stats.recovered+" 批，最终缺 "+stats.unavailable+" 批。").join(" ");
   result.sources=[
     {kind:"event",label:news.label,status:news.available?"partial":"unavailable",url:news.url,detail:news.detail+" 时间窗内命中 "+events.size+" 只。"},
     {kind:"context",label:"细分行业与昨日收盘",status:industries.size===0?"unavailable":industries.size===refs.length?"available":"partial",
       url:"https://www.tradingview.com/screener/",detail:(industries.description || "")+"已取得 "+industries.size+"/"+refs.length+" 只的行业映射，"+coverage.contextCount+" 只符合同行共振条件。"},
-    {kind:"auction",label:auctionLabel,status:!coverage.auctionCount?"unavailable":coverage.auctionCount===eligible.length?"available":"partial",
+    {kind:"auction",label:auctionLabel,status:!auctionApplicable?"not_applicable":!coverage.auctionCount?"unavailable":coverage.auctionCount===eligible.length?"available":"partial",
       url:market==="美股"?"https://www.nasdaq.com/market-activity/pre-market":"https://gu.qq.com/",
-      detail:(market==="美股"?"整池发现 "+coverage.discoveryCount+" 只盘前线索，其中 CNBC 返回 "+coverage.cnbcReturnedCount+" 只证券，有时标盘前成交 "+coverage.cnbcSessionCount+" 只。":"")+"已查询 "+coverage.auctionAttempted+"/"+eligible.length+" 只成交，"+coverage.auctionCount+" 只有新鲜可比报价。"+
+      detail:!auctionApplicable ? "深交所开盘集合竞价于 09:25 撮合。采样时只有公司公告和昨日同行共振两类证据可用于入选。" :
+        (market==="美股"?"整池发现 "+coverage.discoveryCount+" 只盘前线索，其中 CNBC 返回 "+coverage.cnbcReturnedCount+" 只证券，有时标盘前成交 "+coverage.cnbcSessionCount+" 只。":"")+"已查询 "+coverage.auctionAttempted+"/"+eligible.length+" 只成交，"+coverage.auctionCount+" 只有新鲜可比报价。"+
         (market==="美股"?"对 " +coverage.tapeAttempted+ " 只优先核验的股票另查 Nasdaq 逐笔；交易所公开行情至少延迟 15 分钟。":market==="A股"?"09:25 撮合前的虚拟申报价不计入成交。":"腾讯与东方财富行情可能延迟，只采用 09:20 起已撮合且能核对前收的报价。")+
-        " 来源请求失败 "+coverage.auctionFailedCount+" 次，非本时段或过时报价 "+coverage.auctionStaleCount+" 只。其中 "+coverage.abnormalVolumeCount+" 只确认异常资金；前收不一致排除 "+coverage.comparablePriceRejected+" 只。"},
+        " 来源请求失败 "+coverage.auctionFailedCount+" 次，非本时段或过时报价 "+coverage.auctionStaleCount+" 只。其中 "+coverage.abnormalVolumeCount+" 只确认异常资金；前收不一致排除 "+coverage.comparablePriceRejected+" 只。"+batchSummary},
   ];
   result.reason=result.candidates.length ? "至少两类独立证据同时成立，按证据数量、盘前放量和同行强度排序。" :
     result.evidenceAvailable ? "已逐只核对，本期没有尚未跳涨且同时满足两类证据的股票。" :

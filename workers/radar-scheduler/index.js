@@ -37,9 +37,10 @@ export function createRadarScheduler(refresh = runScheduledRadarRefresh, scanInt
       }
       const jobs = [];
       if (weekday && minute % 5 === 0) jobs.push(scanIntraday({env, scheduledAt}));
-      const beforeOpen = weekday && [1,13,14].includes(hour) && [10,15,20,22,24,25,28].includes(minute);
+      const beforeOpen = weekday && ((hour === 1 && minute === 23) ||
+        ([1,13,14].includes(hour) && [10,15,20,22,24,25,28].includes(minute)));
       const afterClose = ([4,7,8,17,18,20,21].includes(hour) && [35,55].includes(minute))
-        || (weekday && ((hour===8 && minute===45) || (hour===9 && minute===35)));
+        || (weekday && ((hour===8 && minute===45) || (hour===9 && minute===35) || (hour===13 && [35,55].includes(minute))));
       if (beforeOpen || afterClose) jobs.push(preopen({env, scheduledAt}));
       context.waitUntil(Promise.all(jobs));
     },

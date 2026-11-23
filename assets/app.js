@@ -3832,7 +3832,9 @@ function preopenNoPickStatus(row) {
 function preopenCoverageLine(c) {
   if (!c || !Number.isInteger(c.eligibleCount)) return "";
   const parts = ["通过基础门槛 " + intradayNumber(c.eligibleCount) + " 只"];
-  if (Number.isInteger(c.auctionAttempted) && Number.isInteger(c.auctionCount)) {
+  if (c.auctionApplicable === false) {
+    parts.push("采样时尚未撮合，仅核对公司公告和同行表现");
+  } else if (Number.isInteger(c.auctionAttempted) && Number.isInteger(c.auctionCount)) {
     parts.push("盘前成交已查 " + intradayNumber(c.auctionAttempted) + " 只，可核验 " + intradayNumber(c.auctionCount) + " 只");
   }
   if (Number.isInteger(c.eventCount)) parts.push("事件命中 " + intradayNumber(c.eventCount) + " 只");
@@ -3890,7 +3892,7 @@ function preopenProvenance(snapshot, market, closed = false) {
     (c.comparablePriceRejected > 0 ? '<br>剔除昨收口径不一致 ' + intradayNumber(c.comparablePriceRejected) + ' 只' : '') + '</p>' : '';
   const diagnostic = closed ? '<p class="preopen-scope" role="status" data-capture-audit data-market="' + escapeHtml(market) +
     '" data-date="' + escapeHtml(snapshot.tradeDate) + '">正在核对昨收参考和采样档…</p>' : '';
-  const statuses = {available:"可用", partial:"部分可用", unavailable:"未取得"};
+  const statuses = {available:"可用", partial:"部分可用", unavailable:"未取得", not_applicable:"此时段不适用"};
   return preopenDetails("preopen-" + market + "-" + snapshot.tradeDate + "-sources", "采集时间与数据来源", timeline + coverage + diagnostic + '<ul class="preopen-source-list">' +
     (snapshot.sources || []).map(s => '<li><b>' + preopenSourceLink(s.label || s.source, s.url) + '</b> · ' + (statuses[s.status] || "待核") +
       '<p>' + escapeHtml(s.detail || "覆盖情况待核") + '</p></li>').join("") + '</ul>');
