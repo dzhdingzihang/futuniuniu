@@ -23,3 +23,10 @@ test("capture audit never reads stages of future, non-session, or invalid dates"
     assert.equal(reads.length,0);
   }
 });
+
+test("a missing next-session reference retains its dated acquisition failure separately from the morning archive",async()=>{
+  const key="reference-attempt:2026-11-20",at="2026-11-20T08:55:00Z";
+  const body=await (await read("2026-11-20",{[key]:{referenceDate:"2026-11-20",stage:"reference",at,reason:"收盘参考覆盖不足",counts:{usable:12}}})).json();
+  assert.equal(body.archiveStatus,null);
+  assert.deepEqual(body.closingReferenceFailure,{at,reason:"收盘参考覆盖不足",counts:{usable:12}});
+});

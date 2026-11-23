@@ -25,6 +25,7 @@ export async function onRequestGet({request, env, now=()=>new Date(), fetcher=fe
     const archive = await get("frozen:" + date);
     const reference = previous ? await get("ref:" + previous) : null;
     const closingReference = await get("ref:" + date);
+    const closingAttempt = closingReference ? null : await get("reference-attempt:" + date);
     const stages = [];
     for (const slot of preopenSampleMinutes) {
       const row = await get("stage:" + date + ":" + slot);
@@ -33,6 +34,8 @@ export async function onRequestGet({request, env, now=()=>new Date(), fetcher=fe
     }
     return reply({market,date,readAt:readAt.toISOString(),referenceDate:previous || null,
       reference:referenceSummary(reference,previous),closingReference:referenceSummary(closingReference,date),
+      closingReferenceFailure:closingAttempt?.referenceDate===date && closingAttempt.stage==="reference"
+        ? {at:closingAttempt.at,reason:closingAttempt.reason,counts:closingAttempt.counts || null} : null,
       stages,publishedAt:archive?.publishedAt || null,archiveStatus:archive?.status || null,
       captureDiagnostics:archive?.captureDiagnostics || null});
   } catch { return reply({error:"采集诊断暂时无法读取。"},503); }
