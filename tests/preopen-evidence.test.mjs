@@ -244,3 +244,15 @@ test("HK backup needs an executed auction and all OHLC at that price; outside-se
   const merge=await read(row,earlier);assert.equal(merge.rows[0].price,103);assert.equal(merge.rows[0].high,106);
   const invalid=await read({...row,f18:88},earlier);assert.equal(invalid.rows[0].price,106);
 });
+
+test("a current observed turnover below the absolute floor rules out a volume signal even during baseline warm-up",async()=>{
+  const data=rows.map(r=>({...r,metrics:{...r.metrics,changePct:-2}}));
+  const thin={...print,liquid:false};
+  const r=await build({data,tape:[thin]});
+  assert.equal(r.coverage.volumeBaselineCount,0);
+  assert.equal(r.coverage.confirmedMissCount,1);
+  for (const amountAt of [now+1,now-6*60_000]) {
+    const unknown=await build({data,tape:[{...thin,amountAt}]});
+    assert.equal(unknown.coverage.confirmedMissCount,0);
+  }
+});

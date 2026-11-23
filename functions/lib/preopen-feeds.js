@@ -204,24 +204,30 @@ const num=value=>{
   const n=Number(value.replace(/[$,]/g,""));return Number.isFinite(n)?n:null;
 };
 async function nasdaqAuction(code,tradeDate,cutoffAt,fetcher,asOf) {
-  const url="https://api.nasdaq.com/api/quote/"+encodeURIComponent(code)+"/extended-trading?assetclass=stocks&markettype=pre&time=11&limit=20";
+  const url="https://api.nasdaq.com/api/quote/"+encodeURIComponent(code)+"/extended-trading?assetclass=stocks&markettype=pre&time=0&limit=100";
   const data=(await (await request(fetcher,url,{headers:{...headers,Accept:"application/json",Referer:"https://www.nasdaq.com/"}})).json()).data;
-  const last=data?.lastUpdateInfo?.[0]?.match(/\b([A-Za-z]{3}) (\d{1,2}), (\d{4}) (\d{1,2}):(\d{2})(?::(\d{2}))? (AM|PM) ET\b/i);
-  if (!last || last[7].toUpperCase()!=="AM") return null;
+  // The live response includes a refresh notice ahead of the dated update.
+  // Times in the trade table have no dates, so require one unambiguous page timestamp.
+  const stamps=(Array.isArray(data?.lastUpdateInfo) ? data.lastUpdateInfo : [])
+    .map(line=>typeof line==="string" && line.match(/\b([A-Za-z]{3}) (\d{1,2}), (\d{4}) (\d{1,2}):(\d{2})(?::(\d{2}))? (AM|PM) ET\b/i)).filter(Boolean);
+  if (stamps.length!==1) return null;
+  const last=stamps[0];
+  if (last[7].toUpperCase()!=="AM" || +last[4]<4 || +last[4]>9 || +last[5]>59 || +(last[6] || 0)>59) return null;
   const date=new Date(last[1]+" "+last[2]+", "+last[3]+" 00:00:00 GMT");
   if (!Number.isFinite(+date) || date.toISOString().slice(0,10)!==tradeDate) return null;
   // Convert observed exchange clock times using the official 09:25 ET cutoff.
   const fromEt=(hr,min,sec)=>Date.parse(cutoffAt)+(hr*60+min-565)*60_000+sec*1000;
-  const updatedAt=fromEt(Number(last[4])%12,Number(last[5]),Number(last[6]||0));
+  const updatedAt=fromEt(+last[4],+last[5],Number(last[6]||0));
+  const publishedThrough=updatedAt+(last[6] ? 0 : 59_999);
   const top=data?.infoTable?.rows?.[0];
   const tape=data?.tradeDetailTable?.rows;
-  if (!Array.isArray(tape)|| !top || !Number.isFinite(updatedAt)) return null;
+  if (!Array.isArray(tape) || !top || !Number.isFinite(updatedAt) || updatedAt>asOf) return null;
   const entries=tape.flatMap(row=>{
     const t=String(row.nlsTime || row.time || "").match(/^(\d{1,2}):(\d{2}):(\d{2})(?:\s*AM)?$/i);
     const price=num(row.nlsPrice || row.price);
-    if (!t || !price || Number(t[1])<4 || Number(t[1])>9) return [];
+    if (!t || !(price>0) || +t[1]<4 || +t[1]>9 || +t[2]>59 || +t[3]>59) return [];
     const at=fromEt(+t[1],+t[2],+t[3]);
-    return at<=asOf && at<=updatedAt+59_999 ? [{at,price}] : [];
+    return at<=asOf && at<=publishedThrough ? [{at,price}] : [];
   }).sort((a,b)=>b.at-a.at);
   const shares=num(top.volume), prevClose=num(data.previousInfo?.match(/\$[\d,.]+/)?.[0]);
   if (!entries.length || !(prevClose>0)) return null;
@@ -229,7 +235,7 @@ async function nasdaqAuction(code,tradeDate,cutoffAt,fetcher,asOf) {
   const high = /^\$([\d,.]+) \((\d{1,2}):(\d{2}):(\d{2}) AM\)$/i.exec(top.highPrice || "");
   return {code,price:entries[0].price,at:entries[0].at,
     high:high ? num(high[1]) : null, highAt:high ? fromEt(+high[2],+high[3],+high[4]) : null,
-    amountAt:updatedAt+(last[6] ? 0 : 59999),amount:shares,unit:"股",
+    amountAt:publishedThrough,amount:shares,unit:"股",
     liquid:shares>0 && shares*entries[0].price>=1e6, multiple:entries.length>=3, prevClose,source:"Nasdaq 盘前成交",
     url:"https://www.nasdaq.com/market-activity/stocks/"+code.toLowerCase()+"/pre-market"};
 }

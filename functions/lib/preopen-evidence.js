@@ -175,9 +175,11 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
     const alreadyJumped=sessionQuote && (raw.price+1e-9>=targetPrice || observedHigh+1e-9>=targetPrice);
     const items=[], risks=[];
     let ratio=null;
+    const currentAmount=quote && quote.amountAt>=start && quote.amountAt<=now && now-quote.amountAt<=5*minute &&
+      finite(quote.amount) && quote.amount>0;
     if (quote) {
       coverage.auctionCount++;
-      if (quote.amountAt>=start && quote.amountAt<=now && now-quote.amountAt<=5*minute && finite(quote.amount) && quote.amount>0) {
+      if (currentAmount) {
         result.observations[code]={amount:quote.amount,at:iso(quote.amountAt),price:quote.price,basis:quote.basis};
         ratio=readVolumeRatio(historyAmounts[code],tradeDate,quote.amount,quote.basis);
       }
@@ -195,8 +197,8 @@ export async function buildPreopenEvidence({market, tradeDate, cutoffAt, asOf, p
     // An RSS channel with zero matches never establishes a negative for every issuer.
     // A single failing necessary auction criterion does establish a negative, even while the volume baseline warms up.
     const eventKnown=Boolean(event) || news.windowComplete===true || Boolean(news.coveredCodes?.has(code));
-    const auctionKnown=Boolean(quote && (change<0.5 || change>=5 || ratio && (
-      ratio.ratio<1.8 || quote.liquid===false || quote.liquid===true && quote.multiple===true)));
+    const auctionKnown=Boolean(quote && (change<0.5 || change>=5 || currentAmount && quote.liquid===false ||
+      ratio && (ratio.ratio<1.8 || quote.liquid===true && quote.multiple===true)));
     if(ratio) coverage.volumeBaselineCount++;
     if(eventKnown) coverage.eventTestableCount++;
     if(auctionKnown) coverage.auctionTestableCount++;
