@@ -40,3 +40,13 @@ export function intradaySession(market, now = new Date(), calendar = bundledCale
     remainingMinutes:minutesInSession-elapsedMinutes, sessionStartAt:tradingDay && current ? minuteToIso(current[0]) : null,
     closeAt:tradingDay ? minuteToIso(end) : null };
 }
+
+export function adjacentTradingSession(market, date, calendar, direction) {
+  const noon = Date.parse(date + "T12:00:00Z");
+  for (let i = 1; i <= 20; i++) {
+    const next = intradaySession(market,new Date(noon+i*direction*86400000),calendar);
+    if (!next.calendarKnown) return null;
+    if (next.closeAt) return next;
+  }
+  return null;
+}

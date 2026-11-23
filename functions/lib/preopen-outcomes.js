@@ -1,5 +1,5 @@
 // All three groups use the same frozen membership and the same unadjusted daily price basis.
-import { intradaySession } from "./intraday-session.js";
+import { adjacentTradingSession, intradaySession } from "./intraday-session.js";
 
 import { classifyPreopenSelection } from "./preopen-selection.js";
 
@@ -108,26 +108,42 @@ function addRow(count, result) {
   if (result.faded) count.faded++;
 }
 
-export function evaluatePreopenDay({frozen,bars,closedAt,asOf,minutesByCode={},calendar}) {
-  if (frozen?.status !== "frozen" || !["A股","港股","美股"].includes(frozen.market)) return null;
+export function canEvaluatePreopenArchive(frozen, calendar) {
+  if (!["frozen","unavailable"].includes(frozen?.status) || !["A股","港股","美股"].includes(frozen.market)) return false;
+  if (!Array.isArray(frozen.universe) || !frozen.universe.length || !Array.isArray(frozen.candidates)
+      || !Array.isArray(frozen.yesterdayLeaders) || frozen.universe.some(member => typeof member?.code !== "string" || !member.code)) return false;
   const seal = stamp(frozen.frozenAt), cutoff = stamp(frozen.cutoffAt), publish = stamp(frozen.publishedAt);
-  const closeAt = stamp(closedAt), knownAt = stamp(asOf), openAt = cutoff+FIVE_MIN;
-  if (![seal,cutoff,publish,closeAt,knownAt].every(Number.isFinite)
-      || seal > cutoff || publish < cutoff || publish >= openAt || closeAt <= openAt || knownAt < closeAt) return null;
+  if (![seal,cutoff,publish].every(Number.isFinite) || seal > cutoff || publish < cutoff || publish >= cutoff+FIVE_MIN) return false;
   const session = intradaySession(frozen.market,cutoff,calendar);
   if (!session.calendarKnown || session.phase !== "preopen" || session.tradeDate !== frozen.tradeDate
-      || session.localMinute !== 565 || cutoff % 60000 || stamp(session.closeAt) !== closeAt
-      || intradaySession(frozen.market,seal,calendar).tradeDate !== frozen.tradeDate) return null;
-  if (!Array.isArray(frozen.universe) || !frozen.universe.length || !Array.isArray(frozen.candidates)
-      || !Array.isArray(frozen.yesterdayLeaders) || !Array.isArray(bars)) return null;
+      || session.localMinute !== 565 || cutoff % 60000 || intradaySession(frozen.market,seal,calendar).tradeDate !== frozen.tradeDate) return false;
+  if (frozen.status === "frozen") return true;
+  // A published failure without a pre-cutoff sample must never acquire results after the close.
+  const observed = stamp(frozen.observedAt), c = frozen.coverage;
+  if (frozen.evidenceAvailable !== false || frozen.candidates.length || classifyPreopenSelection(frozen) !== "incomplete"
+      || !Number.isFinite(observed) || observed > seal || intradaySession(frozen.market,observed,calendar).tradeDate !== frozen.tradeDate
+      || frozen.referenceDate !== adjacentTradingSession(frozen.market,frozen.tradeDate,calendar,-1)?.tradeDate
+      || !frozen.referenceDate || frozen.total !== frozen.universe.length) return false;
+  const counts = [c.referenceCount,c.missingReferenceCount,c.eligibleCount,c.confirmedMissCount,c.jumpedCount,c.unresolvedCount];
+  return counts.every(n => Number.isInteger(n) && n >= 0) && c.referenceCount > 0 && c.qualifyingCount === 0
+    && c.referenceCount + c.missingReferenceCount === frozen.total && c.eligibleCount <= c.referenceCount
+    && c.confirmedMissCount + c.jumpedCount + c.unresolvedCount === c.eligibleCount
+    && c.unresolvedCount + c.missingReferenceCount > 0;
+}
+
+export function evaluatePreopenDay({frozen,bars,closedAt,asOf,minutesByCode={},calendar}) {
+  if (!canEvaluatePreopenArchive(frozen,calendar) || !Array.isArray(bars)) return null;
+  const cutoff = stamp(frozen.cutoffAt), closeAt = stamp(closedAt), knownAt = stamp(asOf), openAt = cutoff+FIVE_MIN;
+  if (![closeAt,knownAt].every(Number.isFinite) || closeAt <= openAt || knownAt < closeAt
+      || stamp(intradaySession(frozen.market,cutoff,calendar).closeAt) !== closeAt) return null;
   const members = new Map(frozen.universe.map(member => [member.code,member]));
   if (members.size !== frozen.universe.length) return null;
   const groups = {picks:counts(),pool:counts(),yesterdayLeaders:counts()};
   const groupsByCode = new Map();
   for (const [group,values] of [["picks", frozen.candidates], ["yesterdayLeaders", frozen.yesterdayLeaders]]) {
-    if (values.length > 3 || new Set(values.map(v => v.code)).size !== values.length) return null;
+    if (values.length > 3 || new Set(values.map(v => v?.code)).size !== values.length) return null;
     for (const [i,v] of values.entries()) {
-      if (!members.has(v.code)) return null;
+      if (!members.has(v?.code)) return null;
       const ranks = groupsByCode.get(v.code) || {};
       ranks[group] = i+1;
       groupsByCode.set(v.code,ranks);
@@ -151,6 +167,7 @@ export function evaluatePreopenDay({frozen,bars,closedAt,asOf,minutesByCode={},c
       rows.push({code:member.code,name:member.name,groups:Object.keys(ranks),ranks,...outcome});
     }
   }
+  if (frozen.status === "unavailable" && !groups.pool.verified) return null;
   rows.sort((a,b) => (a.ranks.picks ?? 9)-(b.ranks.picks ?? 9) || (a.ranks.yesterdayLeaders ?? 9)-(b.ranks.yesterdayLeaders ?? 9));
   return {market:frozen.market,tradeDate:frozen.tradeDate,asOf:new Date(knownAt).toISOString(),selectionStatus:classifyPreopenSelection(frozen),rows,
     groups:Object.fromEntries(GROUPS.map(key=>[key,rates(groups[key])]))};

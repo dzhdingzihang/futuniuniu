@@ -1,24 +1,19 @@
 import { normalizeRadarRow, isEligibleRadarCandidate } from "../api/radar.js";
-import { intradaySession, loadSessionCalendar } from "./intraday-session.js";
+import { adjacentTradingSession as adjacentPreopenSession, intradaySession, loadSessionCalendar } from "./intraday-session.js";
 import { GROWTH_SEGMENTS, fetchSegmentMembers, loadGrowthDirectory } from "./radar-segment.js";
 import { classifyPreopenSelection } from "./preopen-selection.js";
 import { buildPreopenEvidence } from "./preopen-evidence.js";
-import { evaluatePreopenDay, fetchPreopenTouchBars, summarizePreopenHistory } from "./preopen-outcomes.js";
+import { canEvaluatePreopenArchive, evaluatePreopenDay, fetchPreopenTouchBars, summarizePreopenHistory } from "./preopen-outcomes.js";
 
 export const PREOPEN_VERSION = "preopen-v1";
 const minute = 60000;
-const day = 86400000;
 const markets = Object.keys(GROWTH_SEGMENTS);
 const exchangeDates = Object.fromEntries(markets.map(m => [m, new Intl.DateTimeFormat("sv-SE", {
   timeZone: m === "美股" ? "America/New_York" : m === "港股" ? "Asia/Hong_Kong" : "Asia/Shanghai"
 })]));
 const key = (market, suffix) => PREOPEN_VERSION + ":" + market + ":" + suffix;
 // Exchange-local minutes. Each market and sampling minute has its own volume history.
-const asiaSampleMinutes = [555, 560, 562, 563, 564];
-const usSampleMinutes = [555, 560, 562, 564];
-export function preopenSampleMinutesFor(market) {
-  return market === "美股" ? usSampleMinutes : asiaSampleMinutes;
-}
+export const preopenSampleMinutes = Object.freeze([555, 560, 562, 563, 564]);
 const expiry = days => ({expirationTtl: days * 86400});
 
 function atMinute(date, market, localMinute, calendar) {
@@ -28,15 +23,7 @@ function atMinute(date, market, localMinute, calendar) {
   return new Date(+noon + (localMinute-session.localMinute)*minute);
 }
 
-export function adjacentPreopenSession(market, date, calendar, direction) {
-  const noon = Date.parse(date + "T12:00:00Z");
-  for (let i = 1; i <= 20; i++) {
-    const next = intradaySession(market,new Date(noon+i*direction*day),calendar);
-    if (!next.calendarKnown) return null;
-    if (next.closeAt) return next;
-  }
-  return null;
-}
+export { adjacentPreopenSession };
 
 const get = (kv,m,id) => kv.get(key(m,id),"json");
 const put = (kv,m,id,v,ttl) => kv.put(key(m,id),JSON.stringify(v),expiry(ttl));
@@ -152,12 +139,11 @@ export async function publishPreopen({market,kv,session,calendar,clock}) {
     return;
   }
   const previous=adjacentPreopenSession(market,date,calendar,-1);
-  const sampleMinutes=preopenSampleMinutesFor(market);
-  const stageKeys=sampleMinutes.map(slot=>key(market,"stage:"+date+":"+slot));
-  const diagnosticKeys=sampleMinutes.map(slot=>key(market,"attempt:"+date+":"+slot));
+  const stageKeys=preopenSampleMinutes.map(slot=>key(market,"stage:"+date+":"+slot));
+  const diagnosticKeys=preopenSampleMinutes.map(slot=>key(market,"attempt:"+date+":"+slot));
   if(previous) diagnosticKeys.unshift(key(market,"reference-attempt:"+previous.tradeDate));
   const values=await kv.get([...stageKeys,...diagnosticKeys],"json");
-  const prepared=stageKeys.map((k,i)=>({slot:sampleMinutes[i],value:values.get(k)}))
+  const prepared=stageKeys.map((k,i)=>({slot:preopenSampleMinutes[i],value:values.get(k)}))
     .filter(({value:v})=>v?.tradeDate===date && v.cutoffAt===cutoff.toISOString() && Date.parse(v.frozenAt)<=+cutoff)
     .sort((a,b)=>b.value.frozenAt.localeCompare(a.value.frozenAt));
   // A just-written KV stage (and cached "missing" reads) can take time to propagate.
@@ -178,13 +164,19 @@ export async function publishPreopen({market,kv,session,calendar,clock}) {
   await put(kv,market,"latest",publicSnapshot(record),180);
 }
 
+function closingBars(rows,market,session,observedAt) {
+  return rows.filter(r=>r?.market===market && isClosingQuote(r,market,session,observedAt) && r.metrics?.amount>0).map(r=>({
+    code:r.code,market,tradeDate:session.tradeDate,prevClose:r.metrics.prevClose,open:r.metrics.open,
+    close:r.metrics.price,high:r.metrics.high,low:r.metrics.low}));
+}
+
 export async function settlePreopen({market,kv,session,calendar,clock,fetcher,getRows=loadRows,getMinutes=fetchPreopenTouchBars}) {
   const frozen=await get(kv,market,"frozen:"+session.tradeDate);
-  if(frozen?.status!=="frozen" || +clock()<Date.parse(session.closeAt)+20*minute) return;
+  if(+clock()<Date.parse(session.closeAt)+20*minute || frozen?.market!==market || frozen.tradeDate!==session.tradeDate
+    || !canEvaluatePreopenArchive(frozen,calendar)) return;
   const rows=await getRows(market,frozen.universe.map(r=>r.code),fetcher);
   const observedAt=+clock();
-  const bars=rows.filter(r=>isClosingQuote(r,market,session,observedAt) && r.metrics.amount>0).map(r=>({
-      code:r.code,tradeDate:session.tradeDate,prevClose:r.metrics.prevClose,open:r.metrics.open,close:r.metrics.price,high:r.metrics.high,low:r.metrics.low}));
+  const bars=closingBars(rows,market,session,observedAt);
   const args={frozen,bars,closedAt:session.closeAt,asOf:clock().toISOString(),calendar};
   let result=evaluatePreopenDay(args);
   if(!result) return;
@@ -219,7 +211,20 @@ export async function readPreopenMarket(kv,market,clock,calendar) {
   const date=target?.tradeDate,cutoff=date && atMinute(date,market,565,calendar);
   const lastClosed = current.calendarKnown && (current.phase === "closed" ? current : adjacentPreopenSession(market,current.tradeDate,calendar,-1));
   const lastClosedDate = lastClosed?.tradeDate || null;
-  const [today,prior,results]=await Promise.all([date ? get(kv,market,"frozen:"+date) : null,get(kv,market,"latest"),get(kv,market,"history")]);
+  const [today,prior,history]=await Promise.all([date ? get(kv,market,"frozen:"+date) : null,get(kv,market,"latest"),get(kv,market,"history")]);
+  let results=history || [];
+  if(current.phase==="closed" && today?.status==="unavailable" && today.market===market && today.tradeDate===date
+    && !results.some(entry=>entry.tradeDate===date) && canEvaluatePreopenArchive(today,calendar)) {
+    // A dated closing reference can reconcile a skipped settlement using the exact sealed membership.
+    const ref=await get(kv,market,"ref:"+date);
+    const observedAt=Date.parse(ref?.observedAt);
+    if(ref?.referenceDate===date && ref.closeAt===current.closeAt && observedAt>=Date.parse(current.closeAt)+15*minute
+      && observedAt<=+now && Array.isArray(ref.rows)) {
+      const bars=closingBars(ref.rows,market,current,observedAt);
+      const verified=evaluatePreopenDay({frozen:today,bars,closedAt:current.closeAt,asOf:ref.observedAt,calendar});
+      if(verified) results=[verified,...results].sort((a,b)=>b.tradeDate.localeCompare(a.tradeDate)).slice(0,20);
+    }
+  }
   const latest=publicSnapshot(today || prior);
   const needsArchive = lastClosedDate && lastClosedDate !== date && lastClosedDate !== latest?.tradeDate && !today;
   const lastRecord = needsArchive ? await get(kv,market,"frozen:"+lastClosedDate) : null;
@@ -233,7 +238,7 @@ export async function readPreopenMarket(kv,market,clock,calendar) {
     lastClosedDate,lastClosedRecord:lastClosedDate !== latest?.tradeDate ? publicSnapshot(lastRecord) : null,
     sessionDate:date || null,cutoffAt:cutoff?.toISOString() || null,
     nextCutoffAt:next ? atMinute(next.tradeDate,market,565,calendar).toISOString() : null,
-    phase,reason,total:latest?.total ?? null,latest,results:results || [],evaluation:summarizePreopenHistory(results || [])};
+    phase,reason,total:latest?.total ?? null,latest,results,evaluation:summarizePreopenHistory(results)};
 }
 
 export async function runPreopenCycle({env,scheduledAt,clock=()=>new Date(),fetcher=fetch,calendar}){
@@ -272,7 +277,7 @@ export async function runPreopenCycle({env,scheduledAt,clock=()=>new Date(),fetc
       if(slot===550) {
         const previous=adjacentPreopenSession(market,session.tradeDate,calendar,-1);
         if(previous) await tryReference(opts,previous.tradeDate);
-      } else if(preopenSampleMinutesFor(market).includes(slot)){
+      } else if(preopenSampleMinutes.includes(slot)){
         await preparePreopen({...opts,slot});
       } else if(slot===565 || slot===568) {
         await publishPreopen(opts);

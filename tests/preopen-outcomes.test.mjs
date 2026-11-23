@@ -57,6 +57,30 @@ test("regular-session five-minute observations localize the first hit, ignore lu
   assert.equal(first([{...ticks[0],volume:null},...ticks.slice(1)]).kind,"intraday");
 });
 
+test("an intact sealed no-selection day with incomplete evidence only verifies its controls",()=>{
+  const coverage={referenceCount:4,missingReferenceCount:1,eligibleCount:3,confirmedMissCount:1,jumpedCount:1,unresolvedCount:1,qualifyingCount:0};
+  const record={...frozen,status:"unavailable",referenceDate:"2026-11-13",observedAt:day+"T01:20:00Z",
+    evidenceAvailable:false,candidates:[],total:5,coverage};
+  const result=evaluate({frozen:record});
+  assert.equal(result.selectionStatus,"incomplete");
+  assert.equal(result.groups.picks.count,0);
+  assert.equal(result.groups.picks.hits,0);
+  assert.equal(result.groups.picks.hitRate,null);
+  assert.equal(result.groups.pool.verified,3);
+  assert.equal(result.groups.yesterdayLeaders.hits,1);
+  assert.ok(result.rows.every(r=>!r.groups.includes("picks")));
+  const summary=summarizePreopenHistory([result,result]);
+  assert.deepEqual([summary.days,summary.incompleteDays,summary.emptyDays],[1,1,0]);
+  for(const patch of [{universe:undefined},{observedAt:null},{observedAt:day+"T01:20:13Z"},{observedAt:"2026-11-15T01:20:00Z"},
+    {frozenAt:day+"T01:25:01Z"},{publishedAt:day+"T01:30:00Z"},{referenceDate:"2026-11-12"},
+    {evidenceAvailable:true},{total:4},{candidates:[members[0]]},{coverage:null},{coverage:{...coverage,unresolvedCount:2}},
+    {coverage:{...coverage,qualifyingCount:1}},{coverage:{...coverage,referenceCount:5,missingReferenceCount:0,confirmedMissCount:2,unresolvedCount:0}}]) {
+    assert.equal(evaluate({frozen:{...record,...patch}}),null,JSON.stringify(patch));
+  }
+  assert.equal(evaluate({frozen:record,bars:[]}),null);
+  assert.equal(evaluate({frozen:record,asOf:day+"T07:59:59Z"}),null);
+});
+
 test("only observed days count, zero picks have no hit rate, market rates pool verified denominators, and same-day retries count once",()=>{
   const initial=evaluate({bars:[]}), final=evaluate({asOf:day+"T10:00:00Z"});
   const fullyTested={referenceCount:5,missingReferenceCount:0,eligibleCount:5,confirmedMissCount:4,jumpedCount:1,unresolvedCount:0,qualifyingCount:0};

@@ -32,12 +32,14 @@ test("a missing next-session reference retains its dated acquisition failure sep
 });
 
 
-test("the closed-session audit enumerates the additional 09:23 sample only for the two Asian markets",async()=>{
+test("the closed-session audit enumerates an existing 09:23 sample in each market and leaves old archives untouched",async()=>{
   const date="2026-11-20", rows={["stage:"+date+":563"]:{tradeDate:date,eligibleCount:100}};
   for (const market of ["A股","港股","美股"]) {
     const reads=[];
     const body=await (await read(date,rows,reads,market)).json();
-    assert.deepEqual(body.stages.map(s=>s.slot),market==="美股" ? [] : [563]);
-    assert.equal(reads.some(key=>key.endsWith(":563")),market!=="美股");
+    assert.deepEqual(body.stages.map(s=>s.slot),[563]);
+    assert.ok(reads.some(key=>key.endsWith(":563")));
+    const older=await (await read(date,{},[],market)).json();
+    assert.deepEqual(older.stages,[]);
   }
 });

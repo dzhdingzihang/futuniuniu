@@ -1,4 +1,5 @@
 import { runPreopenCycle } from "../../functions/lib/preopen-cycle.js";
+import { intradaySession } from "../../functions/lib/intraday-session.js";
 import { runIntradayScan } from "../../functions/lib/intraday-scan.js";
 import { scanRadarWithSegment } from "../../functions/api/radar.js";
 import { loadGrowthDirectory } from "../../functions/lib/radar-segment.js";
@@ -37,7 +38,10 @@ export function createRadarScheduler(refresh = runScheduledRadarRefresh, scanInt
       }
       const jobs = [];
       if (weekday && minute % 5 === 0) jobs.push(scanIntraday({env, scheduledAt}));
-      const beforeOpen = weekday && ((hour === 1 && minute === 23) ||
+      // The US cron spans both UTC offsets. Only the 09:23 New York tick needs a scan.
+      const sampleAt0923 = minute === 23 && (hour === 1 ||
+        ([13,14].includes(hour) && intradaySession("美股", scheduledAt).localMinute === 563));
+      const beforeOpen = weekday && (sampleAt0923 ||
         ([1,13,14].includes(hour) && [10,15,20,22,24,25,28].includes(minute)));
       const afterClose = ([4,7,8,17,18,20,21].includes(hour) && [35,55].includes(minute))
         || (weekday && ((hour===8 && minute===45) || (hour===9 && minute===35) || (hour===13 && [35,55].includes(minute))));

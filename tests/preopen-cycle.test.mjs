@@ -137,7 +137,7 @@ test("shared cron dispatches only jobs due at this UTC tick",async()=>{
   const {triggers}=JSON.parse(await readFile(new URL("../workers/radar-scheduler/wrangler.jsonc",import.meta.url),"utf8"));
   const extraCronByMinute={22:2,23:3,28:2};
   for(const [time,expected] of [["00:10:00",["daily"]],["00:40:00",["daily"]],
-    ["01:22:58",["preopen"]],["01:23:58",["preopen"]],["13:23:58",[]],["14:23:58",[]],["01:24:00",["preopen"]],["01:28:58",["preopen"]],["01:25:00",["intraday","preopen"]],["01:30:00",["intraday"]],
+    ["01:22:58",["preopen"]],["01:23:58",["preopen"]],["13:23:58",[]],["14:23:58",["preopen"]],["01:24:00",["preopen"]],["01:28:58",["preopen"]],["01:25:00",["intraday","preopen"]],["01:30:00",["intraday"]],
     ["07:35:00",["intraday","preopen"]],["01:45:00",["intraday"]]]) {
     calls.length=0;
     let done;
@@ -222,6 +222,47 @@ test("public radar exposes the actual closing session and restores its archive w
   assert.equal(weekend.lastClosedRecord.universe,undefined);
 });
 
+test("incomplete sealed days use the same close for controls and never backfill forecasts",async()=>{
+  const kv=new KV(), historyKey="preopen-v1:"+market+":history", refKey="preopen-v1:"+market+":ref:"+date;
+  await reference(kv);
+  await prepare(kv,564,"01:24:10",[],{build:async()=>{
+    const partial=fixtureReport([]);
+    partial.evidenceAvailable=false;
+    partial.coverage.confirmedMissCount=3;
+    partial.coverage.unresolvedCount=197;
+    return partial;
+  }});
+  await publish(kv,"01:25:05");
+  const getRows=async()=>members.map(row=>({...row,quoteUpdatedAt:date+"T07:05:00Z",
+    metrics:{...row.metrics,open:100,prevClose:100,high:106,low:99,price:104}}));
+  const now=clock("07:35:00");
+  assert.equal((await read(kv,"07:34:59")).evaluation.days,0);
+  await capturePreopenReference({...base(kv),directory,referenceDate:date,clock:now,getRows});
+  const ref=structuredClone(kv.data.get(refKey));
+  assert.equal((await read(kv,"07:34:59")).evaluation.days,0);
+  const publicPage=await read(kv,"07:36:00");
+  assert.deepEqual([publicPage.evaluation.days,publicPage.evaluation.incompleteDays,publicPage.evaluation.emptyDays],[1,1,0]);
+  assert.equal(publicPage.results[0].groups.picks.hitRate,null);
+  assert.equal(publicPage.results[0].groups.picks.count,0);
+  assert.equal(publicPage.results[0].groups.pool.hits,200);
+  assert.equal(kv.data.has(historyKey),false);
+  for(const patch of [{referenceDate:previous},{closeAt:date+"T06:00:00Z"},{observedAt:date+"T07:14:59Z"},
+    {rows:ref.rows.map(row=>({...row,quoteUpdatedAt:date+"T06:58:00Z"}))},
+    {rows:ref.rows.map(row=>({...row,market:"港股"}))}]) {
+    kv.data.set(refKey,{...ref,...patch});
+    assert.equal((await read(kv,"07:36:00")).evaluation.days,0);
+  }
+  kv.data.set(refKey,ref);
+  await settlePreopen({...base(kv),clock:now,getRows,getMinutes:()=>assert.fail("no picks")});
+  assert.deepEqual(kv.data.get(historyKey),publicPage.results);
+  assert.equal((await read(kv,"07:58:00")).evaluation.days,1);
+  const missing=new KV();
+  await publish(missing,"01:28:30");
+  missing.data.set(refKey,ref);
+  await settlePreopen({...base(missing),clock:now,getRows:()=>assert.fail("no sealed snapshot")});
+  assert.equal((await read(missing,"07:58:00")).evaluation.days,0);
+});
+
 test("a delayed close cron captures the reference; an afternoon retry accepts delayed final timestamps",async()=>{
   const kv=new KV();
   const date="2026-11-20";
@@ -270,39 +311,59 @@ test("missing previous close is reported for each sample and survives publicatio
   assert.match(snapshot.reason,/前一交易日的有效收盘参考/);
 });
 
-test("only Shanghai and Hong Kong act on the extra 09:23 sampling minute",async()=>{
+test("all three markets capture at their own exchange-local 09:23",async()=>{
   const kv=new KV();
   const calendar=JSON.parse(await readFile(new URL("../assets/radar-calendar.json",import.meta.url),"utf8"));
   for (const time of ["01:23:58","14:23:58"]) {
     const tick=at(time);
     await runPreopenCycle({env:{RADAR_SNAPSHOTS:kv},scheduledAt:tick,clock:()=>tick,calendar});
   }
-  assert.deepEqual([...kv.data.keys()].sort(),["A股","港股"].map(m=>"preopen-v1:"+m+":attempt:"+date+":563").sort());
+  assert.deepEqual([...kv.data.keys()].sort(),["A股","港股","美股"].map(m=>"preopen-v1:"+m+":attempt:"+date+":563").sort());
 });
 
-test("the Asian 09:23:58 sample has its own baseline and supersedes 09:22 when 09:24 finishes late",async()=>{
-  const kv=new KV();
-  await reference(kv);
-  const code=members[0].code;
-  const historyKey="preopen-v1:A股:amounts:";
-  await kv.put(historyKey+"562",JSON.stringify([{date:previous,amounts:{[code]:500}}]));
-  await prepare(kv,562,"01:22:40",[members[0]]);
-  const times=[at("01:23:58"),at("01:24:09")];
-  await prepare(kv,563,"01:23:58",[],{clock:()=>times.shift(),build:async ({historyAmounts,asOf})=>{
-    assert.equal(historyAmounts[code],undefined);
-    return {...fixtureReport([members[1]]),observations:{[code]:{amount:700,at:asOf}}};
-  }});
-  assert.deepEqual((await kv.get(historyKey+"563"))[0].amounts,{[code]:700});
-  assert.deepEqual((await kv.get(historyKey+"562"))[0].amounts,{[code]:500});
-  const late=[at("01:24:58"),at("01:25:08")];
-  await prepare(kv,564,"01:24:58",[members[2]],{clock:()=>late.shift()});
-  await publish(kv,"01:28:40");
-  const saved=(await read(kv,"01:29:00")).latest;
-  assert.equal(saved.sampleMinute,563);
-  assert.equal(saved.frozenAt,date+"T01:24:09.000Z");
-  assert.deepEqual(saved.candidates.map(r=>r.code),[members[1].code]);
-  assert.deepEqual(saved.captureDiagnostics.map(a=>a.slot),[564]);
+test("a US 09:23 scan is dispatched only at the local morning tick across the DST transition", async()=>{
+  const calls=[];
+  const scheduler=createRadarScheduler(...["daily","intraday","preopen"].map(id=>async()=>calls.push(id)));
+  for (const [day,hour,expected] of [
+    ["2026-10-30",13,["preopen"]],["2026-10-30",14,[]],
+    ["2026-11-02",13,[]],["2026-11-02",14,["preopen"]],["2026-11-07",14,[]],
+  ]) {
+    calls.length=0;
+    let done;
+    scheduler.scheduled({scheduledTime:Date.parse(day+"T"+hour+":23:58Z")},{},{waitUntil:p=>{done=p;}});
+    await done;
+    assert.deepEqual(calls,expected,day+" "+hour);
+  }
 });
+
+for(const [exchange,utcHour] of [["A股","01"],["港股","01"],["美股","14"]]) {
+  test(exchange+" has an independent 09:23 baseline and uses the latest valid sample when 09:24 crosses cutoff",async()=>{
+    const kv=new KV();
+    const tick=ms=>at(utcHour+":"+ms);
+    const opts={market:exchange,kv,session:intradaySession(exchange,tick("15:00"))};
+    const prefix="preopen-v1:"+exchange+":";
+    const code=members[0].code;
+    await kv.put(prefix+"ref:"+previous,JSON.stringify({referenceDate:previous,observedAt:previous+"T23:00:00Z",
+      total:members.length,rows:members}));
+    await kv.put(prefix+"amounts:562",JSON.stringify([{date:previous,amounts:{[code]:500}}]));
+    await preparePreopen({...opts,slot:562,clock:()=>tick("22:40"),build:async()=>fixtureReport([members[0]])});
+    const times=[tick("23:58"),tick("24:09")];
+    await preparePreopen({...opts,slot:563,clock:()=>times.shift(),build:async({historyAmounts,asOf})=>{
+      assert.equal(historyAmounts[code],undefined);
+      return {...fixtureReport([members[1]]),observations:{[code]:{amount:700,at:asOf}}};
+    }});
+    assert.deepEqual((await kv.get(prefix+"amounts:563"))[0].amounts,{[code]:700});
+    assert.deepEqual((await kv.get(prefix+"amounts:562"))[0].amounts,{[code]:500});
+    const late=[tick("24:58"),tick("25:09")];
+    await preparePreopen({...opts,slot:564,clock:()=>late.shift(),build:async()=>fixtureReport([members[2]])});
+    await publishPreopen({...opts,clock:()=>tick("28:40")});
+    const saved=await kv.get(prefix+"frozen:"+date);
+    assert.equal(saved.sampleMinute,563);
+    assert.equal(saved.frozenAt,tick("24:09").toISOString());
+    assert.deepEqual(saved.candidates.map(r=>r.code),[members[1].code]);
+    assert.deepEqual(saved.captureDiagnostics.map(a=>a.slot),[564]);
+  });
+}
 
 test("09:28 publication can recover a pre-cutoff stage that only becomes visible after 09:25",async()=>{
   const kv=new KV();
