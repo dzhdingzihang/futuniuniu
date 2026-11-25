@@ -1695,9 +1695,9 @@
     ]
   },
   "美股": {
-    "asOf": "2026-11-24",
+    "asOf": "2026-11-25",
     "source": "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
-    "sourceDate": "2026-11-23",
+    "sourceDate": "2026-11-24",
     "codes": [
       "AACG",
       "AACI",
@@ -2643,7 +2643,6 @@
       "DYOR",
       "EBAY",
       "EBC",
-      "EBMT",
       "EBON",
       "ECBK",
       "ECHO",
@@ -3275,7 +3274,6 @@
       "IOVA",
       "IPAR",
       "IPDN",
-      "IPFX",
       "IPGP",
       "IPHA",
       "IPHX",
@@ -3905,6 +3903,7 @@
       "OBA",
       "OBAI",
       "OBIO",
+      "OBMT",
       "OBT",
       "OBX",
       "OCC",
