@@ -7,14 +7,14 @@
   "guide": "统一调整人民币买卖成本只改 costPolicy 的 buyCny、sellCny，每只股票分别计一次。lots 保存调整前的成交数据；日常买卖请使用网页上的「记录交易」。",
   "source": {
     "type": "excel",
-    "file": "20261123股票记录.xlsx",
-    "asOf": "2026-11-23",
-    "valuationAsOf": "2026-11-23",
+    "file": "20261126股票记录.xlsx",
+    "asOf": "2026-11-26",
+    "valuationAsOf": "2026-11-26",
     "fx": {
       "CNY": 1,
-      "HKD": 0.8503,
-      "USD": 6.6683,
-      "asOf": "2026-11-23 21:36 Asia/Shanghai"
+      "HKD": 0.8498,
+      "USD": 6.6633,
+      "asOf": "2026-11-26 17:01 Asia/Shanghai"
     },
     "sheets": [
       "全市场股票明细",
@@ -29,15 +29,15 @@
     ],
     "reconciliation": {
       "securityCount": 80,
-      "openSecurityCount": 30,
-      "closedSecurityCount": 50,
+      "openSecurityCount": 27,
+      "closedSecurityCount": 53,
       "soldSecurityCount": 65,
-      "sourcePnlCny": -287757.65
+      "sourcePnlCny": -284544.14
     },
     "valuationAsOfByMarket": {
       "A": "2026-11-06",
-      "HK": "2026-11-23",
-      "US": "2026-11-20"
+      "HK": "2026-11-26",
+      "US": "2026-11-25"
     },
     "orderFeeScenario": {
       "marketScope": [
@@ -45,10 +45,10 @@
         "US"
       ],
       "feeUsdPerOrder": 2,
-      "buyOrderCount": 166,
-      "sellOrderCount": 94,
-      "recordedOrderFeesCny": 6748.05812609,
-      "scenarioOrderFeesCny": 3550.58649263
+      "buyOrderCount": 167,
+      "sellOrderCount": 102,
+      "recordedOrderFeesCny": 6961.64602562,
+      "scenarioOrderFeesCny": 3670.6391138
     }
   },
   "newTradeFeeUsd": {
@@ -711,9 +711,9 @@
       "quality": "ledger-reconciled",
       "note": "数量已核对",
       "buy": {
-        "price": 36.333,
+        "price": 23.401,
         "qty": 2900,
-        "purchaseCostCny": 90750.11,
+        "purchaseCostCny": 58313.78,
         "date": "2026-04-15"
       },
       "fees": {
@@ -742,6 +742,54 @@
       "fees": {
         "buy": 0,
         "sell": 0
+      }
+    },
+    {
+      "id": "excel-hk-07709-sold-2026-11-26-490af2a717a4b346",
+      "market": "HK",
+      "code": "07709",
+      "name": "南方东英SK海力士每日杠杆最多 (2x) 产品",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 23.450579,
+        "qty": 1000,
+        "purchaseCostCny": 20108.2
+      },
+      "sell": {
+        "price": 11.8,
+        "qty": 1000,
+        "date": "2026-11-26",
+        "sellProceedsCny": 10020.3,
+        "feeCny": 29.852349
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 4.47178
+      }
+    },
+    {
+      "id": "excel-hk-07709-sold-2026-11-26-a5a7c955e43ef27e",
+      "market": "HK",
+      "code": "07709",
+      "name": "南方东英SK海力士每日杠杆最多 (2x) 产品",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 23.450579,
+        "qty": 2000,
+        "purchaseCostCny": 40216.4
+      },
+      "sell": {
+        "price": 11.3,
+        "qty": 2000,
+        "date": "2026-11-26",
+        "sellProceedsCny": 19214.82,
+        "feeCny": 33.770203
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 5.058661
       }
     },
     {
@@ -1390,8 +1438,8 @@
       "note": "买卖数量及均价已按拆合股统一",
       "buy": {
         "price": 4.118,
-        "qty": 540,
-        "purchaseCostCny": 15009.49,
+        "qty": 10,
+        "purchaseCostCny": 277.95,
         "date": "2026-05-22"
       },
       "fees": {
@@ -1447,6 +1495,54 @@
       }
     },
     {
+      "id": "excel-us-okll-sold-2026-11-23-5d5a4abff0a6011a",
+      "market": "US",
+      "code": "OKLL",
+      "name": "2倍做多OKLO ETF-Defiance",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 4.138791,
+        "qty": 400,
+        "purchaseCostCny": 11118.14
+      },
+      "sell": {
+        "price": 2.83,
+        "qty": 400,
+        "date": "2026-11-23",
+        "sellProceedsCny": 7504.57,
+        "feeCny": 39.854822
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 5.98
+      }
+    },
+    {
+      "id": "excel-us-okll-sold-2026-11-23-ecc6d7bb352b414c",
+      "market": "US",
+      "code": "OKLL",
+      "name": "2倍做多OKLO ETF-Defiance",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 4.138791,
+        "qty": 130,
+        "purchaseCostCny": 3613.4
+      },
+      "sell": {
+        "price": 2.65,
+        "qty": 130,
+        "date": "2026-11-23",
+        "sellProceedsCny": 2280.06,
+        "feeCny": 15.9286
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.39
+      }
+    },
+    {
       "id": "excel-us-nok-open",
       "market": "US",
       "code": "NOK",
@@ -1461,95 +1557,6 @@
       },
       "fees": {
         "buy": 0
-      }
-    },
-    {
-      "id": "excel-us-mvll-open",
-      "market": "US",
-      "code": "MVLL",
-      "name": "2倍做多MRVL ETF-GraniteShares",
-      "quality": "ledger-reconciled",
-      "note": "数量已核对",
-      "buy": {
-        "price": 13.829,
-        "qty": 50,
-        "purchaseCostCny": 4614.7,
-        "date": "2026-10-29"
-      },
-      "fees": {
-        "buy": 0
-      }
-    },
-    {
-      "id": "excel-us-mvll-sold",
-      "market": "US",
-      "code": "MVLL",
-      "name": "2倍做多MRVL ETF-GraniteShares",
-      "quality": "ledger-reconciled",
-      "note": "数量已核对",
-      "buy": {
-        "price": 14.98,
-        "qty": 100,
-        "purchaseCostCny": 11911.8,
-        "date": "2026-10-29"
-      },
-      "sell": {
-        "price": 14.125,
-        "qty": 100,
-        "date": "2026-11-05",
-        "sellProceedsCny": 9375.85
-      },
-      "fees": {
-        "buy": 0,
-        "sell": 0
-      }
-    },
-    {
-      "id": "excel-us-mvll-sold-2026-11-09-4f77b2afa8522852",
-      "market": "US",
-      "code": "MVLL",
-      "name": "2倍做多MRVL ETF-GraniteShares",
-      "quality": "ledger-reconciled",
-      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
-      "buy": {
-        "price": 13.8507,
-        "qty": 100,
-        "purchaseCostCny": 9229.39
-      },
-      "sell": {
-        "price": 10.4,
-        "qty": 100,
-        "date": "2026-11-09",
-        "sellProceedsCny": 6924.33,
-        "feeCny": 15.41424
-      },
-      "fees": {
-        "buy": 0,
-        "sell": 2.31
-      }
-    },
-    {
-      "id": "excel-us-mvll-sold-2026-11-19-240e2184892e8fdb",
-      "market": "US",
-      "code": "MVLL",
-      "name": "2倍做多MRVL ETF-GraniteShares",
-      "quality": "ledger-reconciled",
-      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
-      "buy": {
-        "price": 13.8507,
-        "qty": 100,
-        "purchaseCostCny": 9229.39
-      },
-      "sell": {
-        "price": 10,
-        "qty": 100,
-        "date": "2026-11-19",
-        "sellProceedsCny": 6651.27,
-        "feeCny": 15.4
-      },
-      "fees": {
-        "buy": 0,
-        "sell": 2.31
       }
     },
     {
@@ -1594,88 +1601,6 @@
       }
     },
     {
-      "id": "excel-us-astx-open",
-      "market": "US",
-      "code": "ASTX",
-      "name": "2倍做多ASTS ETF-Tradr",
-      "quality": "ledger-reconciled",
-      "note": "数量已核对",
-      "buy": {
-        "price": 33.055,
-        "qty": 40,
-        "purchaseCostCny": 8985.03,
-        "date": "2026-05-29"
-      },
-      "fees": {
-        "buy": 0
-      }
-    },
-    {
-      "id": "excel-us-astx-sold",
-      "market": "US",
-      "code": "ASTX",
-      "name": "2倍做多ASTS ETF-Tradr",
-      "quality": "ledger-reconciled",
-      "note": "数量已核对",
-      "buy": {
-        "price": 38.910448,
-        "qty": 27,
-        "purchaseCostCny": 8733.08,
-        "date": "2026-05-29"
-      },
-      "sell": {
-        "price": 38.940741,
-        "qty": 27,
-        "date": "2026-06-11",
-        "sellProceedsCny": 7092.21
-      },
-      "fees": {
-        "buy": 0,
-        "sell": 0
-      }
-    },
-    {
-      "id": "excel-us-litx-open",
-      "market": "US",
-      "code": "LITX",
-      "name": "2倍做多LITE ETF-Tradr",
-      "quality": "ledger-reconciled",
-      "note": "数量已核对",
-      "buy": {
-        "price": 40.89,
-        "qty": 10,
-        "purchaseCostCny": 2776.79,
-        "date": "2026-05-11"
-      },
-      "fees": {
-        "buy": 0
-      }
-    },
-    {
-      "id": "excel-us-litx-sold",
-      "market": "US",
-      "code": "LITX",
-      "name": "2倍做多LITE ETF-Tradr",
-      "quality": "ledger-reconciled",
-      "note": "数量已核对",
-      "buy": {
-        "price": 42.23,
-        "qty": 110,
-        "purchaseCostCny": 31666.9,
-        "date": "2026-05-11"
-      },
-      "sell": {
-        "price": 38.909091,
-        "qty": 110,
-        "date": "2026-06-17",
-        "sellProceedsCny": 28912.75
-      },
-      "fees": {
-        "buy": 0,
-        "sell": 0
-      }
-    },
-    {
       "id": "excel-us-dram-open",
       "market": "US",
       "code": "DRAM",
@@ -1684,8 +1609,8 @@
       "note": "数量已核对",
       "buy": {
         "price": 52.222,
-        "qty": 130,
-        "purchaseCostCny": 46027.95,
+        "qty": 70,
+        "purchaseCostCny": 24784.28,
         "date": "2026-05-11"
       },
       "fees": {
@@ -1714,6 +1639,30 @@
       "fees": {
         "buy": 0,
         "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-dram-sold-2026-11-25-b09fd8f19d90446b",
+      "market": "US",
+      "code": "DRAM",
+      "name": "Roundhill Memory ETF",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 52.278535,
+        "qty": 60,
+        "purchaseCostCny": 21243.67
+      },
+      "sell": {
+        "price": 34.68,
+        "qty": 60,
+        "date": "2026-11-25",
+        "sellProceedsCny": 13876.09,
+        "feeCny": 14.753342
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.21
       }
     },
     {
@@ -1854,6 +1803,198 @@
       "fees": {
         "buy": 0,
         "sell": 2.11
+      }
+    },
+    {
+      "id": "excel-us-mvll-sold",
+      "market": "US",
+      "code": "MVLL",
+      "name": "2倍做多MRVL ETF-GraniteShares",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 14.98,
+        "qty": 100,
+        "purchaseCostCny": 11911.8,
+        "date": "2026-10-29"
+      },
+      "sell": {
+        "price": 14.125,
+        "qty": 100,
+        "date": "2026-11-05",
+        "sellProceedsCny": 9375.85
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-mvll-sold-2026-11-09-4f77b2afa8522852",
+      "market": "US",
+      "code": "MVLL",
+      "name": "2倍做多MRVL ETF-GraniteShares",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 13.8507,
+        "qty": 100,
+        "purchaseCostCny": 9229.39
+      },
+      "sell": {
+        "price": 10.4,
+        "qty": 100,
+        "date": "2026-11-09",
+        "sellProceedsCny": 6924.33,
+        "feeCny": 15.41424
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.31
+      }
+    },
+    {
+      "id": "excel-us-mvll-sold-2026-11-19-240e2184892e8fdb",
+      "market": "US",
+      "code": "MVLL",
+      "name": "2倍做多MRVL ETF-GraniteShares",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 13.8507,
+        "qty": 100,
+        "purchaseCostCny": 9229.39
+      },
+      "sell": {
+        "price": 10,
+        "qty": 100,
+        "date": "2026-11-19",
+        "sellProceedsCny": 6651.27,
+        "feeCny": 15.4
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.31
+      }
+    },
+    {
+      "id": "excel-us-mvll-sold-2026-11-23-b2f186ff32b7b942",
+      "market": "US",
+      "code": "MVLL",
+      "name": "2倍做多MRVL ETF-GraniteShares",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 13.8507,
+        "qty": 50,
+        "purchaseCostCny": 4614.7
+      },
+      "sell": {
+        "price": 8.15,
+        "qty": 50,
+        "date": "2026-11-23",
+        "sellProceedsCny": 2701.53,
+        "feeCny": 14.329075
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.15
+      }
+    },
+    {
+      "id": "excel-us-astx-sold",
+      "market": "US",
+      "code": "ASTX",
+      "name": "2倍做多ASTS ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 38.910448,
+        "qty": 27,
+        "purchaseCostCny": 8733.08,
+        "date": "2026-05-29"
+      },
+      "sell": {
+        "price": 38.940741,
+        "qty": 27,
+        "date": "2026-06-11",
+        "sellProceedsCny": 7092.21
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-astx-sold-2026-11-23-181295e8f2e4b195",
+      "market": "US",
+      "code": "ASTX",
+      "name": "2倍做多ASTS ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 33.210766,
+        "qty": 40,
+        "purchaseCostCny": 8985.03
+      },
+      "sell": {
+        "price": 1.51,
+        "qty": 40,
+        "date": "2026-11-23",
+        "sellProceedsCny": 388.42,
+        "feeCny": 14.129134
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.12
+      }
+    },
+    {
+      "id": "excel-us-litx-sold",
+      "market": "US",
+      "code": "LITX",
+      "name": "2倍做多LITE ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "数量已核对",
+      "buy": {
+        "price": 42.23,
+        "qty": 110,
+        "purchaseCostCny": 31666.9,
+        "date": "2026-05-11"
+      },
+      "sell": {
+        "price": 38.909091,
+        "qty": 110,
+        "date": "2026-06-17",
+        "sellProceedsCny": 28912.75
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 0
+      }
+    },
+    {
+      "id": "excel-us-litx-sold-2026-11-23-5f0742170c7c46fc",
+      "market": "US",
+      "code": "LITX",
+      "name": "2倍做多LITE ETF-Tradr",
+      "quality": "ledger-reconciled",
+      "note": "富途实际成交；同日同单合并，人民币成本按移动平均法结转，卖出净额已扣实际费用",
+      "buy": {
+        "price": 40.971492,
+        "qty": 10,
+        "purchaseCostCny": 2776.79
+      },
+      "sell": {
+        "price": 8.02,
+        "qty": 10,
+        "date": "2026-11-23",
+        "sellProceedsCny": 520.98,
+        "feeCny": 13.529313
+      },
+      "fees": {
+        "buy": 0,
+        "sell": 2.03
       }
     },
     {
