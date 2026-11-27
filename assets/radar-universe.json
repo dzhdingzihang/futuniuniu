@@ -1695,9 +1695,9 @@
     ]
   },
   "美股": {
-    "asOf": "2026-11-26",
+    "asOf": "2026-11-28",
     "source": "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
-    "sourceDate": "2026-11-25",
+    "sourceDate": "2026-11-27",
     "codes": [
       "AACG",
       "AACI",
@@ -3079,7 +3079,6 @@
       "HCM",
       "HCMA",
       "HCSG",
-      "HCTI",
       "HCWB",
       "HDL",
       "HDRN",
@@ -4923,7 +4922,6 @@
       "VTSI",
       "VTVT",
       "VUZI",
-      "VVOS",
       "VWAV",
       "VYGR",
       "WABC",
